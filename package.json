@@ -4,7 +4,7 @@
   "description": "GTA-style open-world game that runs in the browser",
   "type": "module",
   "scripts": {
-    "start": "npx -y http-server -p 8080 -c-1 ."
+    "start": "npx -y http-server -p 8080 -c-1 -s ."
   },
   "devDependencies": {
     "playwright-core": "^1.60.0"
