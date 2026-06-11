@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OPEN CITY — browser open world</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #000; font-family: 'Segoe UI', Arial, sans-serif; }
+  canvas#game { display: block; }
+
+  #hud { position: fixed; inset: 0; pointer-events: none; user-select: none; }
+
+  #topright {
+    position: absolute; top: 18px; right: 22px; text-align: right;
+  }
+  #money {
+    font-size: 30px; font-weight: 800; font-style: italic; color: #7cc77c;
+    text-shadow: 2px 2px 0 #000, 0 0 8px rgba(0,0,0,.8); letter-spacing: 1px;
+  }
+  #clock {
+    font-size: 20px; font-weight: 700; color: #e8eef5;
+    text-shadow: 2px 2px 0 #000; letter-spacing: 2px; margin-top: 2px;
+  }
+  #stars { margin-top: 4px; font-size: 26px; letter-spacing: 3px; }
+  #stars span { color: rgba(255,255,255,.18); text-shadow: 1px 1px 0 #000; transition: color .2s; }
+  #stars span.lit { color: #ffd24a; text-shadow: 0 0 10px rgba(255,180,0,.9), 1px 1px 0 #000; }
+
+  #bottomleft { position: absolute; left: 20px; bottom: 20px; }
+  #minimap {
+    display: block; border: 3px solid rgba(255,255,255,.75); border-radius: 8px;
+    background: #0c1117; box-shadow: 0 4px 18px rgba(0,0,0,.6);
+  }
+  #healthwrap {
+    width: 176px; height: 12px; margin-bottom: 8px; border: 2px solid rgba(255,255,255,.75);
+    border-radius: 6px; background: rgba(0,0,0,.55); overflow: hidden;
+  }
+  #health { height: 100%; width: 100%; background: linear-gradient(90deg,#2faf4e,#5fe07a); transition: width .15s; }
+
+  #speed {
+    position: absolute; right: 26px; bottom: 24px; font-size: 34px; font-weight: 800; font-style: italic;
+    color: #fff; text-shadow: 2px 2px 0 #000; display: none;
+  }
+  #speed small { font-size: 16px; color: #bbb; }
+
+  #weapon {
+    position: absolute; right: 26px; bottom: 26px; font-size: 22px; font-weight: 800; font-style: italic;
+    color: #ffd24a; text-shadow: 2px 2px 0 #000; letter-spacing: 1px;
+  }
+
+  #hint {
+    position: absolute; left: 50%; bottom: 16%; transform: translateX(-50%);
+    background: rgba(0,0,0,.65); color: #fff; padding: 8px 18px; border-radius: 6px;
+    font-size: 17px; font-weight: 600; display: none; border: 1px solid rgba(255,255,255,.25);
+  }
+  #hint b { color: #ffd24a; }
+
+  #crosshair {
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%);
+    color: rgba(255,255,255,.9); font-size: 22px; font-weight: 300; text-shadow: 0 0 4px #000;
+  }
+
+  #banner {
+    position: absolute; left: 0; right: 0; top: 38%; text-align: center;
+    font-size: 84px; font-weight: 900; font-style: italic; letter-spacing: 6px;
+    color: #c0392b; text-shadow: 4px 4px 0 #000, 0 0 30px rgba(0,0,0,.9);
+    display: none; text-transform: uppercase;
+  }
+
+  #keysind {
+    position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%);
+    text-align: center; opacity: 0.8;
+  }
+  #keysind span {
+    display: inline-block; width: 30px; height: 30px; line-height: 30px; margin: 2px;
+    background: rgba(0,0,0,.55); border: 2px solid rgba(255,255,255,.5); border-radius: 6px;
+    color: #fff; font-weight: 700; font-size: 15px;
+  }
+  #keysind span.on { background: #ffd24a; border-color: #ffd24a; color: #111; }
+
+  #toast {
+    position: absolute; left: 50%; top: 12%; transform: translateX(-50%);
+    color: #ffd24a; font-size: 22px; font-weight: 700; font-style: italic;
+    text-shadow: 2px 2px 0 #000; display: none;
+  }
+
+  #start {
+    position: fixed; inset: 0; background: radial-gradient(ellipse at 50% 30%, #1d2a3a 0%, #090d13 70%);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    color: #fff; z-index: 10; text-align: center;
+  }
+  #start h1 {
+    font-size: 72px; font-weight: 900; font-style: italic; letter-spacing: 4px;
+    background: linear-gradient(180deg, #ffd24a, #e8732a);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    text-shadow: none; filter: drop-shadow(4px 4px 0 #000);
+  }
+  #start .tag { color: #9fb2c8; margin: 6px 0 26px; font-size: 17px; letter-spacing: 1px; }
+  #start .controls {
+    background: rgba(0,0,0,.45); border: 1px solid rgba(255,255,255,.15); border-radius: 10px;
+    padding: 18px 30px; font-size: 15px; line-height: 1.9; color: #cfd8e3; text-align: left;
+  }
+  #start .controls b { color: #ffd24a; display: inline-block; min-width: 110px; }
+  #playbtn {
+    margin-top: 28px; pointer-events: auto; cursor: pointer;
+    font-size: 22px; font-weight: 800; font-style: italic; letter-spacing: 2px;
+    color: #111; background: linear-gradient(180deg, #ffd24a, #f0a32a);
+    border: none; border-radius: 8px; padding: 14px 46px;
+    box-shadow: 0 6px 20px rgba(240,160,40,.35);
+  }
+  #playbtn:hover { transform: scale(1.04); }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+  <div id="hud">
+    <div id="topright">
+      <div id="money">$0</div>
+      <div id="clock">10:00</div>
+      <div id="stars"><span>★</span><span>★</span><span>★</span><span>★</span><span>★</span></div>
+    </div>
+    <div id="bottomleft">
+      <div id="healthwrap"><div id="health"></div></div>
+      <canvas id="minimap" width="176" height="176"></canvas>
+    </div>
+    <div id="speed">0 <small>MPH</small></div>
+    <div id="weapon">PISTOL</div>
+    <div id="hint"></div>
+    <div id="keysind">
+      <span id="k-w">W</span><br>
+      <span id="k-a">A</span><span id="k-s">S</span><span id="k-d">D</span>
+    </div>
+    <div id="crosshair">+</div>
+    <div id="banner">WASTED</div>
+    <div id="toast"></div>
+  </div>
+
+  <div id="start">
+    <h1>OPEN CITY</h1>
+    <div class="tag">A GTA-style open world — built for your browser</div>
+    <div class="controls">
+      <div><b>W A S D</b> Move / Drive / Fly</div>
+      <div><b>Mouse</b> Look around / Aim</div>
+      <div><b>Shift</b> Sprint / Helicopter down</div>
+      <div><b>Space</b> Jump / Handbrake / Helicopter up</div>
+      <div><b>E</b> Enter / Exit vehicle or helicopter</div>
+      <div><b>Left Click</b> Shoot (on foot)</div>
+      <div><b>1 / 2 / 3</b> Pistol / Machine Gun / RPG</div>
+      <div><b>Tip</b> Find the helipads in the parks. 3+ stars brings the police chopper...</div>
+    </div>
+    <button id="playbtn">CLICK TO PLAY</button>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
