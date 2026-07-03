@@ -83,6 +83,57 @@ export function sfxPickup() {
   o.stop(ctx.currentTime + 0.2);
 }
 
+// quick "thwip" for the web shooter
+export function sfxWeb() {
+  if (!ctx) return;
+  noiseShot({ dur: 0.14, freq: 2600, gain: 0.25, type: 'highpass' });
+  noiseShot({ dur: 0.07, freq: 900, gain: 0.1, type: 'bandpass', q: 1.5 });
+}
+
+// short ascending arpeggio for mission complete
+export function sfxMissionPass() {
+  if (!ctx) return;
+  const notes = [440, 554, 659, 880];
+  notes.forEach((freq, i) => {
+    const o = ctx.createOscillator();
+    o.type = 'triangle';
+    o.frequency.value = freq;
+    const g = ctx.createGain();
+    const t0 = ctx.currentTime + i * 0.12;
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.linearRampToValueAtTime(0.16, t0 + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.5);
+    o.connect(g).connect(master);
+    o.start(t0);
+    o.stop(t0 + 0.55);
+  });
+}
+
+// two descending notes for mission failed
+export function sfxMissionFail() {
+  if (!ctx) return;
+  const notes = [392, 262];
+  notes.forEach((freq, i) => {
+    const o = ctx.createOscillator();
+    o.type = 'sawtooth';
+    o.frequency.value = freq;
+    const g = ctx.createGain();
+    const t0 = ctx.currentTime + i * 0.22;
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.linearRampToValueAtTime(0.1, t0 + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.45);
+    o.connect(g).connect(master);
+    o.start(t0);
+    o.stop(t0 + 0.5);
+  });
+}
+
+export function sfxThunder() {
+  if (!ctx) return;
+  noiseShot({ dur: 1.8, freq: 110, gain: 0.55 });
+  noiseShot({ dur: 0.5, freq: 500, gain: 0.18 });
+}
+
 // ---------- looped sources (engine / rotor / siren) ----------
 
 function makeLoop(build) {
@@ -141,6 +192,26 @@ export const rotor = makeLoop(() => {
   lfo.start();
   return { src, g, stoppables: [src, lfo] };
 });
+
+// steady rain hiss, volume follows storm intensity
+export const rainAmb = makeLoop(() => {
+  const src = ctx.createBufferSource();
+  src.buffer = noiseBuf;
+  src.loop = true;
+  const f = ctx.createBiquadFilter();
+  f.type = 'highpass';
+  f.frequency.value = 1500;
+  const g = ctx.createGain();
+  g.gain.value = 0;
+  src.connect(f).connect(g).connect(master);
+  src.start();
+  return { src, g, stoppables: [src] };
+});
+
+export function setRain(vol) {
+  if (!rainAmb.nodes || !ctx) return;
+  rainAmb.nodes.g.gain.setTargetAtTime(vol * 0.13, ctx.currentTime, 0.6);
+}
 
 export const siren = makeLoop(() => {
   const o = ctx.createOscillator();

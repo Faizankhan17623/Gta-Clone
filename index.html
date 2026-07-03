@@ -85,6 +85,37 @@
     text-shadow: 2px 2px 0 #000; display: none;
   }
 
+  #mission {
+    position: absolute; left: 20px; top: 18px; display: none;
+    background: rgba(0,0,0,.55); border-left: 4px solid #ffd24a; border-radius: 0 8px 8px 0;
+    padding: 10px 16px; min-width: 210px;
+  }
+  #mtitle { color: #ffd24a; font-size: 17px; font-weight: 800; font-style: italic; letter-spacing: 1px; }
+  #mtext { color: #dfe7ef; font-size: 13px; margin-top: 3px; }
+  #mtimer { color: #fff; font-size: 24px; font-weight: 800; margin-top: 4px; text-shadow: 2px 2px 0 #000; }
+
+  #missionmsg {
+    position: absolute; left: 0; right: 0; top: 30%; text-align: center;
+    opacity: 0; transform: scale(.92); transition: opacity .35s, transform .35s;
+    pointer-events: none;
+  }
+  #missionmsg.show { opacity: 1; transform: scale(1); }
+  #mm1 {
+    font-size: 54px; font-weight: 900; font-style: italic; letter-spacing: 4px;
+    text-shadow: 3px 3px 0 #000, 0 0 24px rgba(0,0,0,.8); text-transform: uppercase;
+  }
+  #mm2 { font-size: 22px; font-weight: 700; color: #e8eef5; text-shadow: 2px 2px 0 #000; margin-top: 4px; }
+
+  #vignette {
+    position: fixed; inset: 0; pointer-events: none; z-index: 4;
+    background: radial-gradient(ellipse at center, transparent 52%, rgba(0,0,0,.38) 100%);
+  }
+  #damage {
+    position: fixed; inset: 0; pointer-events: none; z-index: 5; opacity: 0;
+    background: radial-gradient(ellipse at center, transparent 42%, rgba(190,15,15,.55) 100%);
+    transition: opacity .1s;
+  }
+
   #start {
     position: fixed; inset: 0; background: radial-gradient(ellipse at 50% 30%, #1d2a3a 0%, #090d13 70%);
     display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -141,7 +172,18 @@
     <div id="crosshair">+</div>
     <div id="banner">WASTED</div>
     <div id="toast"></div>
+    <div id="mission">
+      <div id="mtitle"></div>
+      <div id="mtext"></div>
+      <div id="mtimer"></div>
+    </div>
+    <div id="missionmsg">
+      <div id="mm1"></div>
+      <div id="mm2"></div>
+    </div>
   </div>
+  <div id="vignette"></div>
+  <div id="damage"></div>
 
   <div id="start">
     <h1>OPEN CITY</h1>
@@ -153,7 +195,10 @@
       <div><b>Space</b> Jump / Handbrake / Helicopter up</div>
       <div><b>E</b> Enter / Exit vehicle or helicopter</div>
       <div><b>Left Click</b> Shoot (on foot)</div>
+      <div><b>Right Click</b> Hold to web-swing between buildings — release to fly</div>
       <div><b>1 / 2 / 3</b> Pistol / Machine Gun / RPG</div>
+      <div><b>Missions</b> Walk into the yellow beam — deliveries, races, contracts</div>
+      <div><b>Ammo</b> MG &amp; RPG need ammo. Grab the yellow crates</div>
       <div><b>Tip</b> Find the helipads in the parks. 3+ stars brings the police chopper...</div>
     </div>
     <button id="playbtn">CLICK TO PLAY</button>

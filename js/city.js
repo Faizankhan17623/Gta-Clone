@@ -401,6 +401,18 @@ export function resolveCircle(pos, r, colliders, maxY = -Infinity) {
   return hit;
 }
 
+// Highest walkable surface under a point: rooftops of colliders whose footprint
+// contains the point and whose top is at or just below the point, else street level.
+export function groundHeight(pos, colliders, pad = 0.1) {
+  let g = 0;
+  for (const c of colliders) {
+    if (pos.x < c.x0 - pad || pos.x > c.x1 + pad || pos.z < c.z0 - pad || pos.z > c.z1 + pad) continue;
+    const top = (c.h ?? 0) - 0.3; // collider tops sit 0.3 above the visible roof
+    if (top > g && pos.y >= top - 0.5) g = top;
+  }
+  return g;
+}
+
 // True if a point is inside any collider that reaches above the point's height.
 export function pointBlocked(pos, colliders, pad = 0.3) {
   for (const c of colliders) {

@@ -76,7 +76,29 @@ export function createSkyDome(scene) {
   dome.frustumCulled = false;
   dome.renderOrder = -10;
   scene.add(dome);
-  return { dome, uniforms };
+
+  // star field, fades in with the night glow
+  const starCount = 650;
+  const starPos = new Float32Array(starCount * 3);
+  for (let i = 0; i < starCount; i++) {
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(0.08 + Math.random() * 0.85); // upper sky only
+    const r = 820;
+    starPos[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+    starPos[i * 3 + 1] = r * Math.cos(phi);
+    starPos[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+  }
+  const starGeo = new THREE.BufferGeometry();
+  starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+  const stars = new THREE.Points(starGeo, new THREE.PointsMaterial({
+    color: 0xcfe0ff, size: 1.7, sizeAttenuation: false,
+    transparent: true, opacity: 0, depthWrite: false, fog: false,
+  }));
+  stars.frustumCulled = false;
+  stars.renderOrder = -9;
+  scene.add(stars);
+
+  return { dome, uniforms, stars };
 }
 
 const _sunDir = new THREE.Vector3();
@@ -107,6 +129,8 @@ export function applyDayNight(hours, ctx) {
   sky.uniforms.sunDir.value.copy(_sunDir);
   sky.uniforms.sunHaze.value = 0.4 + (1 - s.glow) * 0.8;
   sky.dome.position.copy(camera.position);
+  sky.stars.material.opacity = s.glow * 0.9;
+  sky.stars.position.copy(camera.position);
 
   scene.fog.color.copy(s.hor);
   scene.fog.near = 150 - s.glow * 40;

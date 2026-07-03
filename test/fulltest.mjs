@@ -50,8 +50,75 @@ for (const key of ['KeyW', 'KeyS', 'KeyA', 'KeyD']) {
   await page.keyboard.press('Digit2');
   await page.waitForTimeout(120);
   const w = await ev(() => window.__debug.world.weaponName);
-  console.log(`weapon switch: ${w} ${w === 'MACHINE GUN' ? 'PASS' : 'FAIL'}`);
+  console.log(`weapon switch: ${w} ${w.startsWith('MACHINE GUN') ? 'PASS' : 'FAIL'}`);
   await page.keyboard.press('Digit1');
+}
+
+// --- 3.5 web swing: face a tall building, fire, reel up, release, land ---
+{
+  const ok = await ev(() => {
+    const d = window.__debug;
+    // stand south of a tall building and look straight at it (+z)
+    const c = d.world.city.colliders.find((c) => c.h >= 40);
+    if (!c) return false;
+    d.player.pos.set((c.x0 + c.x1) / 2, 0, c.z0 - 12);
+    d.player.vy = 0;
+    d.setCamYaw(0);
+    return true;
+  });
+  await page.waitForTimeout(400); // let the camera settle behind the player
+  await page.mouse.down({ button: 'right' }); // swinging lasts while the button is held
+  // the game may have fired already from the held button if pointer lock was granted
+  const attached = await ev(() => window.__debug.startSwing() || window.__debug.web.attached);
+  console.log(`web attach: ${ok && attached ? 'PASS' : 'FAIL'}`);
+
+  await page.keyboard.down('Space'); // reel in for height
+  await page.waitForTimeout(900);
+  await page.keyboard.up('Space');
+  const mid = await ev(() => ({
+    y: window.__debug.player.pos.y,
+    att: window.__debug.web.attached,
+    sp: window.__debug.player.vel.length(),
+  }));
+  console.log(`web swing: height ${mid.y.toFixed(1)}m speed ${mid.sp.toFixed(1)} m/s ${mid.att && mid.y > 2 ? 'PASS' : 'FAIL'}`);
+
+  await page.mouse.up({ button: 'right' }); // let go mid-swing
+  await page.waitForTimeout(2000);
+  const after = await ev(() => ({
+    att: window.__debug.web.attached,
+    ground: window.__debug.player.onGround,
+    y: window.__debug.player.pos.y,
+  }));
+  console.log(`web release + land: y ${after.y.toFixed(1)} ${!after.att && after.ground ? 'PASS' : 'FAIL'}`);
+  await ev(() => { const d = window.__debug; d.player.health = 100; d.player.pos.y = 0; d.player.vy = 0; });
+}
+
+// --- 3.6 traversal: chained swings down a street carry you across blocks ---
+{
+  const start = await ev(() => {
+    const d = window.__debug;
+    // stand on a north-south road with buildings flanking both sides
+    d.player.pos.set(d.world.city.roadXs[2], 0, -180);
+    d.player.vy = 0;
+    d.player.vel.set(0, 0, 0);
+    d.setCamYaw(0); // travel +z
+    return { x: d.player.pos.x, z: d.player.pos.z };
+  });
+  await page.waitForTimeout(400);
+  await page.keyboard.down('KeyW'); // pump the swing
+  for (let i = 0; i < 3; i++) {
+    await page.mouse.down({ button: 'right' });
+    await ev(() => window.__debug.startSwing()); // no-op if pointer lock already fired it
+    await page.waitForTimeout(1800); // longer arcs now — ride the full swing
+    await page.mouse.up({ button: 'right' }); // release at speed, glide, re-fire
+    await page.waitForTimeout(600);
+  }
+  await page.keyboard.up('KeyW');
+  const end = await ev(() => ({ x: window.__debug.player.pos.x, z: window.__debug.player.pos.z }));
+  const dist = Math.hypot(end.x - start.x, end.z - start.z);
+  console.log(`web traversal: covered ${dist.toFixed(0)}m in 3 chained swings ${dist > 50 ? 'PASS' : 'FAIL'}`);
+  await page.waitForTimeout(1500); // let the player land
+  await ev(() => { const d = window.__debug; d.player.health = 100; d.player.pos.y = 0; d.player.vy = 0; d.stopSwing(); });
 }
 
 // --- 4. driving: teleport next to a parked car, enter, drive, steer with D ---
@@ -67,6 +134,17 @@ for (const key of ['KeyW', 'KeyS', 'KeyA', 'KeyD']) {
   const inCar = await ev(() => !!window.__debug.player.inCar);
   console.log(`enter car: ${inCar ? 'PASS' : 'FAIL'}`);
 
+  // face down an empty road so the drive isn't blocked by whatever the
+  // random parking spot happened to point at
+  await ev(() => {
+    const d = window.__debug;
+    const car = d.player.inCar;
+    if (!car) return;
+    car.pos.set(d.world.city.roadXs[1], car.pos.y, -200);
+    car.heading = 0; // +z, straight down the road
+    car.vel.set(0, 0, 0);
+    d.setCamYaw(0);
+  });
   await page.keyboard.down('KeyW');
   await page.waitForTimeout(900);
   const h0 = await ev(() => window.__debug.player.inCar?.heading ?? 0);

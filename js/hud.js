@@ -21,8 +21,26 @@ export function initHUD() {
     ka: document.getElementById('k-a'),
     ks: document.getElementById('k-s'),
     kd: document.getElementById('k-d'),
+    mission: document.getElementById('mission'),
+    mtitle: document.getElementById('mtitle'),
+    mtext: document.getElementById('mtext'),
+    mtimer: document.getElementById('mtimer'),
+    missionmsg: document.getElementById('missionmsg'),
+    mm1: document.getElementById('mm1'),
+    mm2: document.getElementById('mm2'),
+    damage: document.getElementById('damage'),
   };
   mapCtx = els.minimap.getContext('2d');
+}
+
+let msgTimer = null;
+export function showMissionMsg(title, sub, color = '#7cf78c') {
+  els.mm1.textContent = title;
+  els.mm1.style.color = color;
+  els.mm2.textContent = sub || '';
+  els.missionmsg.classList.add('show');
+  clearTimeout(msgTimer);
+  msgTimer = setTimeout(() => els.missionmsg.classList.remove('show'), 3200);
 }
 
 export function setHint(html) {
@@ -90,6 +108,24 @@ export function updateHUD(world) {
   els.ks.classList.toggle('on', !!keys['KeyS']);
   els.kd.classList.toggle('on', !!keys['KeyD']);
 
+  // mission panel
+  const m = world.mission;
+  if (m && m.active) {
+    els.mission.style.display = 'block';
+    els.mtitle.textContent = m.title;
+    els.mtext.textContent = m.text;
+    const secs = Math.max(0, Math.ceil(m.timeLeft));
+    els.mtimer.textContent = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
+    els.mtimer.style.color = m.timeLeft < 12 ? '#ff5a4a' : '#fff';
+  } else {
+    els.mission.style.display = 'none';
+  }
+
+  // hurt flash + low health pulse
+  let dmg = world.damageFlash || 0;
+  if (hp > 0 && hp < 30) dmg = Math.max(dmg, 0.22 + Math.sin(world.time * 6) * 0.1);
+  els.damage.style.opacity = Math.min(1, dmg).toFixed(2);
+
   drawMinimap(world);
 }
 
@@ -124,8 +160,27 @@ function drawMinimap(world) {
   // pickups
   for (const pk of world.pickups) {
     const [mx, mz] = toMap(pk.pos.x, pk.pos.z);
-    g.fillStyle = pk.type === 'money' ? '#5fe07a' : '#e05f5f';
+    g.fillStyle = pk.type === 'money' ? '#5fe07a' : pk.type === 'ammo' ? '#ffc94a' : '#e05f5f';
     g.fillRect(mx - 1.5, mz - 1.5, 3, 3);
+  }
+
+  // mission blips: yellow = mission start, pink = live objective
+  const m = world.mission;
+  if (m) {
+    const pulse = 3 + Math.sin(performance.now() * 0.006) * 1.2;
+    if (m.active) {
+      const [mx, mz] = toMap(m.objectivePos.x, m.objectivePos.z);
+      g.fillStyle = '#ff4ad2';
+      g.beginPath();
+      g.arc(mx, mz, pulse + 1, 0, Math.PI * 2);
+      g.fill();
+    } else {
+      const [mx, mz] = toMap(m.markerPos.x, m.markerPos.z);
+      g.fillStyle = '#ffd24a';
+      g.beginPath();
+      g.arc(mx, mz, pulse, 0, Math.PI * 2);
+      g.fill();
+    }
   }
 
   // cops

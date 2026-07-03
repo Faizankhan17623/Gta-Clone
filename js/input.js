@@ -6,7 +6,7 @@
 // so WASD works on QWERTY, AZERTY, Dvorak and remapped keyboards alike.
 export const keys = Object.create(null);
 export const pressed = Object.create(null);
-export const mouse = { dx: 0, dy: 0, down: false };
+export const mouse = { dx: 0, dy: 0, down: false, rdown: false };
 
 const GAME_KEYS = new Set(['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyW', 'KeyA', 'KeyS', 'KeyD']);
 
@@ -43,11 +43,20 @@ export function initInput() {
   window.addEventListener('mousemove', (e) => {
     if (document.pointerLockElement) { mouse.dx += e.movementX; mouse.dy += e.movementY; }
   });
-  window.addEventListener('mousedown', (e) => { if (e.button === 0) mouse.down = true; });
-  window.addEventListener('mouseup', (e) => { if (e.button === 0) mouse.down = false; });
+  window.addEventListener('mousedown', (e) => {
+    if (e.button === 0) mouse.down = true;
+    if (e.button === 2) mouse.rdown = true;
+  });
+  window.addEventListener('mouseup', (e) => {
+    if (e.button === 0) mouse.down = false;
+    if (e.button === 2) mouse.rdown = false;
+  });
+  // right mouse is the web-shooter — keep the browser menu out of the way
+  window.addEventListener('contextmenu', (e) => e.preventDefault());
   window.addEventListener('blur', () => {
     for (const k in keys) keys[k] = false;
     mouse.down = false;
+    mouse.rdown = false;
   });
 }
 

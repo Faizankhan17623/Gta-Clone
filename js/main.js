@@ -1,16 +1,23 @@
 import * as THREE from 'three';
 import { initInput, endFrame, keys, pressed, mouse } from './input.js';
-import { buildCity, resolveCircle, pointBlocked, blockStart, BLOCK, HALF, N } from './city.js';
+import { buildCity, resolveCircle, pointBlocked, groundHeight, blockStart, BLOCK, HALF, N } from './city.js';
 import { createCharacter, animateWalk, animateIdle } from './characters.js';
 import { physStep, separateCars, darkenCar } from './car.js';
 import { spawnPeds, updatePeds, killPed, spawnTraffic, updateTraffic, disableTraffic, spawnParked } from './npc.js';
 import { updatePolice, addCrime, copDie, clearCops } from './police.js';
 import { makeHeli, physStepHeli, spinRotors, explodeHeli, updateFallingHeli, updatePoliceHelis } from './heli.js';
-import { initEffects, addTracer, addExplosion, addFlash, addSmoke, updateEffects } from './effects.js';
+import { initEffects, addTracer, addExplosion, addFlash, addSmoke, addSparks, updateEffects } from './effects.js';
 import { initHUD, updateHUD, setHint, showBanner, hideBanner, showToast } from './hud.js';
-import { initSound, sfxShot, sfxCrash, sfxPickup, engine, setEngine, rotor, siren, setSiren } from './sound.js';
+import { initSound, sfxShot, sfxCrash, sfxPickup, sfxWeb, engine, setEngine, rotor, siren, setSiren, rainAmb } from './sound.js';
 import { createSkyDome, applyDayNight, DAY_START } from './daynight.js';
+import { initMissions, updateMissions, failMission, mission } from './missions.js';
+import { initWeather, updateWeather } from './weather.js';
+import { initWeb, fireWeb, releaseWeb, swingStep, updateWebVisual, poseSwing, poseFall } from './web.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
 // ---------- renderer / scene ----------
 
@@ -33,6 +40,15 @@ scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 
 const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1900);
 
+// post-processing: subtle bloom makes lit windows, lamps and explosions glow
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(
+  new THREE.Vector2(window.innerWidth, window.innerHeight), 0.28, 0.55, 0.82
+);
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
+
 const hemi = new THREE.HemisphereLight(0xd5e4f2, 0x4a463c, 0.9);
 scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xfff0d0, 1.3);
@@ -50,15 +66,23 @@ window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+  composer.setSize(window.innerWidth, window.innerHeight);
 });
 
 // ---------- world ----------
 
 const city = buildCity(scene);
 const sky = createSkyDome(scene);
+const weather = initWeather(scene);
 initEffects(scene);
 initHUD();
 initInput();
+const web = initWeb(scene);
+
+// persistent progress
+const SAVE_KEY = 'opencity-save-v1';
+let save = {};
+try { save = JSON.parse(localStorage.getItem(SAVE_KEY) || '{}') || {}; } catch { save = {}; }
 
 const playerChar = createCharacter({ shirt: '#cfcfc6', pants: '#27406b', skin: '#c98e63' });
 scene.add(playerChar.group);
@@ -75,6 +99,7 @@ const player = {
   animT: 0,
   vy: 0,
   onGround: true,
+  glide: false, // floaty hang-time after releasing a swing
 };
 player.pos.copy(city.spawn);
 
@@ -93,7 +118,8 @@ const world = {
   wantedTimer: 0,
   bustedT: 0,
   busted: false,
-  money: 0,
+  money: save.money || 0,
+  damageFlash: 0,
   time: 0,
   lastShot: null,
   weaponName: 'PISTOL',
@@ -108,21 +134,40 @@ for (const pad of city.helipads) {
 }
 let heliRespawnT = 0;
 
+// missions + saved progress
+initMissions(scene, world, save.missions || 0);
+
+function saveGame() {
+  try {
+    localStorage.setItem(SAVE_KEY, JSON.stringify({
+      money: world.money, missions: mission.done, mg: ammo.mg, rpg: ammo.rpg,
+    }));
+  } catch {}
+}
+world.onSave = saveGame;
+
+// player-car headlights at night (persistent light => no shader recompiles)
+const headlight = new THREE.SpotLight(0xffeecb, 0, 55, 0.62, 0.45, 1.4);
+headlight.castShadow = false;
+scene.add(headlight);
+scene.add(headlight.target);
+
 // ---------- weapons ----------
 
 const WEAPONS = [
   { name: 'PISTOL', rate: 0.26, dmg: 34, spread: 0.012, sfx: 'pistol' },
-  { name: 'MACHINE GUN', rate: 0.085, dmg: 12, spread: 0.04, sfx: 'mg' },
-  { name: 'RPG', rate: 1.4, rocket: true, sfx: 'rpg' },
+  { name: 'MACHINE GUN', rate: 0.085, dmg: 12, spread: 0.04, sfx: 'mg', ammo: 'mg' },
+  { name: 'RPG', rate: 1.4, rocket: true, sfx: 'rpg', ammo: 'rpg' },
 ];
+const ammo = { mg: save.mg ?? 60, rpg: save.rpg ?? 3 };
 let weaponIdx = 0;
 let shootT = 0;
 const rockets = [];
 
 function switchWeapon(i) {
   weaponIdx = i;
-  world.weaponName = WEAPONS[i].name;
-  showToast(WEAPONS[i].name);
+  const w = WEAPONS[i];
+  showToast(w.ammo ? `${w.name} — ${ammo[w.ammo]} AMMO` : w.name);
 }
 
 // ---------- pickups ----------
@@ -141,7 +186,7 @@ function randomSidewalkPoint() {
 }
 
 function makePickup(type) {
-  const color = type === 'money' ? 0x4cdc6a : 0xe05555;
+  const color = type === 'money' ? 0x4cdc6a : type === 'ammo' ? 0xffc94a : 0xe05555;
   const mesh = new THREE.Mesh(
     new THREE.BoxGeometry(0.7, 0.7, 0.7),
     new THREE.MeshLambertMaterial({ color, emissive: color, emissiveIntensity: 0.6 })
@@ -153,10 +198,12 @@ function makePickup(type) {
 }
 for (let i = 0; i < 24; i++) makePickup('money');
 for (let i = 0; i < 6; i++) makePickup('health');
+for (let i = 0; i < 8; i++) makePickup('ammo');
 
 function updatePickups(dt) {
   const focus = player.inHeli ? player.inHeli.pos : player.inCar ? player.inCar.pos : player.pos;
   if (player.inHeli && player.inHeli.pos.y > 3) return; // can't grab them from the sky
+  if (!player.inHeli && !player.inCar && player.pos.y > 3) return; // nor while web-swinging overhead
   for (const pk of world.pickups) {
     pk.mesh.rotation.y += dt * 2.5;
     pk.mesh.position.y = 1.0 + Math.sin(world.time * 3 + pk.pos.x) * 0.15;
@@ -166,11 +213,16 @@ function updatePickups(dt) {
       if (pk.type === 'money') {
         world.money += 150;
         showToast('+$150');
+      } else if (pk.type === 'ammo') {
+        ammo.mg += 45;
+        ammo.rpg += 2;
+        showToast('+45 MG · +2 RPG');
       } else {
         player.health = Math.min(100, player.health + 50);
         showToast('+50 HEALTH');
       }
       sfxPickup();
+      saveGame();
       const p = randomSidewalkPoint();
       pk.mesh.position.set(p.x, 1.0, p.z);
     }
@@ -228,7 +280,8 @@ function updateCamera(dt) {
     _camTarget.set(car.pos.x, 1.6, car.pos.z);
     camera.lookAt(_camTarget);
   } else {
-    const dist = 5.6;
+    if (web.attached) focusSpeed = player.vel.length();
+    const dist = web.attached ? 7.6 : 5.6;
     _camDesired.set(
       player.pos.x - Math.sin(camYaw) * dist * Math.cos(camPitch),
       player.pos.y + 2.1 + Math.sin(camPitch) * dist,
@@ -282,14 +335,20 @@ function updateOnFoot(dt) {
 
   if (moving) {
     _move.normalize();
-    player.vel.x = _move.x * speed;
-    player.vel.z = _move.z * speed;
+    if (player.onGround) {
+      player.vel.x = _move.x * speed;
+      player.vel.z = _move.z * speed;
+    } else {
+      // airborne: nudge instead of override, so web-swing momentum survives
+      player.vel.x += _move.x * 16 * dt;
+      player.vel.z += _move.z * 16 * dt;
+    }
     const targetH = Math.atan2(_move.x, _move.z);
     let diff = targetH - player.heading;
     while (diff > Math.PI) diff -= Math.PI * 2;
     while (diff < -Math.PI) diff += Math.PI * 2;
     player.heading += diff * Math.min(1, 14 * dt);
-  } else {
+  } else if (player.onGround) {
     player.vel.x *= Math.max(0, 1 - 12 * dt);
     player.vel.z *= Math.max(0, 1 - 12 * dt);
   }
@@ -298,34 +357,49 @@ function updateOnFoot(dt) {
     player.vy = 7.5;
     player.onGround = false;
   }
-  player.vy -= 22 * dt;
+  // after a swing release the web's drag floats you — seconds of hang-time
+  player.vy -= (player.glide && !player.onGround ? 11 : 22) * dt;
+  if (player.glide && player.vy < -16) player.vy = -16; // drift down, don't plummet
   player.pos.y += player.vy * dt;
-  if (player.pos.y <= 0) {
-    player.pos.y = 0;
+  const groundY = groundHeight(player.pos, city.colliders);
+  if (player.pos.y <= groundY) {
+    if (player.vy < -24) { // hard landing hurts
+      player.health -= (-player.vy - 24) * 2.2;
+      world.shake = 0.25;
+    }
+    player.pos.y = groundY;
     player.vy = 0;
     player.onGround = true;
+    player.glide = false;
+  } else if (player.vy < 0 && player.pos.y > groundY + 0.05) {
+    player.onGround = false; // walked off a roof edge
   }
 
   player.pos.x += player.vel.x * dt;
   player.pos.z += player.vel.z * dt;
-  resolveCircle(player.pos, 0.5, city.colliders);
+  resolveCircle(player.pos, 0.5, city.colliders, player.pos.y + 0.5);
 
-  for (const v of world.traffic) pushOutOfCar(v);
-  for (const v of world.parked) pushOutOfCar(v);
-  for (const v of world.cops) if (!v.dead) pushOutOfCar(v);
+  if (player.pos.y < 2) {
+    for (const v of world.traffic) pushOutOfCar(v);
+    for (const v of world.parked) pushOutOfCar(v);
+    for (const v of world.cops) if (!v.dead) pushOutOfCar(v);
+  }
 
   const B = HALF - 1.5;
   player.pos.x = Math.max(-B, Math.min(B, player.pos.x));
   player.pos.z = Math.max(-B, Math.min(B, player.pos.z));
 
   const sp = Math.hypot(player.vel.x, player.vel.z);
-  if (sp > 0.5) {
+  if (!player.onGround) {
+    poseFall(player.ch);
+  } else if (sp > 0.5) {
     player.animT += sp * dt * 2.0;
     animateWalk(player.ch, player.animT, sp > 7 ? 0.95 : 0.6);
   } else {
     animateIdle(player.ch);
   }
   player.mesh.rotation.y = player.heading;
+  player.mesh.rotation.x *= Math.max(0, 1 - 10 * dt); // settle out of the swing lean
 
   // weapon switching
   if (pressed['Digit1']) switchWeapon(0);
@@ -348,6 +422,13 @@ function updateOnFoot(dt) {
   if (mouse.down && shootT <= 0 && document.pointerLockElement) {
     shootT = WEAPONS[weaponIdx].rate;
     shoot();
+  }
+
+  // web swing: hold right mouse to fire a strand at a building
+  web.cooldown = Math.max(0, web.cooldown - dt);
+  if (mouse.rdown && web.cooldown <= 0 && document.pointerLockElement) {
+    web.cooldown = 0.25;
+    tryStartSwing();
   }
 }
 
@@ -444,6 +525,120 @@ function exitHeli() {
   rotor.stop();
 }
 
+// ---------- web swinging ----------
+
+const _hand = new THREE.Vector3();
+
+function tryStartSwing() {
+  if (player.inCar || player.inHeli || web.attached) return false;
+  if (!fireWeb(web, player, camera, city.colliders)) return false;
+  sfxWeb();
+  addFlash(web.anchor.clone(), 0xeeeeee, 0.45);
+  setHint(null);
+  player.onGround = false;
+  player.vel.y = player.vy;
+  // launch assist so a standing thwip still turns into a real swing
+  const sp = Math.hypot(player.vel.x, player.vel.z);
+  if (sp < 12) {
+    _fwd.set(Math.sin(camYaw), 0, Math.cos(camYaw));
+    player.vel.x += _fwd.x * (12 - sp);
+    player.vel.z += _fwd.z * (12 - sp);
+  }
+  if (!web.used) {
+    web.used = true;
+    showToast('WEB SWING — hold to swing · SPACE reel in · release to fly');
+  }
+  return true;
+}
+
+function stopSwing() {
+  releaseWeb(web);
+  const sp = Math.hypot(player.vel.x, player.vel.z);
+  // release slingshot: letting go at speed flings you upward like Spidey
+  player.vy = player.vel.y + Math.min(5, sp * 0.2);
+  player.vel.y = 0;
+  player.glide = sp > 8; // carry swing speed = hang in the air
+}
+
+function updateSwinging(dt) {
+  _fwd.set(Math.sin(camYaw), 0, Math.cos(camYaw));
+  _right.copy(_fwd).cross(UP);
+  _move.set(0, 0, 0);
+  if (keys['KeyW']) _move.add(_fwd);
+  if (keys['KeyS']) _move.sub(_fwd);
+  if (keys['KeyD']) _move.add(_right);
+  if (keys['KeyA']) _move.sub(_right);
+  if (_move.lengthSq() > 0) _move.normalize();
+
+  swingStep(web, player.pos, player.vel, dt, {
+    move: _move,
+    pump: !!keys['KeyW'],
+    reelIn: !!keys['Space'],
+    reelOut: !!(keys['ShiftLeft'] || keys['ShiftRight']),
+  });
+
+  const B = HALF - 1.5;
+  player.pos.x = Math.max(-B, Math.min(B, player.pos.x));
+  player.pos.z = Math.max(-B, Math.min(B, player.pos.z));
+
+  // slide along walls, losing only the speed that went into them
+  const hit = resolveCircle(player.pos, 0.5, city.colliders, player.pos.y + 0.5);
+  if (hit) {
+    const vn = player.vel.x * hit.nx + player.vel.z * hit.nz;
+    if (vn < 0) {
+      player.vel.x -= hit.nx * vn;
+      player.vel.z -= hit.nz * vn;
+    }
+  }
+
+  // touch down on the street or a rooftop — a swing landing is a superhero
+  // roll, so it's far more forgiving than a plain fall
+  const groundY = groundHeight(player.pos, city.colliders);
+  if (player.pos.y <= groundY && player.vel.y <= 0) {
+    if (player.vel.y < -32) {
+      player.health -= (-player.vel.y - 32) * 1.5;
+      world.shake = 0.25;
+    }
+    player.pos.y = groundY;
+    player.vy = 0;
+    player.vel.y = 0;
+    player.onGround = true;
+    player.glide = false;
+    releaseWeb(web);
+    return;
+  }
+
+  // button released: keep the momentum and fly
+  if (!mouse.rdown) {
+    stopSwing();
+    return;
+  }
+
+  // face the direction of travel and lean into the swing
+  const sp = Math.hypot(player.vel.x, player.vel.z);
+  if (sp > 1) {
+    const targetH = Math.atan2(player.vel.x, player.vel.z);
+    let diff = targetH - player.heading;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    player.heading += diff * Math.min(1, 8 * dt);
+  }
+  player.mesh.rotation.y = player.heading;
+  player.mesh.rotation.x = Math.min(0.7, sp * 0.03);
+  poseSwing(player.ch, world.time);
+
+  _hand.copy(player.pos);
+  _hand.y += 2.1;
+  updateWebVisual(web, _hand);
+
+  // one hand stays free for the pistol
+  shootT -= dt;
+  if (mouse.down && shootT <= 0 && document.pointerLockElement) {
+    shootT = WEAPONS[weaponIdx].rate;
+    shoot();
+  }
+}
+
 // ---------- driving ----------
 
 function updateDriving(dt) {
@@ -456,10 +651,23 @@ function updateDriving(dt) {
   const impact = physStep(car, ctl, dt, city.colliders);
   if (impact > 8) {
     addFlash(car.pos.clone().setY(1), 0xffcc66, 1.2);
+    addSparks(car.pos.clone().setY(0.7), 10);
     sfxCrash(impact);
     world.shake = Math.min(0.5, impact * 0.03);
   }
   setEngine(car.vel.length());
+
+  // tyre smoke while drifting
+  if (ctl.handbrake && car.vel.length() > 9) {
+    car.skidT = (car.skidT || 0) - dt;
+    if (car.skidT <= 0) {
+      car.skidT = 0.06;
+      const back = car.pos.clone().add(new THREE.Vector3(-Math.sin(car.heading) * 1.6, 0.3, -Math.cos(car.heading) * 1.6));
+      back.x += (Math.random() - 0.5) * 1.4;
+      back.z += (Math.random() - 0.5) * 1.4;
+      addSmoke(back, 0.55);
+    }
+  }
 
   for (const t of world.traffic) {
     if (t.dead) continue;
@@ -512,7 +720,8 @@ function updateFlying(dt) {
   const ctl = {
     fwd: (keys['KeyW'] ? 1 : 0) + (keys['KeyS'] ? -1 : 0),
     yaw: (keys['KeyA'] ? 1 : 0) + (keys['KeyD'] ? -1 : 0),
-    up: (keys['Space'] ? 1 : 0) + (keys['ShiftLeft'] || keys['ShiftRight'] ? -1 : 0),
+    // Space wins over Shift, so a held-over sprint key can't pin you to the ground
+    up: keys['Space'] ? 1 : keys['ShiftLeft'] || keys['ShiftRight'] ? -1 : 0,
   };
   physStepHeli(h, ctl, dt, city.colliders);
 
@@ -599,6 +808,14 @@ function raySphere(origin, dir, center, radius) {
 
 function shoot() {
   const w = WEAPONS[weaponIdx];
+  if (w.ammo) {
+    if (ammo[w.ammo] <= 0) {
+      showToast('OUT OF AMMO — grab a yellow crate');
+      switchWeapon(0);
+      return;
+    }
+    ammo[w.ammo]--;
+  }
   camera.getWorldDirection(_rayDir);
   sfxShot(w.sfx);
   world.lastShot = { pos: player.pos.clone(), t: world.time };
@@ -643,7 +860,7 @@ function shoot() {
 
   _hitPoint.copy(_rayOrigin).addScaledVector(_rayDir, bestT);
   const muzzle = player.pos.clone();
-  muzzle.y = 1.4;
+  muzzle.y += 1.4;
   addTracer(muzzle, _hitPoint.clone());
   addFlash(_hitPoint.clone(), 0xffd080, 0.35);
 
@@ -776,6 +993,7 @@ function triggerOver(text, color) {
   gameState = 'over';
   overTimer = 3.2;
   showBanner(text, color);
+  failMission(world, text === 'WASTED' ? 'You got wasted' : 'You got busted');
   engine.stop();
   rotor.stop();
 }
@@ -791,6 +1009,9 @@ function respawn() {
     player.inHeli.vel.set(0, 0, 0);
     player.inHeli = null;
   }
+  releaseWeb(web);
+  player.glide = false;
+  player.mesh.rotation.x = 0;
   player.mesh.visible = true;
   player.pos.copy(city.spawn).add(new THREE.Vector3(3, 0, 3));
   player.pos.y = 0;
@@ -815,6 +1036,7 @@ document.getElementById('playbtn').addEventListener('click', () => {
   startEl.style.display = 'none';
   initSound();
   siren.start();
+  rainAmb.start();
   if (gameState === 'start') gameState = 'play';
   renderer.domElement.requestPointerLock?.();
 });
@@ -842,6 +1064,9 @@ function updateSiren() {
 
 const heliHooks = { onShot: () => sfxShot('mg') };
 
+let prevHealth = 100;
+let saveT = 0;
+
 function update(dt) {
   world.time += dt;
 
@@ -849,6 +1074,54 @@ function update(dt) {
   world.clock = (world.clock + dt / 60) % 24;
   const dn = applyDayNight(world.clock, { scene, sun, hemi, sky, camera, city });
   world.sunDir.copy(dn.sunDir);
+
+  // weather: rain dims the sky and thickens the fog; lightning washes the scene
+  const wx = updateWeather(weather, dt, camera);
+  if (wx.intensity > 0.01) {
+    const r = wx.intensity;
+    scene.fog.near *= 1 - r * 0.45;
+    scene.fog.far *= 1 - r * 0.5;
+    sun.intensity *= 1 - r * 0.6;
+    hemi.intensity *= 1 - r * 0.25;
+    sky.uniforms.topColor.value.multiplyScalar(1 - r * 0.4);
+    sky.uniforms.horizonColor.value.multiplyScalar(1 - r * 0.35);
+    sky.uniforms.sunHaze.value *= 1 - r * 0.7;
+    sky.stars.material.opacity *= 1 - r;
+  }
+  if (wx.flash > 0.01) {
+    hemi.intensity += wx.flash * 1.8;
+    sun.intensity += wx.flash * 0.8;
+  }
+
+  // bloom breathes with the night: stronger glow when the city lights are on
+  bloom.strength = 0.22 + dn.glow * 0.33;
+
+  // headlights when driving after dark
+  const pcar = player.inCar;
+  if (pcar && !pcar.dead && (dn.glow > 0.35 || wx.intensity > 0.4)) {
+    const fx = Math.sin(pcar.heading);
+    const fz = Math.cos(pcar.heading);
+    headlight.position.set(pcar.pos.x + fx * 2.2, 1.0, pcar.pos.z + fz * 2.2);
+    headlight.target.position.set(pcar.pos.x + fx * 32, 0.2, pcar.pos.z + fz * 32);
+    headlight.intensity = 300;
+  } else {
+    headlight.intensity = 0;
+  }
+
+  // hurt feedback
+  if (player.health < prevHealth - 0.5) {
+    world.damageFlash = Math.min(1, world.damageFlash + (prevHealth - player.health) * 0.03 + 0.25);
+  }
+  prevHealth = player.health;
+  world.damageFlash = Math.max(0, world.damageFlash - dt * 1.6);
+
+  // weapon HUD label with live ammo count
+  const wpn = WEAPONS[weaponIdx];
+  world.weaponName = wpn.ammo ? `${wpn.name} · ${ammo[wpn.ammo]}` : wpn.name;
+
+  // autosave every 10s
+  saveT += dt;
+  if (saveT > 10) { saveT = 0; saveGame(); }
 
   if (gameState === 'over') {
     overTimer -= dt;
@@ -861,6 +1134,7 @@ function update(dt) {
 
   if (player.inHeli) updateFlying(dt);
   else if (player.inCar) updateDriving(dt);
+  else if (web.attached) updateSwinging(dt);
   else updateOnFoot(dt);
 
   updatePeds(world, dt);
@@ -870,6 +1144,7 @@ function update(dt) {
   updateHelis(dt);
   updateRockets(dt);
   updatePickups(dt);
+  updateMissions(world, dt);
   updateEffects(dt);
   updateCamera(dt);
   updateSiren();
@@ -883,7 +1158,7 @@ function animate() {
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(), 0.05);
   if (gameState !== 'start') update(dt);
-  renderer.render(scene, camera);
+  composer.render();
   endFrame();
 }
 
@@ -893,6 +1168,12 @@ animate();
 window.__debug = {
   world,
   player,
+  mission,
+  weather,
+  ammo,
+  web,
+  startSwing: tryStartSwing,
+  stopSwing,
   getCamYaw: () => camYaw,
   setCamYaw: (v) => { camYaw = v; },
   setClock: (h) => { world.clock = h; },
