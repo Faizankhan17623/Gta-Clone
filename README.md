@@ -136,13 +136,16 @@ js/input.js       Keyboard / mouse / pointer-lock / gamepad input
 ## Tests
 
 ```
-npm start          # serve on :8080 (or PORT=xxxx for the test)
-node test/fulltest.mjs
+npm start                  # serve on :8080 (or PORT=xxxx for the tests)
+node test/fulltest.mjs     # gameplay smoke suite — 22 checks
+node test/featurecheck.mjs # feature audit: every feature verified live — 19 checks
 ```
 
-A headless-browser suite (Playwright + Edge/Chrome) drives the real game:
-movement, weapons, web attach/swing/traversal, driving, helicopter, police,
-web attack, store robbery, gang territory, motorbike, tank spawn — 22 checks.
+Headless-browser suites (Playwright + Edge/Chrome) drive the real game:
+movement, weapons, web swing/zip/wall-run/traversal, glide, style meter,
+driving, motorbike, helicopter, police, tank spawn + stealing, web attack,
+store robbery, the upgrade den, gang territory, all six mission types,
+pigeons, day/night, death + respawn, and the save file.
 
 ## Roadmap — ideas for the next era
 

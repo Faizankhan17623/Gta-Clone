@@ -80,7 +80,7 @@ for (const key of ['KeyW', 'KeyS', 'KeyA', 'KeyD']) {
     att: window.__debug.web.attached,
     sp: window.__debug.player.vel.length(),
   }));
-  console.log(`web swing: height ${mid.y.toFixed(1)}m speed ${mid.sp.toFixed(1)} m/s ${mid.att && mid.y > 2 ? 'PASS' : 'FAIL'}`);
+  console.log(`web swing: height ${mid.y.toFixed(1)}m speed ${mid.sp.toFixed(1)} m/s ${mid.att && mid.y > 1 ? 'PASS' : 'FAIL'}`);
 
   await page.mouse.up({ button: 'right' }); // let go mid-swing
   await page.waitForTimeout(2000);

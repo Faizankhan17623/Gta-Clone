@@ -1402,6 +1402,7 @@ window.__debug = {
   webAttack,
   gang,
   shops: shopsState,
+  flocks,
   getCamYaw: () => camYaw,
   setCamYaw: (v) => { camYaw = v; },
   setCamPitch: (v) => { camPitch = v; },
