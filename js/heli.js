@@ -53,6 +53,7 @@ export function createHeliMesh(police) {
   mainRotor.position.set(0, 2.95, 0.4);
   const bladeGeo = new THREE.BoxGeometry(0.32, 0.06, 11);
   const bladeMat = mat('#15151a');
+  bladeMat.transparent = true; // fades into a blur at full spin
   const b1 = new THREE.Mesh(bladeGeo, bladeMat);
   const b2 = new THREE.Mesh(bladeGeo, bladeMat);
   b2.rotation.y = Math.PI / 2;
@@ -65,6 +66,16 @@ export function createHeliMesh(police) {
   const tb = new THREE.Mesh(new THREE.BoxGeometry(0.06, 1.9, 0.2), bladeMat);
   tailRotor.add(tb);
   group.add(tailRotor);
+
+  // faint spinning disc that reads as motion blur once the blades are fast
+  const discGeo = new THREE.CircleGeometry(5.5, 24);
+  discGeo.rotateX(-Math.PI / 2);
+  const blurDisc = new THREE.Mesh(
+    discGeo,
+    new THREE.MeshBasicMaterial({ color: 0x2a2a30, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide })
+  );
+  blurDisc.position.set(0, 2.98, 0.4);
+  group.add(blurDisc);
 
   if (police) {
     const beacon = new THREE.Mesh(
@@ -82,11 +93,11 @@ export function createHeliMesh(police) {
     group.add(cone);
   }
 
-  return { group, mainRotor, tailRotor };
+  return { group, mainRotor, tailRotor, bladeMat, blurDisc };
 }
 
 export function makeHeli(scene, x, y, z, heading, police = false) {
-  const { group, mainRotor, tailRotor } = createHeliMesh(police);
+  const { group, mainRotor, tailRotor, bladeMat, blurDisc } = createHeliMesh(police);
   group.position.set(x, y, z);
   group.rotation.y = heading;
   scene.add(group);
@@ -94,6 +105,8 @@ export function makeHeli(scene, x, y, z, heading, police = false) {
     mesh: group,
     mainRotor,
     tailRotor,
+    bladeMat,
+    blurDisc,
     pos: group.position,
     heading,
     vel: new THREE.Vector3(),
@@ -111,8 +124,12 @@ export function makeHeli(scene, x, y, z, heading, police = false) {
 }
 
 export function spinRotors(h, dt) {
-  h.mainRotor.rotation.y += 32 * h.rotorSpeed * dt;
-  h.tailRotor.rotation.x += 45 * h.rotorSpeed * dt;
+  // fast, realistic spin: ~12 revs/sec at full throttle, blades blur away
+  h.mainRotor.rotation.y += 78 * h.rotorSpeed * dt;
+  h.tailRotor.rotation.x += 115 * h.rotorSpeed * dt;
+  const s = Math.min(1, h.rotorSpeed);
+  if (h.bladeMat) h.bladeMat.opacity = 1 - s * 0.62;
+  if (h.blurDisc) h.blurDisc.material.opacity = s * 0.3;
 }
 
 // Player flight physics. ctl = { fwd: -1..1, yaw: -1..1, up: -1..1 }

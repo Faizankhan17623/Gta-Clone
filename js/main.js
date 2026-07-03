@@ -7,13 +7,14 @@ import { spawnPeds, updatePeds, killPed, spawnTraffic, updateTraffic, disableTra
 import { updatePolice, addCrime, copDie, clearCops } from './police.js';
 import { makeHeli, physStepHeli, spinRotors, explodeHeli, updateFallingHeli, updatePoliceHelis } from './heli.js';
 import { initEffects, addTracer, addExplosion, addFlash, addSmoke, addSparks, addSkid, updateEffects } from './effects.js';
-import { initHUD, updateHUD, setHint, showBanner, hideBanner, showToast } from './hud.js';
-import { initSound, sfxShot, sfxCrash, sfxPickup, sfxWeb, engine, setEngine, rotor, siren, setSiren, rainAmb, setRadioStation, RADIO_STATIONS } from './sound.js';
+import { initHUD, updateHUD, setHint, showBanner, hideBanner, showToast, showNews } from './hud.js';
+import { initSound, sfxShot, sfxCrash, sfxPickup, sfxWeb, engine, setEngine, rotor, siren, setSiren, rainAmb, setRadioStation, RADIO_STATIONS, cityHum, setHum } from './sound.js';
 import { createSkyDome, applyDayNight, DAY_START } from './daynight.js';
 import { initMissions, updateMissions, failMission, mission } from './missions.js';
 import { initWeather, updateWeather } from './weather.js';
 import { initWeb, fireWeb, releaseWeb, swingStep, updateWebVisual, poseSwing, poseFall } from './web.js';
-import { initShops, updateShops } from './shops.js';
+import { initShops, updateShops, ensureGarageVehicle, garageCheck } from './shops.js';
+import { initStunts, updateStunts, placeTrampoline, tryBounce, checkRamp, bounceFx } from './stunts.js';
 import { initGang, updateGang, killGangMember } from './gangs.js';
 import { updateArmy, killTank } from './army.js';
 import { initAmbient, updateAmbient } from './ambient.js';
@@ -83,6 +84,14 @@ initHUD();
 initInput();
 const web = initWeb(scene);
 
+// web parachute canopy
+const chuteMesh = new THREE.Mesh(
+  new THREE.SphereGeometry(1.7, 10, 5, 0, Math.PI * 2, 0, Math.PI / 2),
+  new THREE.MeshBasicMaterial({ color: 0xf2f2ec, transparent: true, opacity: 0.65, side: THREE.DoubleSide })
+);
+chuteMesh.visible = false;
+scene.add(chuteMesh);
+
 // persistent progress
 const SAVE_KEY = 'opencity-save-v1';
 let save = {};
@@ -135,6 +144,10 @@ const world = {
   tanks: [],
   style: 0, // swing style points, cashed out on landing
   radioSt: save.radio | 0,
+  targets: [], // unified shootable extras: SWAT, drones, hunters, rooftop marks
+  swat: [],
+  drones: [],
+  garageKind: save.garage || null,
 };
 
 // rideable helicopters on the park helipads
@@ -148,12 +161,15 @@ initMissions(scene, world, save.missions || 0);
 const shopsState = initShops(scene, world, save.upg);
 const gang = initGang(scene, world, save.gang);
 const flocks = initAmbient(scene);
+const stuntsState = initStunts(scene, world);
+ensureGarageVehicle(shopsState, world);
 
 function saveGame() {
   try {
     localStorage.setItem(SAVE_KEY, JSON.stringify({
       money: world.money, missions: mission.done, mg: ammo.mg, rpg: ammo.rpg,
       upg: world.upgrades, gang: { owned: gang.owned, kills: gang.kills }, radio: world.radioSt,
+      garage: world.garageKind,
     }));
   } catch {}
 }
@@ -370,26 +386,97 @@ function updateOnFoot(dt) {
     player.vy = 7.5;
     player.onGround = false;
   }
+
+  // point-launch: hold C to coil down, release to rocket upward
+  if (player.onGround && keys['KeyC']) {
+    player.charge = Math.min(1.1, (player.charge || 0) + dt);
+    player.mesh.scale.y = 1 - player.charge * 0.25;
+  } else if ((player.charge || 0) > 0.15 && player.onGround) {
+    player.vy = 9 + player.charge * 13;
+    player.onGround = false;
+    player.glide = true;
+    addStyle(player.charge * 18);
+    sfxWeb();
+    player.charge = 0;
+  } else {
+    player.charge = 0;
+    player.mesh.scale.y += (1 - player.mesh.scale.y) * Math.min(1, 12 * dt);
+  }
+
+  // web parachute: hold Space while falling to drift down gently
+  const chuting = !player.onGround && player.vy < -2 && keys['Space'];
+  chuteMesh.visible = chuting;
+
   // after a swing release the web's drag floats you — seconds of hang-time
   player.vy -= (player.glide && !player.onGround ? 11 : 22) * dt;
   if (player.glide && player.vy < -16) player.vy = -16; // drift down, don't plummet
+  if (chuting) {
+    if (player.vy < -4.5) player.vy = -4.5;
+    chuteMesh.position.set(player.pos.x, player.pos.y + 3.2, player.pos.z);
+    addStyle(3 * dt);
+  }
+  const prevY = player.pos.y;
   player.pos.y += player.vy * dt;
-  const groundY = groundHeight(player.pos, city.colliders);
+  // probe from the pre-fall height so a fast frame can't punch through a roof
+  const groundY = groundHeight(player.pos, city.colliders, 0.1, prevY);
   if (player.pos.y <= groundY) {
-    if (player.vy < -24) { // hard landing hurts
-      player.health -= (-player.vy - 24) * 2.2;
-      world.shake = 0.25;
-      world.style = 0; // face-planting is not stylish
+    const bounce = tryBounce(world, player.pos, player.vy);
+    if (bounce) { // sprung off a web trampoline
+      player.vy = bounce;
+      player.pos.y = Math.max(player.pos.y, 0.6);
+      player.glide = true;
+      bounceFx(player.pos);
+      sfxWeb();
+      addStyle(8);
+    } else {
+      if (player.vy < -24) { // hard landing hurts
+        player.health -= (-player.vy - 24) * 2.2;
+        world.shake = 0.25;
+        world.style = 0; // face-planting is not stylish
+      }
+      player.pos.y = groundY;
+      player.vy = 0;
+      player.onGround = true;
+      player.glide = false;
+      player.wallT = 1.0; // wall-run stamina recharges on the ground
+      cashOutStyle();
     }
-    player.pos.y = groundY;
-    player.vy = 0;
-    player.onGround = true;
-    player.glide = false;
-    player.wallT = 1.0; // wall-run stamina recharges on the ground
-    cashOutStyle();
   } else if (player.vy < 0 && player.pos.y > groundY + 0.05) {
     player.onGround = false; // walked off a roof edge
   }
+
+  // parapet grind: hold Shift along a rooftop edge to skate it
+  if (player.onGround && player.pos.y > 5 && (keys['ShiftLeft'] || keys['ShiftRight'])) {
+    const c = city.colliders.find((c) =>
+      Math.abs(c.h - 0.3 - player.pos.y) < 0.6 &&
+      player.pos.x > c.x0 - 0.5 && player.pos.x < c.x1 + 0.5 &&
+      player.pos.z > c.z0 - 0.5 && player.pos.z < c.z1 + 0.5);
+    if (c) {
+      const dx0 = player.pos.x - c.x0;
+      const dx1 = c.x1 - player.pos.x;
+      const dz0 = player.pos.z - c.z0;
+      const dz1 = c.z1 - player.pos.z;
+      const m = Math.min(dx0, dx1, dz0, dz1);
+      if (m < 1.4) {
+        const alongX = m === dz0 || m === dz1; // near a z-edge: grind along x
+        if (alongX) {
+          player.vel.x = (Math.sign(player.vel.x) || 1) * 14;
+          player.vel.z = 0;
+          player.pos.z = m === dz0 ? c.z0 + 0.4 : c.z1 - 0.4;
+        } else {
+          player.vel.z = (Math.sign(player.vel.z) || 1) * 14;
+          player.vel.x = 0;
+          player.pos.x = m === dx0 ? c.x0 + 0.4 : c.x1 - 0.4;
+        }
+        player.heading = Math.atan2(player.vel.x, player.vel.z);
+        addStyle(10 * dt);
+        if (Math.random() < 10 * dt) addSparks(player.pos.clone().setY(player.pos.y + 0.1), 4);
+      }
+    }
+  }
+
+  // T: sling a web trampoline onto the street ahead
+  if (pressed['KeyT'] && placeTrampoline(scene, world, camera, player.pos)) sfxWeb();
 
   player.pos.x += player.vel.x * dt;
   player.pos.z += player.vel.z * dt;
@@ -524,7 +611,10 @@ function enterCar(v) {
   camYaw = v.heading;
   engine.start();
   if (world.radioSt > 0) setRadioStation(world.radioSt);
-  if (v.tank) showToast('TANK! LEFT CLICK = CANNON');
+  if (v.tank) {
+    showToast('TANK! LEFT CLICK = CANNON');
+    showNews('a battle tank has been stolen from the army');
+  }
 }
 
 function exitCar() {
@@ -542,6 +632,7 @@ function exitCar() {
   camYaw = car.heading;
   engine.stop();
   setRadioStation(0);
+  garageCheck(shopsState, world, car); // parked on the garage pad?
 }
 
 function enterHeli(h) {
@@ -612,7 +703,22 @@ function webAttack() {
     }
   }
 
+  // webbable extras (drones love this)
+  let hitTgt = null;
+  for (const tg of world.targets) {
+    if (tg.dead || !tg.webbable) continue;
+    const t = raySphere(_rayOrigin, _rayDir, _sphere.set(tg.pos.x, tg.pos.y + (tg.aimY ?? 0), tg.pos.z), tg.r ?? 1);
+    if (t < bestT) { bestT = t; hitTgt = tg; hitPed = null; hitVeh = null; }
+  }
+
   sfxWeb();
+  if (hitTgt) {
+    hitTgt.web();
+    addTracer(player.pos.clone().setY(player.pos.y + 1.5), _sphere.set(hitTgt.pos.x, hitTgt.pos.y + (hitTgt.aimY ?? 0), hitTgt.pos.z).clone());
+    showToast('WEBBED OUT OF THE SKY!');
+    addStyle(20);
+    return;
+  }
   const tgt = hitPed || hitVeh;
   if (!tgt) return;
 
@@ -689,6 +795,7 @@ function updateSwinging(dt) {
   if (keys['KeyA']) _move.sub(_right);
   if (_move.lengthSq() > 0) _move.normalize();
 
+  const prevY = player.pos.y;
   swingStep(web, player.pos, player.vel, dt, {
     move: _move,
     pump: !!keys['KeyW'],
@@ -711,8 +818,9 @@ function updateSwinging(dt) {
   }
 
   // touch down on the street or a rooftop — a swing landing is a superhero
-  // roll, so it's far more forgiving than a plain fall
-  const groundY = groundHeight(player.pos, city.colliders);
+  // roll, so it's far more forgiving than a plain fall (probe from the
+  // pre-step height so fast dives can't pass through a roof)
+  const groundY = groundHeight(player.pos, city.colliders, 0.1, Math.max(prevY, player.pos.y));
   if (player.pos.y <= groundY && player.vel.y <= 0) {
     if (player.vel.y < -32) {
       player.health -= (-player.vel.y - 32) * 1.5;
@@ -790,7 +898,19 @@ function updateZip(dt) {
   }
   _zipDir.multiplyScalar(1 / d);
   player.vel.set(_zipDir.x * 34, _zipDir.y * 34, _zipDir.z * 34);
+  const prevY = player.pos.y;
   player.pos.addScaledVector(player.vel, dt);
+
+  // zipping downward can't pass through a roof either
+  const zg = groundHeight(player.pos, city.colliders, 0.1, Math.max(prevY, player.pos.y));
+  if (player.pos.y < zg) {
+    player.pos.y = zg;
+    releaseWeb(web);
+    player.vy = 0;
+    player.vel.set(0, 0, 0);
+    player.onGround = true;
+    return;
+  }
 
   const hit = resolveCircle(player.pos, 0.5, city.colliders, player.pos.y + 0.5);
   if (hit) { // clipped a wall on the way — drop into a glide
@@ -821,6 +941,7 @@ function updateDriving(dt) {
     handbrake: !!keys['Space'],
   };
   const impact = physStep(car, ctl, dt, city.colliders);
+  checkRamp(stuntsState, world, car, dt); // stunt ramps launch fast cars
   if (impact > 8) {
     addFlash(car.pos.clone().setY(1), 0xffcc66, 1.2);
     addSparks(car.pos.clone().setY(0.7), 10);
@@ -977,6 +1098,11 @@ function explodeVehicle(v) {
   v.vel.set(0, 0, 0);
   addExplosion(v.pos);
   darkenCar(v);
+  if (world.rampageT > 0) {
+    world.rampageCount++;
+    world.money += 150;
+    showToast(`RAMPAGE x${world.rampageCount} +$150`);
+  }
   if (!player.inCar) {
     const d = Math.hypot(v.pos.x - player.pos.x, v.pos.z - player.pos.z);
     if (d < 6) player.health -= (6 - d) * 12;
@@ -1003,7 +1129,7 @@ function raySphere(origin, dir, center, radius) {
 
 function shoot() {
   const w = WEAPONS[weaponIdx];
-  if (w.ammo) {
+  if (w.ammo && world.rampageT <= 0) { // rampage = unlimited everything
     if (ammo[w.ammo] <= 0) {
       showToast('OUT OF AMMO — grab a yellow crate');
       switchWeapon(0);
@@ -1055,8 +1181,15 @@ function shoot() {
     for (const h of group) {
       if (h.dead) continue;
       const t = raySphere(_rayOrigin, _rayDir, _sphere.set(h.pos.x, h.pos.y + 1.8, h.pos.z), 3.2);
-      if (t < bestT) { bestT = t; hitHeli = h; hitPed = null; hitVeh = null; }
+      if (t < bestT) { bestT = t; hitHeli = h; hitPed = null; hitGang = null; hitVeh = null; }
     }
+  }
+  // unified extras: SWAT, drones, bounty hunters, rooftop marks
+  let hitTarget = null;
+  for (const tg of world.targets) {
+    if (tg.dead) continue;
+    const t = raySphere(_rayOrigin, _rayDir, _sphere.set(tg.pos.x, tg.pos.y + (tg.aimY ?? 0), tg.pos.z), tg.r ?? 1);
+    if (t < bestT) { bestT = t; hitTarget = tg; hitPed = null; hitGang = null; hitVeh = null; hitHeli = null; }
   }
 
   _hitPoint.copy(_rayOrigin).addScaledVector(_rayDir, bestT);
@@ -1081,6 +1214,8 @@ function shoot() {
   } else if (hitHeli) {
     hitHeli.health -= w.dmg;
     if (hitHeli.health <= 0) explodeHeli(world, hitHeli, true);
+  } else if (hitTarget) {
+    hitTarget.hit(world);
   }
 }
 
@@ -1183,6 +1318,10 @@ function explodeRocket(pos) {
   for (const p of world.gangPeds) {
     if (!p.dead && Math.hypot(p.pos.x - pos.x, p.pos.z - pos.z) < 6 && pos.y < 5) killGangMember(world, p);
   }
+  for (const tg of world.targets) {
+    if (tg.dead) continue;
+    if (Math.hypot(tg.pos.x - pos.x, tg.pos.z - pos.z) < 7 && Math.abs(tg.pos.y + (tg.aimY ?? 0) - pos.y) < 9) tg.hit(world);
+  }
   if (!player.inCar && !player.inHeli) {
     const d = player.pos.distanceTo(pos);
     if (d < 7) player.health -= (7 - d) * 14;
@@ -1244,6 +1383,7 @@ function respawn() {
   for (const h of world.policeHelis) scene.remove(h.mesh);
   world.policeHelis.length = 0;
   camYaw = 0;
+  ensureGarageVehicle(shopsState, world); // your garaged ride comes back
   gameState = 'play';
 }
 
@@ -1255,6 +1395,7 @@ document.getElementById('playbtn').addEventListener('click', () => {
   initSound();
   siren.start();
   rainAmb.start();
+  cityHum.start();
   if (gameState === 'start') gameState = 'play';
   renderer.domElement.requestPointerLock?.();
 });
@@ -1369,7 +1510,13 @@ function update(dt) {
   updateGang(world, dt);
   updateArmy(world, dt, armyHooks);
   updateAmbient(flocks, world, dt);
+  updateStunts(stuntsState, world, dt);
   updateEffects(dt);
+
+  // ambience follows the clock
+  const hum = world.clock > 6.5 && world.clock < 21.5 ? 1 : 0.55;
+  if (hum !== world._hum) { world._hum = hum; setHum(hum); }
+  if (player.inCar || player.inHeli || web.attached || web.zip) chuteMesh.visible = false;
   updateCamera(dt);
   updateSiren();
   updateHUD(world);
@@ -1403,6 +1550,7 @@ window.__debug = {
   gang,
   shops: shopsState,
   flocks,
+  stunts: stuntsState,
   getCamYaw: () => camYaw,
   setCamYaw: (v) => { camYaw = v; },
   setCamPitch: (v) => { camPitch = v; },

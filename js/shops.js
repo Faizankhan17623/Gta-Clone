@@ -1,9 +1,10 @@
 import * as THREE from 'three';
 import { blockStart, BLOCK, N } from './city.js';
-import { showToast } from './hud.js';
+import { showToast, showNews } from './hud.js';
 import { addCrime } from './police.js';
-import { sfxPickup, sfxMissionPass } from './sound.js';
+import { sfxPickup, sfxMissionPass, sfxMissionFail } from './sound.js';
 import { webCfg } from './web.js';
+import { makeVehicle } from './car.js';
 
 // Robbable corner stores (hold E: cash + heat) and the upgrade den where
 // swing money buys permanent buffs.
@@ -68,12 +69,60 @@ export function initShops(scene, world, savedUpgrades) {
   const denPos = world.city.spawn.clone().add(new THREE.Vector3(14, 0, -10));
   const den = kiosk(scene, denPos, '#241a30', '#c95aff', 'WEB DEN');
 
+  // casino — gold, a block over
+  const casinoPos = world.city.spawn.clone().add(new THREE.Vector3(-16, 0, 12));
+  kiosk(scene, casinoPos, '#2e2410', '#ffd24a', 'LUCKY 7 CASINO');
+
+  // dealership — cyan
+  const dealerPos = world.city.spawn.clone().add(new THREE.Vector3(-16, 0, -12));
+  kiosk(scene, dealerPos, '#102a2e', '#3dd2ff', 'AUTO PALACE');
+
+  // garage pad — park any vehicle here and it's yours forever
+  const garagePos = world.city.spawn.clone().add(new THREE.Vector3(16, 0, 14));
+  const pad = new THREE.Mesh(
+    new THREE.CylinderGeometry(4.2, 4.2, 0.22, 24),
+    new THREE.MeshLambertMaterial({ color: 0x1a2a45 })
+  );
+  pad.position.copy(garagePos).setY(0.3);
+  scene.add(pad);
+  const padRing = new THREE.Mesh(
+    new THREE.CylinderGeometry(4.2, 4.2, 0.5, 24, 1, true),
+    new THREE.MeshBasicMaterial({ color: 0x4a8cff, transparent: true, opacity: 0.35, side: THREE.DoubleSide, depthWrite: false })
+  );
+  padRing.position.copy(garagePos).setY(0.5);
+  scene.add(padRing);
+
   world.upgrades = { range: false, winch: false, armor: false, ...(savedUpgrades || {}) };
   world.shops = shops;
   world.shopHint = null;
   world.nearDen = false;
+  world.nearKiosk = false;
   applyUpgrades(world);
-  return { shops, den, denPos };
+
+  const state = { shops, den, denPos, casinoPos, dealerPos, garagePos, casinoCd: 0, garageVeh: null };
+  return state;
+}
+
+// Rebuild the saved garage vehicle on the pad (called at load + respawn).
+export function ensureGarageVehicle(state, world) {
+  const kind = world.garageKind;
+  if (!kind) return;
+  if (state.garageVeh && !state.garageVeh.dead) return;
+  const g = state.garagePos;
+  const opts = kind === 'bike' ? { bike: true } : {};
+  const v = makeVehicle(world.scene, g.x, g.z, 0, kind === 'bike' ? '#23262d' : '#3d6b8f', opts);
+  state.garageVeh = v;
+  world.parked.push(v);
+}
+
+// Exiting a vehicle on the pad stores it as your garage ride.
+export function garageCheck(state, world, car) {
+  if (car.tank) return; // the army wants that back
+  if (Math.hypot(car.pos.x - state.garagePos.x, car.pos.z - state.garagePos.z) > 4.5) return;
+  world.garageKind = car.bike ? 'bike' : 'car';
+  state.garageVeh = car;
+  showToast('VEHICLE GARAGED — it respawns here if lost');
+  world.onSave?.();
 }
 
 export function applyUpgrades(world) {
@@ -92,6 +141,8 @@ export function updateShops(state, world, dt, keys, pressed) {
   const player = world.player;
   world.shopHint = null;
   world.nearDen = false;
+  world.nearKiosk = false;
+  state.casinoCd = Math.max(0, state.casinoCd - dt);
   const onFoot = !player.inCar && !player.inHeli && player.pos.y < 2;
 
   for (const s of state.shops) {
@@ -125,10 +176,70 @@ export function updateShops(state, world, dt, keys, pressed) {
     }
   }
 
+  // casino: 1/2/3 = bet $100 / $500 / $1000
+  const cd = Math.hypot(state.casinoPos.x - player.pos.x, state.casinoPos.z - player.pos.z);
+  if (onFoot && cd < 3.6) {
+    world.nearKiosk = true;
+    world.shopHint = 'LUCKY 7 — bet <b>1</b> $100 · <b>2</b> $500 · <b>3</b> $1000';
+    const bets = [100, 500, 1000];
+    for (let i = 0; i < 3; i++) {
+      if (!pressed['Digit' + (i + 1)] || state.casinoCd > 0) continue;
+      state.casinoCd = 1.2;
+      const bet = bets[i];
+      if (world.money < bet) { showToast('Not enough cash'); continue; }
+      world.money -= bet;
+      const roll = Math.random();
+      if (roll < 0.05) {
+        world.money += bet * 5;
+        sfxMissionPass();
+        showToast(`JACKPOT!!! +$${bet * 5}`);
+        showNews('massive jackpot hit at the Lucky 7');
+      } else if (roll < 0.5) {
+        world.money += bet * 2;
+        sfxPickup();
+        showToast(`WINNER +$${bet * 2}`);
+      } else {
+        sfxMissionFail();
+        showToast('House wins...');
+      }
+      world.onSave?.();
+    }
+  }
+
+  // dealership: 1 = supercar, 2 = superbike
+  const dl = Math.hypot(state.dealerPos.x - player.pos.x, state.dealerPos.z - player.pos.z);
+  if (onFoot && dl < 3.6) {
+    world.nearKiosk = true;
+    world.shopHint = 'AUTO PALACE — <b>1</b> Supercar $2500 · <b>2</b> Superbike $1500';
+    const deals = [
+      { cost: 2500, name: 'SUPERCAR', opts: { accel: 26, top: 58 }, color: '#c1121f' },
+      { cost: 1500, name: 'SUPERBIKE', opts: { bike: true, accel: 32, top: 66 }, color: '#f5a800' },
+    ];
+    for (let i = 0; i < 2; i++) {
+      if (!pressed['Digit' + (i + 1)]) continue;
+      const deal = deals[i];
+      if (world.money < deal.cost) { showToast('Not enough cash'); continue; }
+      world.money -= deal.cost;
+      const v = makeVehicle(world.scene, state.dealerPos.x + 7, state.dealerPos.z, 0, deal.color, deal.opts);
+      world.parked.push(v);
+      sfxMissionPass();
+      showToast(`${deal.name} DELIVERED — it's outside`);
+      world.onSave?.();
+    }
+  }
+
+  // garage pad hint
+  if (onFoot && Math.hypot(state.garagePos.x - player.pos.x, state.garagePos.z - player.pos.z) < 5) {
+    world.shopHint = world.garageKind
+      ? 'GARAGE — your ride respawns here'
+      : 'GARAGE — exit any vehicle on the pad to keep it forever';
+  }
+
   // upgrade den
   const dd = Math.hypot(state.denPos.x - player.pos.x, state.denPos.z - player.pos.z);
   if (onFoot && dd < 3.6) {
     world.nearDen = true;
+    world.nearKiosk = true;
     const lines = UPG.map((u, i) =>
       world.upgrades[u.key] ? `${i + 1}) ${u.name} ✔` : `${i + 1}) ${u.name} $${u.cost}`
     );

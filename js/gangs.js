@@ -1,9 +1,10 @@
 import * as THREE from 'three';
 import { createCharacter, animateWalk, animateIdle } from './characters.js';
 import { blockStart, BLOCK, N, resolveCircle } from './city.js';
-import { showToast, showMissionMsg } from './hud.js';
+import { showToast, showMissionMsg, showNews } from './hud.js';
 import { addTracer, addFlash } from './effects.js';
 import { sfxShot, sfxMissionPass } from './sound.js';
+import { makeVehicle, physStep } from './car.js';
 
 // Gang territory: the north-east corner district belongs to the Vipers.
 // Walk in and they open fire. Put down ten of them to seize the turf —
@@ -64,6 +65,11 @@ export function initGang(scene, world, saved) {
     owned: !!saved?.owned,
     kills: saved?.kills | 0,
     incomeT: 0,
+    // drive-bys until the turf is yours, bounty hunters after
+    driveBys: [],
+    driveByT: 45 + Math.random() * 45,
+    hunters: [],
+    hunterT: 90 + Math.random() * 60,
   };
   if (gang.owned) {
     quad.material.color.set(0x2faf4e);
@@ -74,13 +80,9 @@ export function initGang(scene, world, saved) {
   return gang;
 }
 
-export function killGangMember(world, m) {
-  if (m.dead) return;
+// A confirmed Viper kill from any source (bullet, rocket, exploded drive-by car).
+function countTurfKill(world) {
   const gang = world.gang;
-  m.dead = true;
-  m.deadT = 0;
-  m.mesh.rotation.z = Math.PI / 2;
-  m.mesh.position.y = 0.25;
   if (gang.owned) return;
   gang.kills++;
   if (gang.kills >= KILLS_TO_OWN) {
@@ -89,15 +91,217 @@ export function killGangMember(world, m) {
     world.money += 700;
     sfxMissionPass();
     showMissionMsg('TERRITORY SEIZED!', '+$700 · the district pays you now', '#7cf78c');
+    showNews('the Viper territory has fallen');
     world.onSave?.();
   } else {
     showToast(`VIPERS DOWN: ${gang.kills}/${KILLS_TO_OWN}`);
   }
 }
 
+export function killGangMember(world, m) {
+  if (m.dead) return;
+  m.dead = true;
+  m.deadT = 0;
+  m.mesh.rotation.z = Math.PI / 2;
+  m.mesh.position.y = 0.25;
+  countTurfKill(world);
+}
+
+// ---------------- drive-bys (while the Vipers still rule) ----------------
+
+function spawnDriveBy(world) {
+  const gang = world.gang;
+  const p = world.player.inCar ? world.player.inCar.pos : world.player.pos;
+  const ang = Math.random() * Math.PI * 2;
+  const car = makeVehicle(world.scene, p.x + Math.sin(ang) * 70, p.z + Math.cos(ang) * 70, ang + Math.PI, '#8a1a1a');
+  car.viper = true;
+  world.traffic.push(car); // shootable/explodable through the normal paths
+  gang.driveBys.push({ car, life: 20, shootT: 1.5, counted: false });
+  showNews('Viper drive-by spotted near your location');
+}
+
+function updateDriveBys(world, dt) {
+  const gang = world.gang;
+  const player = world.player;
+  const focus = player.inCar ? player.inCar.pos : player.pos;
+
+  if (!gang.owned && gang.driveBys.length === 0) {
+    gang.driveByT -= dt;
+    if (gang.driveByT <= 0) {
+      gang.driveByT = 70 + Math.random() * 60;
+      spawnDriveBy(world);
+    }
+  }
+
+  for (let i = gang.driveBys.length - 1; i >= 0; i--) {
+    const db = gang.driveBys[i];
+    const car = db.car;
+    db.life -= dt;
+
+    if (car.dead) { // blowing it up counts as a Viper down
+      if (!db.counted) {
+        db.counted = true;
+        countTurfKill(world);
+      }
+      if (db.life <= 0) {
+        world.scene.remove(car.mesh);
+        const ti = world.traffic.indexOf(car);
+        if (ti >= 0) world.traffic.splice(ti, 1);
+        gang.driveBys.splice(i, 1);
+      }
+      continue;
+    }
+
+    if (db.life <= 0) { // rolled off into the night
+      world.scene.remove(car.mesh);
+      const ti = world.traffic.indexOf(car);
+      if (ti >= 0) world.traffic.splice(ti, 1);
+      gang.driveBys.splice(i, 1);
+      continue;
+    }
+
+    // cruise past the player
+    const dx = focus.x - car.pos.x;
+    const dz = focus.z - car.pos.z;
+    const dist = Math.hypot(dx, dz);
+    let err = Math.atan2(dx, dz) - car.heading;
+    while (err > Math.PI) err -= Math.PI * 2;
+    while (err < -Math.PI) err += Math.PI * 2;
+    physStep(car, {
+      steer: Math.max(-1, Math.min(1, err * 2)),
+      throttle: dist > 10 ? 0.8 : 0.4, // keeps rolling, never parks
+      handbrake: false,
+    }, dt, world.city.colliders);
+
+    // the passenger sprays at you
+    db.shootT -= dt;
+    if (db.shootT <= 0 && dist < 30 && !player.inHeli) {
+      db.shootT = 0.9;
+      const from = car.pos.clone();
+      from.y = 1.2;
+      const aim = focus.clone();
+      aim.y += 1 + (Math.random() - 0.5);
+      aim.x += (Math.random() - 0.5) * 3;
+      aim.z += (Math.random() - 0.5) * 3;
+      addTracer(from, aim);
+      addFlash(aim, 0xffd080, 0.2);
+      sfxShot('mg');
+      if (Math.random() < 0.4) {
+        if (player.inCar) player.inCar.health -= 4;
+        else player.health -= 4;
+      }
+    }
+  }
+}
+
+// ---------------- bounty hunters (after you take the turf) ----------------
+
+function spawnHunters(world) {
+  const gang = world.gang;
+  const p = world.player.pos;
+  for (let i = 0; i < 2; i++) {
+    const ch = createCharacter({ shirt: '#101014', pants: '#101014', skin: '#d9a06e' });
+    world.scene.add(ch.group);
+    const a = Math.random() * Math.PI * 2;
+    ch.group.position.set(p.x + Math.sin(a) * 28, 0, p.z + Math.cos(a) * 28);
+    resolveCircle(ch.group.position, 0.5, world.city.colliders);
+    const h = {
+      ch,
+      mesh: ch.group,
+      pos: ch.group.position,
+      heading: 0,
+      animT: 0,
+      dead: false,
+      deadT: 0,
+      shootT: 1.5 + Math.random(),
+    };
+    h.target = {
+      pos: h.pos, aimY: 1.1, r: 0.9,
+      get dead() { return h.dead; },
+      hit(w) { killHunter(w, h); },
+    };
+    world.targets.push(h.target);
+    gang.hunters.push(h);
+  }
+  showToast('BOUNTY HUNTERS! The Vipers want their turf back');
+  showNews('hitmen contracted against the new district boss');
+}
+
+function killHunter(world, h) {
+  if (h.dead) return;
+  h.dead = true;
+  h.deadT = 0;
+  h.mesh.rotation.z = Math.PI / 2;
+  h.mesh.position.y = 0.25;
+  if (world.gang.hunters.every((x) => x.dead)) {
+    world.money += 300;
+    showToast('BOUNTY SQUAD DOWN +$300');
+    world.onSave?.();
+  }
+}
+
+const _hv = new THREE.Vector3();
+
+function updateHunters(world, dt) {
+  const gang = world.gang;
+  const player = world.player;
+
+  if (gang.owned && gang.hunters.length === 0) {
+    gang.hunterT -= dt;
+    if (gang.hunterT <= 0) {
+      gang.hunterT = 110 + Math.random() * 70;
+      if (!player.inHeli) spawnHunters(world);
+    }
+  }
+
+  for (let i = gang.hunters.length - 1; i >= 0; i--) {
+    const h = gang.hunters[i];
+    if (h.dead) {
+      h.deadT += dt;
+      if (h.deadT > 12) {
+        world.scene.remove(h.mesh);
+        const ti = world.targets.indexOf(h.target);
+        if (ti >= 0) world.targets.splice(ti, 1);
+        gang.hunters.splice(i, 1);
+      }
+      continue;
+    }
+    const focus = player.inCar ? player.inCar.pos : player.pos;
+    const d = Math.hypot(focus.x - h.pos.x, focus.z - h.pos.z);
+    h.heading = Math.atan2(focus.x - h.pos.x, focus.z - h.pos.z);
+    h.mesh.rotation.y = h.heading;
+    if (d > 12) {
+      _hv.set(Math.sin(h.heading), 0, Math.cos(h.heading));
+      h.pos.addScaledVector(_hv, 3.4 * dt);
+      resolveCircle(h.pos, 0.4, world.city.colliders);
+      h.animT += dt * 6;
+      animateWalk(h.ch, h.animT, 0.7);
+    }
+    h.ch.rArm.rotation.x = -Math.PI / 2;
+    h.shootT -= dt;
+    if (h.shootT <= 0 && d < 30 && !player.inHeli && player.pos.y < 10) {
+      h.shootT = 1.5 + Math.random() * 0.7;
+      const from = h.pos.clone();
+      from.y = 1.4;
+      const aim = focus.clone();
+      aim.y += 1.1 + (Math.random() - 0.5) * 0.5;
+      addTracer(from, aim);
+      addFlash(aim, 0xffd080, 0.25);
+      sfxShot('pistol');
+      if (Math.random() < 0.5) {
+        if (player.inCar) player.inCar.health -= 5;
+        else player.health -= 6;
+      }
+    }
+  }
+}
+
 export function updateGang(world, dt) {
   const gang = world.gang;
   const player = world.player;
+
+  updateDriveBys(world, dt);
+  updateHunters(world, dt);
 
   // owned: quiet district, protection money ticks in
   if (gang.owned) {

@@ -128,10 +128,31 @@ export function sfxMissionFail() {
   });
 }
 
-export function sfxThunder() {
+// far = 0 (overhead) .. 1 (distant): distant strikes rumble lower and quieter
+export function sfxThunder(far = Math.random()) {
   if (!ctx) return;
-  noiseShot({ dur: 1.8, freq: 110, gain: 0.55 });
-  noiseShot({ dur: 0.5, freq: 500, gain: 0.18 });
+  noiseShot({ dur: 1.8 + far * 1.5, freq: 110 - far * 45, gain: 0.55 * (1 - far * 0.65) });
+  if (far < 0.5) noiseShot({ dur: 0.5, freq: 500, gain: 0.18 });
+}
+
+// low city ambience: wind + distant traffic, louder by day
+export const cityHum = makeLoop(() => {
+  const src = ctx.createBufferSource();
+  src.buffer = noiseBuf;
+  src.loop = true;
+  const f = ctx.createBiquadFilter();
+  f.type = 'lowpass';
+  f.frequency.value = 240;
+  const g = ctx.createGain();
+  g.gain.value = 0;
+  src.connect(f).connect(g).connect(master);
+  src.start();
+  return { src, g, stoppables: [src] };
+});
+
+export function setHum(vol) {
+  if (!cityHum.nodes || !ctx) return;
+  cityHum.nodes.g.gain.setTargetAtTime(vol * 0.045, ctx.currentTime, 1.2);
 }
 
 // ---------- looped sources (engine / rotor / siren) ----------

@@ -3,6 +3,9 @@ import { createCharacter, animateWalk, randomOutfit } from './characters.js';
 import { makeVehicle, randomCarColor } from './car.js';
 import { resolveCircle, roadCenter, blockStart, HALF, ROAD, BLOCK, N } from './city.js';
 import { addCrime } from './police.js';
+import { addSparks, addSmoke } from './effects.js';
+import { sfxCrash } from './sound.js';
+import { showNews } from './hud.js';
 
 const _v = new THREE.Vector3();
 
@@ -176,6 +179,33 @@ export function spawnTraffic(scene, city, count) {
 export function updateTraffic(world, dt) {
   const { traffic, player } = world;
   const pcar = player.inCar;
+
+  // every now and then two cars pile into each other on their own
+  world.accidentT = (world.accidentT ?? 40) - dt;
+  if (world.accidentT <= 0) {
+    world.accidentT = 45 + Math.random() * 45;
+    const focus = pcar ? pcar.pos : player.pos;
+    outer:
+    for (const a of traffic) {
+      if (a.dead || !a.ai || a.pos.distanceTo(focus) > 90) continue;
+      for (const b of traffic) {
+        if (b === a || b.dead || !b.ai) continue;
+        if (a.pos.distanceTo(b.pos) < 12) {
+          disableTraffic(a);
+          disableTraffic(b);
+          a.health -= 30;
+          b.health -= 30;
+          const mid = a.pos.clone().lerp(b.pos, 0.5).setY(0.7);
+          addSparks(mid, 14);
+          addSmoke(mid.clone().setY(1), 1);
+          sfxCrash(12);
+          world.lastShot = { pos: mid, t: world.time }; // bystanders scatter
+          showNews('two-car pile-up snarls traffic');
+          break outer;
+        }
+      }
+    }
+  }
 
   // rush hours crawl, late night flows fast
   const hour = world.clock ?? 12;

@@ -31,6 +31,26 @@ export function initHUD() {
     damage: document.getElementById('damage'),
   };
   mapCtx = els.minimap.getContext('2d');
+
+  // news ticker along the bottom edge
+  const news = document.createElement('div');
+  news.id = 'news';
+  news.style.cssText =
+    'position:fixed;bottom:0;left:0;right:0;z-index:30;display:none;' +
+    'background:rgba(8,10,14,0.78);color:#ffd24a;text-align:center;' +
+    'font:600 13px/1.9 Arial;letter-spacing:2px;text-transform:uppercase;' +
+    'border-top:1px solid rgba(255,210,74,0.35);padding:2px 0';
+  document.body.appendChild(news);
+  els.news = news;
+}
+
+let newsTimer = null;
+export function showNews(text) {
+  if (!els) return;
+  els.news.textContent = '⚡ CITY NEWS — ' + text;
+  els.news.style.display = 'block';
+  clearTimeout(newsTimer);
+  newsTimer = setTimeout(() => { els.news.style.display = 'none'; }, 8000);
 }
 
 let msgTimer = null;

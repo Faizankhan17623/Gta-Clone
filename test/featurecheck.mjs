@@ -278,7 +278,7 @@ async function resetPlayer() {
 // ---- 13. missions: all six types ----
 {
   const types = [];
-  for (const [done, want] of [[0, 'delivery'], [1, 'race'], [2, 'air'], [3, 'taxi'], [4, 'hit'], [5, 'boss']]) {
+  for (const [done, want] of [[0, 'delivery'], [1, 'race'], [2, 'air'], [3, 'taxi'], [4, 'fire'], [5, 'hit'], [6, 'roofhit'], [7, 'escort'], [8, 'boss']]) {
     await resetPlayer();
     const got = await ev(async (doneN) => {
       const d = window.__debug;
@@ -294,7 +294,7 @@ async function resetPlayer() {
     await ev(() => { window.__debug.mission.timeLeft = 0.01; });
     await page.waitForTimeout(300);
   }
-  check('Missions: delivery/race/air/taxi/hit/boss', JSON.stringify(types) === JSON.stringify(['delivery', 'race', 'air', 'taxi', 'hit', 'boss']), types.join(', '));
+  check('Missions: all nine types', JSON.stringify(types) === JSON.stringify(['delivery', 'race', 'air', 'taxi', 'fire', 'hit', 'roofhit', 'escort', 'boss']), types.join(', '));
   // boss chopper should now be leaving after the fail
   await ev(() => { for (const h of window.__debug.world.policeHelis) { h.boss = false; h.leaving = true; } });
 }
@@ -341,6 +341,184 @@ async function resetPlayer() {
   });
   const ok = 'upg' in save && 'gang' in save && 'radio' in save && 'money' in save;
   check('Autosave (upgrades/gang/radio persisted)', ok, Object.keys(save).join(','));
+}
+
+// ---- 18. point-launch (C) ----
+{
+  await resetPlayer();
+  await page.keyboard.down('KeyC');
+  await page.waitForTimeout(900);
+  await page.keyboard.up('KeyC');
+  await page.waitForTimeout(250);
+  const y = await ev(() => window.__debug.player.pos.y);
+  check('Point-launch (hold C)', y > 2, `launched to ${y.toFixed(1)}m`);
+  await page.waitForTimeout(2500);
+}
+
+// ---- 19. web parachute ----
+{
+  await resetPlayer();
+  await ev(() => {
+    const d = window.__debug;
+    d.player.pos.y = 45;
+    d.player.vy = -20;
+    d.player.onGround = false;
+    d.player.glide = false;
+  });
+  await page.keyboard.down('Space');
+  await page.waitForTimeout(600);
+  const vy = await ev(() => window.__debug.player.vy);
+  await page.keyboard.up('Space');
+  check('Web parachute (Space while falling)', vy >= -5, `fall speed capped at ${vy.toFixed(1)}`);
+  await page.waitForTimeout(2500);
+}
+
+// ---- 20. web trampoline (T) ----
+{
+  await resetPlayer();
+  await ev(() => { window.__debug.setCamPitch(0.3); }); // look down-ish ahead
+  await page.waitForTimeout(300);
+  await page.keyboard.press('KeyT');
+  await page.waitForTimeout(300);
+  const n = await ev(() => window.__debug.world.tramps.length);
+  check('Web trampoline (T)', n >= 1);
+  await ev(() => { window.__debug.setCamPitch(0.12); });
+}
+
+// ---- 21. casino ----
+{
+  await resetPlayer();
+  const before = await ev(() => {
+    const d = window.__debug;
+    d.world.money += 200;
+    d.player.pos.copy(d.shops.casinoPos);
+    return d.world.money;
+  });
+  await page.waitForTimeout(300);
+  await page.keyboard.press('Digit1');
+  await page.waitForTimeout(300);
+  const after = await ev(() => window.__debug.world.money);
+  check('Casino bets', after !== before, `$${before} -> $${after}`);
+}
+
+// ---- 22. dealership ----
+{
+  await resetPlayer();
+  await ev(() => {
+    const d = window.__debug;
+    d.world.money += 2500;
+    d.player.pos.copy(d.shops.dealerPos);
+  });
+  await page.waitForTimeout(300);
+  await page.keyboard.press('Digit1');
+  await page.waitForTimeout(300);
+  const bought = await ev(() => window.__debug.world.parked.some((v) => v.accel === 26 && !v.bike));
+  check('Dealership supercar', bought);
+}
+
+// ---- 23. garage pad ----
+{
+  await resetPlayer();
+  const ok = await ev(() => {
+    const d = window.__debug;
+    d.world.garageKind = null;
+    const car = d.world.parked.find((v) => !v.bike && !v.dead);
+    d.player.pos.set(car.pos.x + 2, 0, car.pos.z);
+    return !!car;
+  });
+  await page.waitForTimeout(200);
+  await page.keyboard.press('KeyE'); // in
+  await page.waitForTimeout(200);
+  await ev(() => {
+    const d = window.__debug;
+    if (d.player.inCar) {
+      d.player.inCar.pos.set(d.shops.garagePos.x, 0, d.shops.garagePos.z);
+      d.player.inCar.vel.set(0, 0, 0);
+    }
+  });
+  await page.waitForTimeout(200);
+  await page.keyboard.press('KeyE'); // out, on the pad
+  await page.waitForTimeout(300);
+  const kind = await ev(() => window.__debug.world.garageKind);
+  check('Garage pad stores your ride', ok && kind === 'car');
+}
+
+// ---- 24. drones at 2+ stars ----
+{
+  await resetPlayer();
+  await ev(() => { window.__debug.world.wanted = 3; window.__debug.world.wantedTimer = 0; });
+  await page.waitForTimeout(1200);
+  const n = await ev(() => window.__debug.world.drones.length);
+  check('Attack drones (2+ stars)', n >= 1, `${n} drones overhead`);
+}
+
+// ---- 25. SWAT van at 4 stars ----
+{
+  await ev(() => { window.__debug.world.wanted = 4; window.__debug.world.wantedTimer = 0; });
+  await page.waitForTimeout(1200);
+  const van = await ev(() => window.__debug.world.cops.some((c) => c.van && !c.dead));
+  check('SWAT van (4 stars)', van);
+  await ev(() => { window.__debug.world.wanted = 0; });
+  await page.waitForTimeout(600);
+}
+
+// ---- 26. gang drive-by ----
+{
+  await resetPlayer();
+  const spawned = await ev(async () => {
+    const d = window.__debug;
+    const wasOwned = d.gang.owned;
+    d.gang.owned = false;
+    d.gang.driveByT = 0.05;
+    await new Promise((r) => setTimeout(r, 400));
+    const got = d.gang.driveBys.length >= 1;
+    d.gang.owned = wasOwned;
+    return got;
+  });
+  check('Viper drive-bys', spawned);
+}
+
+// ---- 27. bounty hunters ----
+{
+  await resetPlayer();
+  const spawned = await ev(async () => {
+    const d = window.__debug;
+    const wasOwned = d.gang.owned;
+    d.gang.owned = true;
+    d.gang.hunterT = 0.05;
+    await new Promise((r) => setTimeout(r, 400));
+    const got = d.gang.hunters.filter((h) => !h.dead).length >= 2;
+    d.gang.owned = wasOwned;
+    for (const h of d.gang.hunters) h.dead = true; // clean up
+    return got;
+  });
+  check('Bounty hunters after takeover', spawned);
+}
+
+// ---- 28. stunt ramps + rampage skulls ----
+{
+  const st = await ev(() => ({
+    ramps: window.__debug.stunts.ramps.length,
+    skulls: window.__debug.stunts.skulls.length,
+  }));
+  check('Stunt ramps placed', st.ramps === 12, `${st.ramps} ramps`);
+  await resetPlayer();
+  await ev(() => {
+    const d = window.__debug;
+    const s = d.stunts.skulls[0];
+    s.cd = 0;
+    d.player.pos.set(s.pos.x, 0, s.pos.z);
+  });
+  await page.waitForTimeout(400);
+  const rt = await ev(() => window.__debug.world.rampageT);
+  check('Rampage skull pickup', rt > 30, `${rt.toFixed(0)}s of mayhem`);
+  await ev(() => { window.__debug.world.rampageT = 0.01; });
+}
+
+// ---- 29. news ticker + city hum ----
+{
+  const ui = await ev(() => !!document.getElementById('news'));
+  check('News ticker element', ui);
 }
 
 console.log('---');

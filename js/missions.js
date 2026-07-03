@@ -1,8 +1,11 @@
 import * as THREE from 'three';
 import { roadCenter, N, HALF } from './city.js';
-import { showToast, showMissionMsg } from './hud.js';
+import { showToast, showMissionMsg, showNews } from './hud.js';
 import { sfxMissionPass, sfxMissionFail, sfxPickup } from './sound.js';
 import { makeHeli } from './heli.js';
+import { makeVehicle, physStep, separateCars, darkenCar } from './car.js';
+import { createCharacter } from './characters.js';
+import { addSmoke, addFlash, addSparks, addExplosion } from './effects.js';
 
 // Mission system: a yellow beam marks the mission start point. Walk or drive
 // into it to begin. Six mission types rotate, each with a timer, a pink
@@ -20,6 +23,11 @@ export const mission = {
   target: null, // ped, for hit contracts
   boss: null,   // heli, for boss fights
   taxiStage: '',
+  truck: null,     // firefighter
+  burning: [],
+  witness: null,   // escort
+  attackers: [],
+  roof: null,      // rooftop hit
   markerPos: new THREE.Vector3(),
   objectivePos: new THREE.Vector3(),
 };
@@ -106,7 +114,7 @@ function placeAirRing(world, from) {
 }
 
 function startMission(world) {
-  let type = ['delivery', 'race', 'air', 'taxi', 'hit', 'boss'][mission.done % 6];
+  let type = ['delivery', 'race', 'air', 'taxi', 'fire', 'hit', 'roofhit', 'escort', 'boss'][mission.done % 9];
 
   if (type === 'hit') {
     // need a living ped a reasonable chase away
@@ -122,10 +130,71 @@ function startMission(world) {
 
   mission.active = true;
   mission.type = type;
-  mission.reward = { delivery: 500, race: 800, hit: 450, air: 1000, taxi: 700, boss: 2500 }[type] + mission.done * 150;
+  mission.reward = {
+    delivery: 500, race: 800, hit: 450, air: 1000, taxi: 700, boss: 2500,
+    fire: 900, roofhit: 850, escort: 1100,
+  }[type] + mission.done * 150;
   startMarker.visible = false;
 
-  if (type === 'air') {
+  if (type === 'fire') {
+    const p = world.player.pos;
+    const tp = randomRoadPoint(p, 15, 50);
+    mission.truck = makeVehicle(world.scene, tp.x, tp.z, Math.random() * Math.PI * 2, '#a32222', { health: 300, accel: 12, top: 26, rad: 2.0 });
+    const ladder = new THREE.Mesh(
+      new THREE.BoxGeometry(0.7, 0.5, 3.6),
+      new THREE.MeshStandardMaterial({ color: 0xd8d8d8, metalness: 0.6, roughness: 0.4 })
+    );
+    ladder.position.set(0, 1.55, -0.5);
+    mission.truck.mesh.add(ladder);
+    world.parked.push(mission.truck);
+    mission.burning = [];
+    for (let i = 0; i < 3; i++) {
+      const bp = randomRoadPoint(p, 90, 240);
+      const wreck = makeVehicle(world.scene, bp.x, bp.z, Math.random() * Math.PI * 2, '#3a3a3e');
+      wreck.dead = true; // inert scenery until doused
+      mission.burning.push({ car: wreck, out: false, douseT: 0, fxT: 0 });
+    }
+    mission.timeLeft = 110;
+    mission.title = 'FIREFIGHTER';
+    mission.text = 'Take the fire truck (red) and pull up beside 3 burning cars';
+    mission.objectivePos.copy(mission.burning[0].car.pos);
+    showNews('car fires reported across the city');
+  } else if (type === 'roofhit') {
+    const tall = world.city.colliders.filter((c) => c.h >= 30);
+    const c = tall[(Math.random() * tall.length) | 0];
+    const ch = createCharacter({ shirt: '#d8d8d0', pants: '#26262c', skin: '#8d5a3a' });
+    world.scene.add(ch.group);
+    ch.group.position.set((c.x0 + c.x1) / 2, c.h - 0.3, (c.z0 + c.z1) / 2);
+    const roof = { mesh: ch.group, pos: ch.group.position, dead: false };
+    roof.target = {
+      pos: roof.pos, aimY: 1.1, r: 1.1,
+      get dead() { return roof.dead; },
+      hit() { roof.dead = true; roof.mesh.rotation.z = Math.PI / 2; },
+    };
+    world.targets.push(roof.target);
+    mission.roof = roof;
+    mission.timeLeft = 90;
+    mission.title = 'ROOFTOP HIT';
+    mission.text = 'The target hides on a rooftop — webs or a chopper';
+    mission.objectivePos.copy(roof.pos);
+    targetArrow.visible = true;
+  } else if (type === 'escort') {
+    const p = world.player.pos;
+    const wp = randomRoadPoint(p, 12, 40);
+    mission.witness = makeVehicle(world.scene, wp.x, wp.z, 0, '#e8e8e8', { health: 150 });
+    world.traffic.push(mission.witness); // shootable/rammable like any car
+    mission.attackers = [];
+    for (let i = 0; i < 2; i++) {
+      const ap = randomRoadPoint(p, 90, 150);
+      const a = makeVehicle(world.scene, ap.x, ap.z, 0, '#8a1a1a');
+      world.traffic.push(a);
+      mission.attackers.push(a);
+    }
+    mission.objectivePos.copy(randomRoadPoint(p, 250, 420));
+    mission.timeLeft = 40 + mission.objectivePos.distanceTo(p) * 0.28;
+    mission.title = 'ESCORT';
+    mission.text = 'Lead the witness (white car) to the marker — keep them alive';
+  } else if (type === 'air') {
     mission.cpLeft = 5;
     mission.timeLeft = 35;
     mission.title = 'SWING RACE';
@@ -170,7 +239,7 @@ function startMission(world) {
     targetArrow.visible = true;
   }
 
-  objMarker.visible = type !== 'hit' && type !== 'air' && type !== 'boss';
+  objMarker.visible = type !== 'hit' && type !== 'air' && type !== 'boss' && type !== 'roofhit';
   objMarker.position.copy(mission.objectivePos);
   showMissionMsg(mission.title, mission.text, '#ffd24a');
   showToast('REWARD: $' + mission.reward);
@@ -184,6 +253,30 @@ function endMission(world) {
     mission.boss.leaving = true;
   }
   mission.boss = null;
+  // firefighter cleanup: burning wrecks vanish; the truck stays if you're in it
+  for (const b of mission.burning) world.scene.remove(b.car.mesh);
+  mission.burning = [];
+  if (mission.truck && world.player.inCar !== mission.truck) {
+    world.scene.remove(mission.truck.mesh);
+    const ti = world.parked.indexOf(mission.truck);
+    if (ti >= 0) world.parked.splice(ti, 1);
+  }
+  mission.truck = null;
+  // escort cleanup: attackers leave, the witness car stays parked in the world
+  for (const a of mission.attackers) {
+    world.scene.remove(a.mesh);
+    const ti = world.traffic.indexOf(a);
+    if (ti >= 0) world.traffic.splice(ti, 1);
+  }
+  mission.attackers = [];
+  mission.witness = null;
+  // rooftop hit cleanup
+  if (mission.roof) {
+    world.scene.remove(mission.roof.mesh);
+    const ti = world.targets.indexOf(mission.roof.target);
+    if (ti >= 0) world.targets.splice(ti, 1);
+    mission.roof = null;
+  }
   objMarker.visible = false;
   targetArrow.visible = false;
   airRing.visible = false;
@@ -305,9 +398,105 @@ export function updateMissions(world, dt) {
   } else if (mission.type === 'boss') {
     const b = mission.boss;
     if (!b || b.dead) {
+      showNews('rival crime boss shot out of the sky');
       passMission(world);
       return;
     }
     mission.objectivePos.copy(b.pos); // minimap tracks him
+  } else if (mission.type === 'fire') {
+    let next = null;
+    let left = 0;
+    for (const b of mission.burning) {
+      if (b.out) continue;
+      left++;
+      if (!next) next = b;
+      // flames + smoke while it burns
+      b.fxT -= dt;
+      if (b.fxT <= 0) {
+        b.fxT = 0.18;
+        addFlash(b.car.pos.clone().setY(1.1), 0xff7a28, 0.7);
+        addSmoke(b.car.pos.clone().setY(1.6), 1.1);
+      }
+      // douse by idling the truck alongside
+      if (car === mission.truck && !car.dead &&
+          Math.hypot(car.pos.x - b.car.pos.x, car.pos.z - b.car.pos.z) < 9) {
+        b.douseT += dt;
+        if (b.fxT < 0.09) addSparks(b.car.pos.clone().setY(1.4), 6, 0xcfe8ff); // water spray
+        if (b.douseT > 1.4) {
+          b.out = true;
+          darkenCar(b.car);
+          sfxPickup();
+          showToast('FIRE OUT!');
+        }
+      } else {
+        b.douseT = Math.max(0, b.douseT - dt);
+      }
+    }
+    if (left === 0) {
+      showNews('hero firefighter saves the block');
+      passMission(world);
+      return;
+    }
+    mission.text = car === mission.truck
+      ? `Fires left: ${left} — pull alongside and hold position`
+      : `Get in the fire truck! Fires left: ${left}`;
+    mission.objectivePos.copy(next.car.pos);
+    objMarker.position.copy(mission.objectivePos);
+  } else if (mission.type === 'roofhit') {
+    const r = mission.roof;
+    targetArrow.position.set(r.pos.x, r.pos.y + 2.7 + Math.sin(t * 5) * 0.25, r.pos.z);
+    targetArrow.rotation.y += dt * 3;
+    if (r.dead) {
+      showNews('shooting reported on a downtown rooftop');
+      passMission(world);
+    }
+  } else if (mission.type === 'escort') {
+    const w = mission.witness;
+    if (w.dead) {
+      failMission(world, 'The witness was killed');
+      return;
+    }
+    const focus = car ? car.pos : world.player.pos;
+    // the witness tails you
+    const dw = Math.hypot(focus.x - w.pos.x, focus.z - w.pos.z);
+    let err = Math.atan2(focus.x - w.pos.x, focus.z - w.pos.z) - w.heading;
+    while (err > Math.PI) err -= Math.PI * 2;
+    while (err < -Math.PI) err += Math.PI * 2;
+    physStep(w, {
+      steer: Math.max(-1, Math.min(1, err * 2.2)),
+      throttle: dw > 14 ? 1 : dw > 8 ? 0.4 : -0.5,
+      handbrake: false,
+    }, dt, world.city.colliders);
+    // the Vipers ram the witness
+    for (const a of mission.attackers) {
+      if (a.dead) continue;
+      let ae = Math.atan2(w.pos.x - a.pos.x, w.pos.z - a.pos.z) - a.heading;
+      while (ae > Math.PI) ae -= Math.PI * 2;
+      while (ae < -Math.PI) ae += Math.PI * 2;
+      physStep(a, { steer: Math.max(-1, Math.min(1, ae * 2.4)), throttle: 1, handbrake: false }, dt, world.city.colliders);
+      const imp = separateCars(a, w, false);
+      if (imp > 3) {
+        w.health -= imp * 1.6;
+        a.health -= imp * 0.8;
+      }
+      if (a.health <= 0 && !a.dead) {
+        a.dead = true;
+        a.vel.set(0, 0, 0);
+        addExplosion(a.pos);
+        darkenCar(a);
+      }
+      if (w.health <= 0 && !w.dead) {
+        w.dead = true;
+        addExplosion(w.pos);
+        darkenCar(w);
+      }
+    }
+    // arrived?
+    if (Math.hypot(w.pos.x - mission.objectivePos.x, w.pos.z - mission.objectivePos.z) < 11) {
+      showNews('protected witness reaches the safehouse');
+      passMission(world);
+      return;
+    }
+    mission.text = `Witness HP ${Math.max(0, Math.round(w.health))} — lead them to the marker`;
   }
 }
