@@ -108,9 +108,8 @@ Rewards scale as you complete more.
 - WASTED / BUSTED screens, HUD with minimap (cops, choppers, stores, gang
   turf, tanks), live WASD key indicator.
 
-## Project layout
+<!-- Project layout (hidden from the rendered page, kept for reference)
 
-```
 index.html        HUD, start screen, styles, Three.js import map
 js/main.js        Game loop, player, camera, swinging/zipping, shooting, style
 js/web.js         Web physics: anchor raycasts, pendulum, zip, poses
@@ -131,7 +130,7 @@ js/sound.js       Procedural WebAudio (guns, loops, radio stations)
 js/effects.js     Tracers, explosions, smoke, sparks, debris, skid marks
 js/hud.js         HUD + minimap rendering
 js/input.js       Keyboard / mouse / pointer-lock / gamepad input
-```
+-->
 
 ## Tests
 
