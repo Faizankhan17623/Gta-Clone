@@ -77,10 +77,41 @@ export function createCarMesh(color, opts = {}) {
   return { group, wheels, lightbar };
 }
 
+// Slim, fast motorbike facing +z.
+export function createBikeMesh(color) {
+  const group = new THREE.Group();
+  const mat = (c) => new THREE.MeshStandardMaterial({ color: c, metalness: 0.7, roughness: 0.35 });
+
+  const frame = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.42, 2.0), mat(color));
+  frame.position.y = 0.75;
+  frame.castShadow = true;
+  group.add(frame);
+  const tank = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.3, 0.8), mat('#15151a'));
+  tank.position.set(0, 1.0, 0.35);
+  group.add(tank);
+  const seat = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.14, 0.8), mat('#26262c'));
+  seat.position.set(0, 1.02, -0.55);
+  group.add(seat);
+  const bars = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.08, 0.08), mat('#3a3a40'));
+  bars.position.set(0, 1.25, 0.85);
+  group.add(bars);
+
+  const wheels = [];
+  for (const z of [1.05, -1.05]) {
+    const w = new THREE.Mesh(wheelGeo, wheelMat);
+    w.rotation.order = 'YXZ';
+    w.scale.set(0.6, 1.2, 1.2);
+    w.position.set(0, 0.42, z);
+    group.add(w);
+    wheels.push(w);
+  }
+  return { group, wheels, lightbar: null };
+}
+
 // Standard vehicle object used by player cars, parked cars, traffic and police.
 // Note: `pos` aliases mesh.position so writes to pos move the mesh.
 export function makeVehicle(scene, x, z, heading, color, opts = {}) {
-  const { group, wheels, lightbar } = createCarMesh(color, opts);
+  const { group, wheels, lightbar } = opts.bike ? createBikeMesh(color) : createCarMesh(color, opts);
   group.position.set(x, 0, z);
   group.rotation.y = heading;
   scene.add(group);
@@ -91,10 +122,16 @@ export function makeVehicle(scene, x, z, heading, color, opts = {}) {
     pos: group.position,
     heading,
     vel: new THREE.Vector3(),
-    health: 100,
+    health: opts.health ?? (opts.bike ? 60 : 100),
     dead: false,
     smokeT: 0,
     police: !!opts.police,
+    bike: !!opts.bike,
+    tank: !!opts.tank,
+    // physics stats (physStep falls back to car defaults)
+    accel: opts.accel ?? (opts.bike ? 26 : undefined),
+    top: opts.top ?? (opts.bike ? 55 : undefined),
+    rad: opts.rad ?? (opts.bike ? 0.9 : undefined),
   };
 }
 
@@ -109,7 +146,7 @@ export function physStep(v, ctl, dt, colliders) {
 
   let a = 0;
   if (ctl.throttle > 0) {
-    a = 17 * ctl.throttle * Math.max(0, 1 - speedF / 38);
+    a = (v.accel ?? 17) * ctl.throttle * Math.max(0, 1 - speedF / (v.top ?? 38));
   } else if (ctl.throttle < 0) {
     if (speedF > 0.5) a = -26; // braking
     else if (speedF > -11) a = 11 * ctl.throttle; // reversing
@@ -132,7 +169,7 @@ export function physStep(v, ctl, dt, colliders) {
   v.pos.y = 0;
 
   let impact = 0;
-  const hit = resolveCircle(v.pos, 1.6, colliders);
+  const hit = resolveCircle(v.pos, v.rad ?? 1.6, colliders);
   if (hit) {
     const vn = v.vel.x * hit.nx + v.vel.z * hit.nz;
     if (vn < 0) {
@@ -151,11 +188,13 @@ export function physStep(v, ctl, dt, colliders) {
 
   // visuals
   v.mesh.rotation.y = v.heading;
+  v.mesh.rotation.z = v.bike ? -ctl.steer * 0.35 * Math.min(1, sf / 10) : 0; // bikes lean
   const spin = (sf * dt) / 0.36;
-  for (let i = 0; i < 4; i++) {
+  const steerWheels = v.bike ? 1 : 2;
+  for (let i = 0; i < v.wheels.length; i++) {
     const w = v.wheels[i];
     w.rotation.x += spin;
-    if (i < 2) w.rotation.y = ctl.steer * 0.45;
+    if (i < steerWheels) w.rotation.y = ctl.steer * 0.45;
   }
   return impact;
 }

@@ -57,17 +57,29 @@ export function updatePeds(world, dt) {
   const { peds, player, city } = world;
   const pcar = player.inCar;
 
+  // fewer people out at night
+  const night = world.clock >= 22 || world.clock < 6;
+
   for (const p of peds) {
     if (p.dead) {
       p.deadT += dt;
-      if (p.deadT > 20) {
+      if (p.deadT > (night ? 55 : 20)) {
         // respawn somewhere else as a fresh citizen
         p.dead = false;
         p.deadT = 0;
+        p.webT = 0;
+        if (p.webWrap) p.webWrap.visible = false;
         p.mesh.rotation.z = 0;
         p.mesh.position.y = 0;
         placePedOnBlock(p, city);
       }
+      continue;
+    }
+
+    // wrapped in webbing: stuck in place until it wears off
+    if (p.webT > 0) {
+      p.webT -= dt;
+      if (p.webT <= 0 && p.webWrap) p.webWrap.visible = false;
       continue;
     }
 
@@ -165,8 +177,18 @@ export function updateTraffic(world, dt) {
   const { traffic, player } = world;
   const pcar = player.inCar;
 
+  // rush hours crawl, late night flows fast
+  const hour = world.clock ?? 12;
+  const flow = (hour >= 8 && hour < 10) || (hour >= 17 && hour < 19) ? 0.65
+    : hour >= 22 || hour < 5 ? 1.35 : 1;
+
   for (const t of traffic) {
     if (t.dead || !t.ai) continue;
+    if (t.webT > 0) { // webbed to the road
+      t.webT -= dt;
+      t.vel.set(0, 0, 0);
+      continue;
+    }
     const ai = t.ai;
 
     // brake if something is ahead
@@ -193,7 +215,7 @@ export function updateTraffic(world, dt) {
       for (const o of world.cops) if (!o.dead && near(o)) { blocked = true; break; }
     }
 
-    const target = blocked ? 0 : ai.cruise;
+    const target = blocked ? 0 : ai.cruise * flow;
     ai.speed += Math.max(-14 * dt, Math.min(8 * dt, target - ai.speed));
     if (ai.speed < 0.05 && blocked) ai.speed = 0;
 
@@ -236,7 +258,9 @@ export function spawnParked(scene, count) {
       x = along; z = off;
       heading = side > 0 ? Math.PI / 2 : -Math.PI / 2;
     }
-    parked.push(makeVehicle(scene, x, z, heading, randomCarColor()));
+    // every fourth parked vehicle is a motorbike — quick and nimble
+    const bike = i % 4 === 3;
+    parked.push(makeVehicle(scene, x, z, heading, bike ? '#23262d' : randomCarColor(), bike ? { bike: true } : {}));
   }
   return parked;
 }

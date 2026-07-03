@@ -3,7 +3,11 @@ import * as THREE from 'three';
 // Spider-Man style web swinging: fire a strand at a building and pendulum
 // around the anchor point; release to keep the momentum and fly.
 
-const MAX_RANGE = 110;    // how far the web can reach — spans 2-3 buildings
+// Tunable web stats — the upgrade den buffs these at runtime.
+export const webCfg = {
+  range: 110, // how far the web can reach — spans 2-3 buildings
+  reel: 11,   // manual reel-in speed (m/s)
+};
 const MIN_ANCHOR_UP = 4;  // anchor must sit this far above the player
 const G = 24;             // swing gravity, a touch heavier than the jump for punch
 
@@ -21,13 +25,13 @@ export function initWeb(scene) {
   );
   mesh.visible = false;
   scene.add(mesh);
-  return { mesh, attached: false, anchor: new THREE.Vector3(), len: 0, targetLen: 0, cooldown: 0, used: false };
+  return { mesh, attached: false, zip: false, attachT: 0, anchor: new THREE.Vector3(), len: 0, targetLen: 0, cooldown: 0, used: false };
 }
 
 // Ray vs one building AABB ({x0,z0,x1,z1,h}, y in 0..h) — slab method.
 function rayBox(o, d, c) {
   let tmin = 0;
-  let tmax = MAX_RANGE;
+  let tmax = webCfg.range;
   let lo;
   let hi;
 
@@ -70,13 +74,13 @@ export function fireWeb(web, player, camera, colliders) {
     const yaw = baseYaw + dYaw;
     for (const pitch of [aimPitch, 0.35, 0.65, 0.95]) {
       _dir.set(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch));
-      let bestT = MAX_RANGE;
+      let bestT = webCfg.range;
       for (const c of colliders) {
         if ((c.h ?? 0) < 10) continue; // buildings only — no trees
         const t = rayBox(_origin, _dir, c);
         if (t < bestT) bestT = t;
       }
-      if (bestT >= MAX_RANGE) continue;
+      if (bestT >= webCfg.range) continue;
       _cand.copy(_origin).addScaledVector(_dir, bestT);
       if (_cand.y < player.pos.y + MIN_ANCHOR_UP) continue;
       const ahead = Math.hypot(_cand.x - player.pos.x, _cand.z - player.pos.z);
@@ -101,6 +105,7 @@ export function fireWeb(web, player, camera, colliders) {
 
 export function releaseWeb(web) {
   web.attached = false;
+  web.zip = false;
   web.mesh.visible = false;
 }
 
@@ -113,11 +118,11 @@ export function swingStep(web, pos, vel, dt, ctl) {
   // auto-winch: rise smoothly toward street-clearing rope length
   if (web.len > web.targetLen) web.len = Math.max(web.targetLen, web.len - 14 * dt);
   if (ctl.reelIn) {
-    web.len = Math.max(4, web.len - 11 * dt);
+    web.len = Math.max(4, web.len - webCfg.reel * dt);
     web.targetLen = Math.min(web.targetLen, web.len);
   }
   if (ctl.reelOut) {
-    web.len = Math.min(MAX_RANGE, web.len + 9 * dt);
+    web.len = Math.min(webCfg.range, web.len + 9 * dt);
     web.targetLen = Math.max(web.targetLen, web.len);
   }
 

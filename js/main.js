@@ -1,18 +1,22 @@
 import * as THREE from 'three';
-import { initInput, endFrame, keys, pressed, mouse } from './input.js';
+import { initInput, endFrame, pollGamepad, keys, pressed, mouse } from './input.js';
 import { buildCity, resolveCircle, pointBlocked, groundHeight, blockStart, BLOCK, HALF, N } from './city.js';
 import { createCharacter, animateWalk, animateIdle } from './characters.js';
 import { physStep, separateCars, darkenCar } from './car.js';
 import { spawnPeds, updatePeds, killPed, spawnTraffic, updateTraffic, disableTraffic, spawnParked } from './npc.js';
 import { updatePolice, addCrime, copDie, clearCops } from './police.js';
 import { makeHeli, physStepHeli, spinRotors, explodeHeli, updateFallingHeli, updatePoliceHelis } from './heli.js';
-import { initEffects, addTracer, addExplosion, addFlash, addSmoke, addSparks, updateEffects } from './effects.js';
+import { initEffects, addTracer, addExplosion, addFlash, addSmoke, addSparks, addSkid, updateEffects } from './effects.js';
 import { initHUD, updateHUD, setHint, showBanner, hideBanner, showToast } from './hud.js';
-import { initSound, sfxShot, sfxCrash, sfxPickup, sfxWeb, engine, setEngine, rotor, siren, setSiren, rainAmb } from './sound.js';
+import { initSound, sfxShot, sfxCrash, sfxPickup, sfxWeb, engine, setEngine, rotor, siren, setSiren, rainAmb, setRadioStation, RADIO_STATIONS } from './sound.js';
 import { createSkyDome, applyDayNight, DAY_START } from './daynight.js';
 import { initMissions, updateMissions, failMission, mission } from './missions.js';
 import { initWeather, updateWeather } from './weather.js';
 import { initWeb, fireWeb, releaseWeb, swingStep, updateWebVisual, poseSwing, poseFall } from './web.js';
+import { initShops, updateShops } from './shops.js';
+import { initGang, updateGang, killGangMember } from './gangs.js';
+import { updateArmy, killTank } from './army.js';
+import { initAmbient, updateAmbient } from './ambient.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
@@ -100,6 +104,7 @@ const player = {
   vy: 0,
   onGround: true,
   glide: false, // floaty hang-time after releasing a swing
+  wallT: 0,     // wall-run stamina
 };
 player.pos.copy(city.spawn);
 
@@ -126,6 +131,10 @@ const world = {
   shake: 0,
   clock: DAY_START, // in-game hour, 24 real minutes per day
   sunDir: new THREE.Vector3(0.5, 1, 0.4).normalize(),
+  maxHealth: 100,
+  tanks: [],
+  style: 0, // swing style points, cashed out on landing
+  radioSt: save.radio | 0,
 };
 
 // rideable helicopters on the park helipads
@@ -136,11 +145,15 @@ let heliRespawnT = 0;
 
 // missions + saved progress
 initMissions(scene, world, save.missions || 0);
+const shopsState = initShops(scene, world, save.upg);
+const gang = initGang(scene, world, save.gang);
+const flocks = initAmbient(scene);
 
 function saveGame() {
   try {
     localStorage.setItem(SAVE_KEY, JSON.stringify({
       money: world.money, missions: mission.done, mg: ammo.mg, rpg: ammo.rpg,
+      upg: world.upgrades, gang: { owned: gang.owned, kills: gang.kills }, radio: world.radioSt,
     }));
   } catch {}
 }
@@ -218,7 +231,7 @@ function updatePickups(dt) {
         ammo.rpg += 2;
         showToast('+45 MG · +2 RPG');
       } else {
-        player.health = Math.min(100, player.health + 50);
+        player.health = Math.min(world.maxHealth, player.health + 50);
         showToast('+50 HEALTH');
       }
       sfxPickup();
@@ -366,18 +379,34 @@ function updateOnFoot(dt) {
     if (player.vy < -24) { // hard landing hurts
       player.health -= (-player.vy - 24) * 2.2;
       world.shake = 0.25;
+      world.style = 0; // face-planting is not stylish
     }
     player.pos.y = groundY;
     player.vy = 0;
     player.onGround = true;
     player.glide = false;
+    player.wallT = 1.0; // wall-run stamina recharges on the ground
+    cashOutStyle();
   } else if (player.vy < 0 && player.pos.y > groundY + 0.05) {
     player.onGround = false; // walked off a roof edge
   }
 
   player.pos.x += player.vel.x * dt;
   player.pos.z += player.vel.z * dt;
-  resolveCircle(player.pos, 0.5, city.colliders, player.pos.y + 0.5);
+  const wallHit = resolveCircle(player.pos, 0.5, city.colliders, player.pos.y + 0.5);
+
+  // wall-run: push into a building in mid-air while holding W to sprint up it
+  if (wallHit && !player.onGround && keys['KeyW'] && player.wallT > 0) {
+    player.wallT -= dt;
+    player.vy = Math.max(player.vy, 6.2);
+    addStyle(12 * dt);
+    if (pressed['Space']) { // kick off the wall
+      player.vy = 8;
+      player.vel.x += wallHit.nx * 9;
+      player.vel.z += wallHit.nz * 9;
+      player.wallT = 0;
+    }
+  }
 
   if (player.pos.y < 2) {
     for (const v of world.traffic) pushOutOfCar(v);
@@ -401,16 +430,19 @@ function updateOnFoot(dt) {
   player.mesh.rotation.y = player.heading;
   player.mesh.rotation.x *= Math.max(0, 1 - 10 * dt); // settle out of the swing lean
 
-  // weapon switching
-  if (pressed['Digit1']) switchWeapon(0);
-  if (pressed['Digit2']) switchWeapon(1);
-  if (pressed['Digit3']) switchWeapon(2);
+  // weapon switching (digits buy upgrades while at the web den)
+  if (!world.nearDen) {
+    if (pressed['Digit1']) switchWeapon(0);
+    if (pressed['Digit2']) switchWeapon(1);
+    if (pressed['Digit3']) switchWeapon(2);
+  }
 
   // enter vehicle or helicopter
   const nearVeh = findNearestVehicle(3.8);
   const nearHeli = findNearestHeli(6.5);
   if (nearHeli) setHint('Press <b>E</b> to fly helicopter');
   else if (nearVeh) setHint('Press <b>E</b> to enter vehicle');
+  else if (world.shopHint) setHint(world.shopHint);
   else setHint(null);
   if (pressed['KeyE'] || pressed['KeyF']) {
     if (nearHeli) enterHeli(nearHeli);
@@ -429,6 +461,13 @@ function updateOnFoot(dt) {
   if (mouse.rdown && web.cooldown <= 0 && document.pointerLockElement) {
     web.cooldown = 0.25;
     tryStartSwing();
+  }
+
+  // Q: web an enemy or car in place
+  webAtkT -= dt;
+  if (pressed['KeyQ'] && webAtkT <= 0) {
+    webAtkT = 1.1;
+    webAttack();
   }
 }
 
@@ -454,6 +493,7 @@ function findNearestVehicle(maxDist) {
   };
   for (const v of world.parked) check(v);
   for (const v of world.traffic) check(v);
+  for (const v of world.tanks) check(v); // yes, you can steal the tank
   return best;
 }
 
@@ -483,6 +523,8 @@ function enterCar(v) {
   setHint(null);
   camYaw = v.heading;
   engine.start();
+  if (world.radioSt > 0) setRadioStation(world.radioSt);
+  if (v.tank) showToast('TANK! LEFT CLICK = CANNON');
 }
 
 function exitCar() {
@@ -496,9 +538,10 @@ function exitCar() {
   player.mesh.visible = true;
   player.heading = car.heading;
   player.inCar = null;
-  if (!car.dead) world.parked.push(car);
+  if (!car.dead && !car.tank) world.parked.push(car);
   camYaw = car.heading;
   engine.stop();
+  setRadioStation(0);
 }
 
 function enterHeli(h) {
@@ -525,6 +568,79 @@ function exitHeli() {
   rotor.stop();
 }
 
+// ---------- style meter ----------
+// Flashy traversal earns style points; touch the ground to bank them as cash.
+
+function addStyle(n) {
+  world.style += n;
+}
+
+function cashOutStyle() {
+  const pts = Math.round(world.style);
+  world.style = 0;
+  if (pts < 25) return;
+  world.money += pts;
+  showToast(`STYLE BONUS +$${pts}`);
+}
+
+// ---------- web attack ----------
+// Q fires a glob of webbing that pins a pedestrian, gangster or car in place.
+
+let webAtkT = 0;
+const _atkFrom = new THREE.Vector3();
+
+function webAttack() {
+  camera.getWorldDirection(_rayDir);
+  _rayOrigin.copy(camera.position);
+  const RANGE = 45;
+  let bestT = RANGE;
+  let hitPed = null;
+  let hitVeh = null;
+
+  for (const group of [world.peds, world.gangPeds]) {
+    for (const p of group) {
+      if (p.dead || p.webT > 0) continue;
+      const t = raySphere(_rayOrigin, _rayDir, _sphere.set(p.pos.x, 1.1, p.pos.z), 1.0);
+      if (t < bestT) { bestT = t; hitPed = p; hitVeh = null; }
+    }
+  }
+  for (const group of [world.cops, world.traffic, world.tanks]) {
+    for (const v of group) {
+      if (v.dead || v === player.inCar) continue;
+      const t = raySphere(_rayOrigin, _rayDir, _sphere.set(v.pos.x, 0.8, v.pos.z), 2.2);
+      if (t < bestT) { bestT = t; hitVeh = v; hitPed = null; }
+    }
+  }
+
+  sfxWeb();
+  const tgt = hitPed || hitVeh;
+  if (!tgt) return;
+
+  _atkFrom.copy(player.pos);
+  _atkFrom.y += 1.5;
+  addTracer(_atkFrom.clone(), _sphere.set(tgt.pos.x, 1.1, tgt.pos.z).clone());
+  addFlash(_sphere.clone(), 0xffffff, 0.4);
+
+  if (hitPed) {
+    hitPed.webT = 6;
+    if (!hitPed.webWrap) {
+      hitPed.webWrap = new THREE.Mesh(
+        new THREE.BoxGeometry(0.9, 1.9, 0.9),
+        new THREE.MeshBasicMaterial({ color: 0xf2f2ec, transparent: true, opacity: 0.55 })
+      );
+      hitPed.webWrap.position.y = 0.98;
+      hitPed.mesh.add(hitPed.webWrap);
+    }
+    hitPed.webWrap.visible = true;
+    showToast('WEBBED!');
+  } else {
+    hitVeh.webT = 5;
+    hitVeh.vel.set(0, 0, 0);
+    showToast(hitVeh.police ? 'COP CAR WEBBED!' : 'CAR WEBBED!');
+  }
+  addStyle(15);
+}
+
 // ---------- web swinging ----------
 
 const _hand = new THREE.Vector3();
@@ -535,6 +651,8 @@ function tryStartSwing() {
   sfxWeb();
   addFlash(web.anchor.clone(), 0xeeeeee, 0.45);
   setHint(null);
+  web.attachT = 0;
+  if (!player.onGround) addStyle(15); // mid-air catch
   player.onGround = false;
   player.vel.y = player.vy;
   // launch assist so a standing thwip still turns into a real swing
@@ -558,6 +676,7 @@ function stopSwing() {
   player.vy = player.vel.y + Math.min(5, sp * 0.2);
   player.vel.y = 0;
   player.glide = sp > 8; // carry swing speed = hang in the air
+  if (sp > 15) addStyle(sp * 0.6);
 }
 
 function updateSwinging(dt) {
@@ -608,10 +727,24 @@ function updateSwinging(dt) {
     return;
   }
 
+  // quick tap = zip: reel straight to the anchor point instead of swinging
+  web.attachT += dt;
+  if (!mouse.rdown && web.attachT < 0.22) {
+    web.zip = true;
+    return;
+  }
+
   // button released: keep the momentum and fly
   if (!mouse.rdown) {
     stopSwing();
     return;
+  }
+
+  // Q: web an enemy mid-swing
+  webAtkT -= dt;
+  if (pressed['KeyQ'] && webAtkT <= 0) {
+    webAtkT = 1.1;
+    webAttack();
   }
 
   // face the direction of travel and lean into the swing
@@ -639,6 +772,45 @@ function updateSwinging(dt) {
   }
 }
 
+// Zip line: a tapped web reels the player straight to the anchor point.
+const _zipDir = new THREE.Vector3();
+
+function updateZip(dt) {
+  _zipDir.subVectors(web.anchor, player.pos);
+  _zipDir.y -= 1.6; // aim the chest, not the feet, at the anchor
+  const d = _zipDir.length();
+  if (d < 4) { // arrived: pop up onto the ledge
+    releaseWeb(web);
+    player.vy = 5.5;
+    player.vel.multiplyScalar(0.25);
+    player.vel.y = 0;
+    player.glide = true;
+    addStyle(10);
+    return;
+  }
+  _zipDir.multiplyScalar(1 / d);
+  player.vel.set(_zipDir.x * 34, _zipDir.y * 34, _zipDir.z * 34);
+  player.pos.addScaledVector(player.vel, dt);
+
+  const hit = resolveCircle(player.pos, 0.5, city.colliders, player.pos.y + 0.5);
+  if (hit) { // clipped a wall on the way — drop into a glide
+    releaseWeb(web);
+    player.vy = 2;
+    player.vel.multiplyScalar(0.3);
+    player.vel.y = 0;
+    player.glide = true;
+    return;
+  }
+
+  player.heading = Math.atan2(_zipDir.x, _zipDir.z);
+  player.mesh.rotation.y = player.heading;
+  player.mesh.rotation.x = 0.5;
+  poseSwing(player.ch, world.time);
+  _hand.copy(player.pos);
+  _hand.y += 2.1;
+  updateWebVisual(web, _hand);
+}
+
 // ---------- driving ----------
 
 function updateDriving(dt) {
@@ -657,7 +829,7 @@ function updateDriving(dt) {
   }
   setEngine(car.vel.length());
 
-  // tyre smoke while drifting
+  // tyre smoke + rubber stripes while drifting
   if (ctl.handbrake && car.vel.length() > 9) {
     car.skidT = (car.skidT || 0) - dt;
     if (car.skidT <= 0) {
@@ -666,6 +838,29 @@ function updateDriving(dt) {
       back.x += (Math.random() - 0.5) * 1.4;
       back.z += (Math.random() - 0.5) * 1.4;
       addSmoke(back, 0.55);
+      const side = new THREE.Vector3(Math.cos(car.heading), 0, -Math.sin(car.heading));
+      addSkid(car.pos.clone().addScaledVector(side, 0.85), car.heading);
+      addSkid(car.pos.clone().addScaledVector(side, -0.85), car.heading);
+    }
+  }
+
+  // radio
+  if (pressed['KeyR']) {
+    world.radioSt = (world.radioSt + 1) % RADIO_STATIONS.length;
+    setRadioStation(world.radioSt);
+    showToast(RADIO_STATIONS[world.radioSt]);
+  }
+
+  // tank cannon: left click lobs a shell where you're looking
+  if (car.tank) {
+    car.shootT = (car.shootT || 0) - dt;
+    if (mouse.down && car.shootT <= 0 && document.pointerLockElement) {
+      car.shootT = 1.3;
+      camera.getWorldDirection(_rayDir);
+      sfxShot('rpg');
+      fireRocket(car.pos.clone().setY(2.1));
+      world.shake = 0.3;
+      if (world.wanted === 0) addCrime(world, 1);
     }
   }
 
@@ -835,19 +1030,25 @@ function shoot() {
   const RANGE = 80;
   let bestT = RANGE;
   let hitPed = null;
+  let hitGang = null;
   let hitVeh = null;
   let hitHeli = null;
 
   for (const p of world.peds) {
     if (p.dead) continue;
     const t = raySphere(_rayOrigin, _rayDir, _sphere.set(p.pos.x, 1.1, p.pos.z), 0.85);
-    if (t < bestT) { bestT = t; hitPed = p; hitVeh = null; hitHeli = null; }
+    if (t < bestT) { bestT = t; hitPed = p; hitGang = null; hitVeh = null; hitHeli = null; }
   }
-  for (const group of [world.cops, world.traffic, world.parked]) {
+  for (const p of world.gangPeds) {
+    if (p.dead) continue;
+    const t = raySphere(_rayOrigin, _rayDir, _sphere.set(p.pos.x, 1.1, p.pos.z), 0.9);
+    if (t < bestT) { bestT = t; hitGang = p; hitPed = null; hitVeh = null; hitHeli = null; }
+  }
+  for (const group of [world.cops, world.traffic, world.parked, world.tanks]) {
     for (const v of group) {
       if (v.dead) continue;
-      const t = raySphere(_rayOrigin, _rayDir, _sphere.set(v.pos.x, 0.8, v.pos.z), 2.0);
-      if (t < bestT) { bestT = t; hitVeh = v; hitPed = null; hitHeli = null; }
+      const t = raySphere(_rayOrigin, _rayDir, _sphere.set(v.pos.x, 0.8, v.pos.z), v.tank ? 2.8 : 2.0);
+      if (t < bestT) { bestT = t; hitVeh = v; hitPed = null; hitGang = null; hitHeli = null; }
     }
   }
   for (const group of [world.policeHelis, world.helis]) {
@@ -866,10 +1067,13 @@ function shoot() {
 
   if (hitPed) {
     killPed(world, hitPed, true);
+  } else if (hitGang) {
+    killGangMember(world, hitGang); // gang war, no heat
   } else if (hitVeh) {
     hitVeh.health -= w.dmg;
     if (hitVeh.health <= 0) {
-      if (hitVeh.police) copDie(world, hitVeh);
+      if (hitVeh.tank) killTank(world, hitVeh);
+      else if (hitVeh.police) copDie(world, hitVeh);
       else explodeVehicle(hitVeh);
     } else if (hitVeh.ai && !hitVeh.police) {
       disableTraffic(hitVeh);
@@ -880,7 +1084,7 @@ function shoot() {
   }
 }
 
-function fireRocket() {
+function fireRocket(origin) {
   const mesh = new THREE.Group();
   const body = new THREE.Mesh(
     new THREE.CylinderGeometry(0.12, 0.12, 0.9, 6),
@@ -897,9 +1101,9 @@ function fireRocket() {
   mesh.add(tip);
 
   const dir = _rayDir.clone();
-  const pos = player.pos.clone();
-  pos.y = 1.5;
-  pos.addScaledVector(dir, 1.4);
+  const pos = origin ? origin.clone() : player.pos.clone();
+  if (!origin) pos.y = player.pos.y + 1.5;
+  pos.addScaledVector(dir, origin ? 3.2 : 1.4);
   mesh.position.copy(pos);
   mesh.lookAt(pos.clone().add(dir));
   scene.add(mesh);
@@ -919,8 +1123,9 @@ function updateRockets(dt) {
 
     let boom = r.t > 4 || r.pos.y <= 0.15 || pointBlocked(r.pos, city.colliders);
     if (!boom) {
-      for (const group of [world.cops, world.traffic, world.parked]) {
+      for (const group of [world.cops, world.traffic, world.parked, world.tanks]) {
         for (const v of group) {
+          if (v === player.inCar) continue;
           if (!v.dead && Math.hypot(v.pos.x - r.pos.x, v.pos.z - r.pos.z) < 2.6 && r.pos.y < 4) { boom = true; break; }
         }
         if (boom) break;
@@ -948,14 +1153,15 @@ function explodeRocket(pos) {
   addExplosion(pos);
   world.shake = 0.5;
 
-  for (const group of [world.cops, world.traffic, world.parked]) {
+  for (const group of [world.cops, world.traffic, world.parked, world.tanks]) {
     for (const v of group) {
-      if (v.dead) continue;
+      if (v.dead || v === player.inCar) continue;
       const d = Math.hypot(v.pos.x - pos.x, v.pos.z - pos.z) + Math.abs(pos.y - 1);
       if (d < 9) {
-        v.health -= (9 - d) * 25;
+        v.health -= (9 - d) * (v.tank ? 14 : 25);
         if (v.health <= 0) {
-          if (v.police) copDie(world, v);
+          if (v.tank) killTank(world, v);
+          else if (v.police) copDie(world, v);
           else explodeVehicle(v);
         }
       }
@@ -973,6 +1179,9 @@ function explodeRocket(pos) {
   }
   for (const p of world.peds) {
     if (!p.dead && Math.hypot(p.pos.x - pos.x, p.pos.z - pos.z) < 6 && pos.y < 5) killPed(world, p, true);
+  }
+  for (const p of world.gangPeds) {
+    if (!p.dead && Math.hypot(p.pos.x - pos.x, p.pos.z - pos.z) < 6 && pos.y < 5) killGangMember(world, p);
   }
   if (!player.inCar && !player.inHeli) {
     const d = player.pos.distanceTo(pos);
@@ -996,13 +1205,20 @@ function triggerOver(text, color) {
   failMission(world, text === 'WASTED' ? 'You got wasted' : 'You got busted');
   engine.stop();
   rotor.stop();
+  setRadioStation(0);
+  world.style = 0;
+  if (text === 'WASTED' && !player.inCar && !player.inHeli) {
+    // keel over like the peds do
+    player.mesh.rotation.z = Math.PI / 2;
+    player.mesh.position.y = player.pos.y + 0.25;
+  }
 }
 
 function respawn() {
   hideBanner();
   if (player.inCar) {
     player.inCar.vel.set(0, 0, 0);
-    if (!player.inCar.dead) world.parked.push(player.inCar);
+    if (!player.inCar.dead && !player.inCar.tank) world.parked.push(player.inCar);
     player.inCar = null;
   }
   if (player.inHeli) {
@@ -1012,12 +1228,14 @@ function respawn() {
   releaseWeb(web);
   player.glide = false;
   player.mesh.rotation.x = 0;
+  player.mesh.rotation.z = 0;
   player.mesh.visible = true;
   player.pos.copy(city.spawn).add(new THREE.Vector3(3, 0, 3));
   player.pos.y = 0;
   player.vel.set(0, 0, 0);
   player.vy = 0;
-  player.health = 100;
+  player.health = world.maxHealth;
+  world.style = 0;
   world.wanted = 0;
   world.wantedTimer = 0;
   world.busted = false;
@@ -1063,6 +1281,7 @@ function updateSiren() {
 }
 
 const heliHooks = { onShot: () => sfxShot('mg') };
+const armyHooks = { boom: (pos) => explodeRocket(pos) };
 
 let prevHealth = 100;
 let saveT = 0;
@@ -1134,6 +1353,7 @@ function update(dt) {
 
   if (player.inHeli) updateFlying(dt);
   else if (player.inCar) updateDriving(dt);
+  else if (web.zip) updateZip(dt);
   else if (web.attached) updateSwinging(dt);
   else updateOnFoot(dt);
 
@@ -1145,6 +1365,10 @@ function update(dt) {
   updateRockets(dt);
   updatePickups(dt);
   updateMissions(world, dt);
+  updateShops(shopsState, world, dt, keys, pressed);
+  updateGang(world, dt);
+  updateArmy(world, dt, armyHooks);
+  updateAmbient(flocks, world, dt);
   updateEffects(dt);
   updateCamera(dt);
   updateSiren();
@@ -1156,6 +1380,7 @@ function update(dt) {
 
 function animate() {
   requestAnimationFrame(animate);
+  pollGamepad();
   const dt = Math.min(clock.getDelta(), 0.05);
   if (gameState !== 'start') update(dt);
   composer.render();
@@ -1174,7 +1399,12 @@ window.__debug = {
   web,
   startSwing: tryStartSwing,
   stopSwing,
+  webAttack,
+  gang,
+  shops: shopsState,
   getCamYaw: () => camYaw,
   setCamYaw: (v) => { camYaw = v; },
+  setCamPitch: (v) => { camPitch = v; },
+  getState: () => gameState,
   setClock: (h) => { world.clock = h; },
 };

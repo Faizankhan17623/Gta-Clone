@@ -78,6 +78,13 @@ export function updatePolice(world, dt) {
       continue;
     }
 
+    // webbed to the road: no driving, no arrests
+    if (cop.webT > 0) {
+      cop.webT -= dt;
+      cop.vel.set(0, 0, 0);
+      continue;
+    }
+
     // flashing lightbar
     cop.flashT += dt;
     if (cop.lightbar) {

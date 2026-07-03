@@ -2,9 +2,10 @@ import * as THREE from 'three';
 import { roadCenter, N, HALF } from './city.js';
 import { showToast, showMissionMsg } from './hud.js';
 import { sfxMissionPass, sfxMissionFail, sfxPickup } from './sound.js';
+import { makeHeli } from './heli.js';
 
 // Mission system: a yellow beam marks the mission start point. Walk or drive
-// into it to begin. Three mission types rotate, each with a timer, a pink
+// into it to begin. Six mission types rotate, each with a timer, a pink
 // objective marker and a cash reward that grows as you complete more.
 
 export const mission = {
@@ -17,6 +18,8 @@ export const mission = {
   done: 0,
   cpLeft: 0,
   target: null, // ped, for hit contracts
+  boss: null,   // heli, for boss fights
+  taxiStage: '',
   markerPos: new THREE.Vector3(),
   objectivePos: new THREE.Vector3(),
 };
@@ -24,6 +27,7 @@ export const mission = {
 let startMarker = null;
 let objMarker = null;
 let targetArrow = null;
+let airRing = null;
 
 function makeMarker(color, radius) {
   const group = new THREE.Group();
@@ -81,12 +85,28 @@ export function initMissions(scene, world, doneCount = 0) {
   targetArrow.rotation.x = Math.PI;
   targetArrow.visible = false;
   scene.add(targetArrow);
+  // floating checkpoint ring for the air swing-races
+  airRing = new THREE.Mesh(
+    new THREE.TorusGeometry(4, 0.4, 10, 28),
+    new THREE.MeshBasicMaterial({ color: 0x4ad2ff, transparent: true, opacity: 0.85 })
+  );
+  airRing.visible = false;
+  scene.add(airRing);
   placeStartMarker(world, true);
   world.mission = mission;
 }
 
+// A ring somewhere up in the canyon between the buildings.
+function placeAirRing(world, from) {
+  const p = randomRoadPoint(from, 70, 130);
+  p.y = 13 + Math.random() * 14;
+  mission.objectivePos.copy(p);
+  airRing.position.copy(p);
+  airRing.visible = true;
+}
+
 function startMission(world) {
-  let type = ['delivery', 'race', 'hit'][mission.done % 3];
+  let type = ['delivery', 'race', 'air', 'taxi', 'hit', 'boss'][mission.done % 6];
 
   if (type === 'hit') {
     // need a living ped a reasonable chase away
@@ -102,10 +122,35 @@ function startMission(world) {
 
   mission.active = true;
   mission.type = type;
-  mission.reward = { delivery: 500, race: 800, hit: 450 }[type] + mission.done * 150;
+  mission.reward = { delivery: 500, race: 800, hit: 450, air: 1000, taxi: 700, boss: 2500 }[type] + mission.done * 150;
   startMarker.visible = false;
 
-  if (type === 'delivery') {
+  if (type === 'air') {
+    mission.cpLeft = 5;
+    mission.timeLeft = 35;
+    mission.title = 'SWING RACE';
+    mission.text = 'Fly through 5 sky rings — webs only, no vehicles';
+    placeAirRing(world, world.player.pos);
+  } else if (type === 'taxi') {
+    mission.taxiStage = 'pick';
+    mission.cpLeft = 2; // two fares
+    mission.timeLeft = 45;
+    mission.title = 'TAXI SHIFT';
+    mission.text = 'Get a car and pick up the fare (pink marker)';
+    mission.objectivePos.copy(randomRoadPoint(world.player.pos, 80, 200));
+  } else if (type === 'boss') {
+    const p = world.player.pos;
+    const ang = Math.random() * Math.PI * 2;
+    const h = makeHeli(world.scene, p.x + Math.sin(ang) * 130, 55, p.z + Math.cos(ang) * 130, ang + Math.PI, true);
+    h.boss = true;
+    h.health = 220;
+    world.policeHelis.push(h);
+    mission.boss = h;
+    mission.timeLeft = 100;
+    mission.title = 'BOSS: RIVAL CHOPPER';
+    mission.text = 'Shoot down the crime boss before he escapes';
+    mission.objectivePos.copy(h.pos);
+  } else if (type === 'delivery') {
     mission.objectivePos.copy(randomRoadPoint(world.player.pos, 160, 420));
     const d = Math.hypot(mission.objectivePos.x - world.player.pos.x, mission.objectivePos.z - world.player.pos.z);
     mission.timeLeft = 20 + d * 0.25;
@@ -125,7 +170,7 @@ function startMission(world) {
     targetArrow.visible = true;
   }
 
-  objMarker.visible = type !== 'hit';
+  objMarker.visible = type !== 'hit' && type !== 'air' && type !== 'boss';
   objMarker.position.copy(mission.objectivePos);
   showMissionMsg(mission.title, mission.text, '#ffd24a');
   showToast('REWARD: $' + mission.reward);
@@ -134,8 +179,14 @@ function startMission(world) {
 function endMission(world) {
   mission.active = false;
   mission.target = null;
+  if (mission.boss && !mission.boss.dead) {
+    mission.boss.boss = false; // hand him back to the normal despawn logic
+    mission.boss.leaving = true;
+  }
+  mission.boss = null;
   objMarker.visible = false;
   targetArrow.visible = false;
+  airRing.visible = false;
   placeStartMarker(world);
 }
 
@@ -209,5 +260,54 @@ export function updateMissions(world, dt) {
     targetArrow.position.set(tp.pos.x, 2.7 + Math.sin(t * 5) * 0.25, tp.pos.z);
     targetArrow.rotation.y += dt * 3;
     if (tp.dead) passMission(world);
+  } else if (mission.type === 'air') {
+    airRing.rotation.y += dt * 1.4;
+    const pulse = 1 + Math.sin(t * 4) * 0.06;
+    airRing.scale.setScalar(pulse);
+    const p = world.player;
+    if (!car && !p.inHeli &&
+        p.pos.distanceTo(mission.objectivePos) < 5.5) {
+      mission.cpLeft--;
+      if (mission.cpLeft <= 0) {
+        passMission(world);
+      } else {
+        sfxPickup();
+        mission.timeLeft += 18;
+        mission.text = `Sky rings left: ${mission.cpLeft}`;
+        showToast('RING! +18s');
+        placeAirRing(world, mission.objectivePos);
+      }
+    }
+  } else if (mission.type === 'taxi') {
+    if (car && !car.dead && car.vel.length() < 4 &&
+        Math.hypot(car.pos.x - mission.objectivePos.x, car.pos.z - mission.objectivePos.z) < 5.5) {
+      if (mission.taxiStage === 'pick') {
+        mission.taxiStage = 'drop';
+        mission.timeLeft += 25;
+        mission.text = 'Fare aboard — take them to the marker';
+        showToast('FARE PICKED UP +25s');
+        sfxPickup();
+      } else {
+        mission.cpLeft--;
+        if (mission.cpLeft <= 0) {
+          passMission(world);
+          return;
+        }
+        mission.taxiStage = 'pick';
+        mission.timeLeft += 25;
+        mission.text = 'Fare dropped! Next pickup is marked';
+        showToast('FARE DROPPED +25s');
+        sfxPickup();
+      }
+      mission.objectivePos.copy(randomRoadPoint(mission.objectivePos, 90, 220));
+      objMarker.position.copy(mission.objectivePos);
+    }
+  } else if (mission.type === 'boss') {
+    const b = mission.boss;
+    if (!b || b.dead) {
+      passMission(world);
+      return;
+    }
+    mission.objectivePos.copy(b.pos); // minimap tracks him
   }
 }

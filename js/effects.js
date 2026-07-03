@@ -104,6 +104,20 @@ export function addExplosion(pos) {
   boomT = 1;
 }
 
+// rubber stripes left on the road while drifting
+const skidGeo = new THREE.PlaneGeometry(0.26, 1.7);
+skidGeo.rotateX(-Math.PI / 2);
+export function addSkid(pos, heading) {
+  const mesh = new THREE.Mesh(
+    skidGeo,
+    new THREE.MeshBasicMaterial({ color: 0x0c0c0e, transparent: true, opacity: 0.5, depthWrite: false })
+  );
+  mesh.position.set(pos.x, 0.06 + Math.random() * 0.015, pos.z);
+  mesh.rotation.y = heading;
+  scene.add(mesh);
+  list.push({ mesh, t: 0, life: 8, kind: 'skid' });
+}
+
 export function addSmoke(pos, size = 0.7) {
   const mesh = new THREE.Mesh(
     new THREE.SphereGeometry(1, 7, 6),
@@ -147,6 +161,10 @@ export function updateEffects(dt) {
         e.mesh.material.transparent = true;
         e.mesh.material.opacity = 1 - (p - 0.6) / 0.4;
       }
+      continue;
+    }
+    if (e.kind === 'skid') {
+      e.mesh.material.opacity = 0.5 * Math.min(1, (1 - p) * 3);
       continue;
     }
     e.mesh.material.opacity = (1 - p) * 0.95;

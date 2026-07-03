@@ -196,7 +196,8 @@ export function updatePoliceHelis(world, dt, hooks) {
   const focus = player.inHeli ? player.inHeli.pos : player.inCar ? player.inCar.pos : player.pos;
 
   const desired = world.wanted >= 5 ? 2 : world.wanted >= 3 ? 1 : 0;
-  const alive = world.policeHelis.filter((h) => !h.dead && !h.leaving).length;
+  // boss choppers (missions) don't count toward the wanted-level quota
+  const alive = world.policeHelis.filter((h) => !h.dead && !h.leaving && !h.boss).length;
   if (alive < desired) {
     const ang = Math.random() * Math.PI * 2;
     const h = makeHeli(world.scene, focus.x + Math.sin(ang) * 140, 60, focus.z + Math.cos(ang) * 140, ang + Math.PI, true);
@@ -205,7 +206,7 @@ export function updatePoliceHelis(world, dt, hooks) {
   }
   if (alive > desired) {
     for (const h of world.policeHelis) {
-      if (!h.dead && !h.leaving) { h.leaving = true; break; }
+      if (!h.dead && !h.leaving && !h.boss) { h.leaving = true; break; }
     }
   }
 

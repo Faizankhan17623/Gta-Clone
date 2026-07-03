@@ -118,7 +118,19 @@ for (const key of ['KeyW', 'KeyS', 'KeyA', 'KeyD']) {
   const dist = Math.hypot(end.x - start.x, end.z - start.z);
   console.log(`web traversal: covered ${dist.toFixed(0)}m in 3 chained swings ${dist > 50 ? 'PASS' : 'FAIL'}`);
   await page.waitForTimeout(1500); // let the player land
-  await ev(() => { const d = window.__debug; d.player.health = 100; d.player.pos.y = 0; d.player.vy = 0; d.stopSwing(); });
+  // if a rough landing wasted the player, sit out the game-over screen
+  const state = await ev(() => window.__debug.getState());
+  if (state !== 'play') console.log(`(note: traversal ended ${state}, waiting for respawn)`);
+  await page.waitForFunction(() => window.__debug.getState() === 'play', null, { timeout: 8000 });
+  await ev(() => {
+    const d = window.__debug;
+    d.stopSwing();
+    d.player.health = 100;
+    d.player.pos.y = 0;
+    d.player.vy = 0;
+    d.player.vel.set(0, 0, 0); // shed the swing speed or we slide off the next teleport
+    d.player.glide = false;
+  });
 }
 
 // --- 4. driving: teleport next to a parked car, enter, drive, steer with D ---
@@ -127,6 +139,8 @@ for (const key of ['KeyW', 'KeyS', 'KeyA', 'KeyD']) {
     const d = window.__debug;
     const car = d.world.parked[0];
     d.player.pos.set(car.pos.x + 2.5, 0, car.pos.z);
+    d.player.vel.set(0, 0, 0);
+    d.player.vy = 0;
   });
   await page.waitForTimeout(200);
   await page.keyboard.press('KeyE');
@@ -188,6 +202,94 @@ for (const key of ['KeyW', 'KeyS', 'KeyA', 'KeyD']) {
   await page.waitForTimeout(1200);
   const n = await ev(() => window.__debug.world.policeHelis.length);
   console.log(`police heli at 3 stars: ${n} ${n >= 1 ? 'PASS' : 'FAIL'}`);
+  await ev(() => { window.__debug.world.wanted = 0; });
+}
+
+// --- 7. new city features ---
+{
+  // back on foot, clean slate
+  await ev(() => {
+    const d = window.__debug;
+    d.player.inHeli = null;
+    d.player.mesh.visible = true;
+    d.world.wanted = 0;
+    d.player.pos.set(d.world.city.spawn.x + 6, 0, d.world.city.spawn.z);
+    d.player.vy = 0;
+  });
+  await page.waitForTimeout(300);
+
+  // 7a. web attack pins a pedestrian
+  await ev(() => {
+    const d = window.__debug;
+    const p = d.world.peds[0];
+    p.dead = false;
+    p.webT = 0;
+    p.pos.set(d.player.pos.x, 0, d.player.pos.z + 8);
+    d.setCamYaw(0);
+    d.setCamPitch(-0.1); // aim flat so the ray reaches the ped, not the road
+  });
+  await page.waitForTimeout(500);
+  await ev(() => window.__debug.webAttack());
+  // any ped pinned counts — bystanders sometimes wander into the shot
+  const webbed = await ev(() => window.__debug.world.peds.some((p) => p.webT > 0));
+  console.log(`web attack (Q): ${webbed ? 'PASS' : 'FAIL'}`);
+
+  // 7b. robbing a store pays out
+  const before = await ev(() => {
+    const d = window.__debug;
+    const s = d.shops.shops[0];
+    s.cd = 0;
+    d.player.pos.set(s.pos.x, 0, s.pos.z + 1);
+    return d.world.money;
+  });
+  await page.waitForTimeout(200);
+  await page.keyboard.down('KeyE');
+  await page.waitForTimeout(2200);
+  await page.keyboard.up('KeyE');
+  const after = await ev(() => window.__debug.world.money);
+  console.log(`rob store: +$${after - before} ${after - before >= 250 ? 'PASS' : 'FAIL'}`);
+  await ev(() => { window.__debug.world.wanted = 0; });
+
+  // 7c. gang territory exists and is hostile
+  const gangOk = await ev(() => {
+    const g = window.__debug.gang;
+    return g && !g.owned && g.members.filter((m) => !m.dead).length >= 8;
+  });
+  console.log(`gang territory: ${gangOk ? 'PASS' : 'FAIL'}`);
+
+  // 7d. motorbike: find one, ride it on an open road
+  const bikeFound = await ev(() => {
+    const d = window.__debug;
+    const bike = d.world.parked.find((v) => v.bike && !v.dead);
+    if (!bike) return false;
+    d.player.pos.set(bike.pos.x + 2, 0, bike.pos.z);
+    return true;
+  });
+  await page.waitForTimeout(200);
+  await page.keyboard.press('KeyE');
+  await page.waitForTimeout(200);
+  await ev(() => {
+    const d = window.__debug;
+    const b = d.player.inCar;
+    if (!b) return;
+    b.pos.set(d.world.city.roadXs[3], b.pos.y, -150);
+    b.heading = 0;
+    b.vel.set(0, 0, 0);
+    d.setCamYaw(0);
+  });
+  await page.keyboard.down('KeyW');
+  await page.waitForTimeout(1000);
+  await page.keyboard.up('KeyW');
+  const bikeSpeed = await ev(() => window.__debug.player.inCar?.vel.length() ?? 0);
+  console.log(`motorbike: found ${bikeFound}, speed ${bikeSpeed.toFixed(1)} m/s ${bikeFound && bikeSpeed > 4 ? 'PASS' : 'FAIL'}`);
+  await page.waitForTimeout(600);
+  await page.keyboard.press('KeyE'); // hop off
+
+  // 7e. five stars brings the tank
+  await ev(() => { window.__debug.world.wanted = 5; window.__debug.world.wantedTimer = 0; });
+  await page.waitForTimeout(1500);
+  const tanks = await ev(() => window.__debug.world.tanks.filter((t) => !t.dead).length);
+  console.log(`army tank at 5 stars: ${tanks} ${tanks >= 1 ? 'PASS' : 'FAIL'}`);
   await ev(() => { window.__debug.world.wanted = 0; });
 }
 

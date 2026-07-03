@@ -65,3 +65,48 @@ export function endFrame() {
   mouse.dx = 0;
   mouse.dy = 0;
 }
+
+// ---------------- gamepad ----------------
+// Polled once per frame; maps onto the same keys/pressed/mouse the keyboard
+// uses, so every game system gets controller support for free.
+// Left stick move · right stick camera · A jump/up · B sprint/down · X enter
+// Y web-attack · LB radio · RB/LT web-swing · RT shoot
+
+let gpPrev = Object.create(null);
+let gpFire = false;
+let gpWeb = false;
+
+export function pollGamepad() {
+  const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+  let gp = null;
+  for (const p of pads) if (p && p.connected) { gp = p; break; }
+  if (!gp) return;
+
+  const cur = Object.create(null);
+  const ax = (i) => gp.axes[i] || 0;
+  if (ax(1) < -0.35) cur['KeyW'] = true;
+  if (ax(1) > 0.35) cur['KeyS'] = true;
+  if (ax(0) < -0.35) cur['KeyA'] = true;
+  if (ax(0) > 0.35) cur['KeyD'] = true;
+  if (Math.abs(ax(2)) > 0.2) mouse.dx += ax(2) * 16;
+  if (Math.abs(ax(3)) > 0.2) mouse.dy += ax(3) * 12;
+
+  const btn = (i) => !!(gp.buttons[i] && gp.buttons[i].pressed);
+  if (btn(0)) cur['Space'] = true;
+  if (btn(1)) cur['ShiftLeft'] = true;
+  if (btn(2)) cur['KeyE'] = true;
+  if (btn(3)) cur['KeyQ'] = true;
+  if (btn(4)) cur['KeyR'] = true;
+
+  const fire = btn(7);
+  if (fire !== gpFire) { mouse.down = fire; gpFire = fire; }
+  const webBtn = btn(5) || btn(6);
+  if (webBtn !== gpWeb) { mouse.rdown = webBtn; gpWeb = webBtn; }
+
+  for (const k in cur) {
+    if (!gpPrev[k]) pressed[k] = true;
+    keys[k] = true;
+  }
+  for (const k in gpPrev) if (!cur[k]) keys[k] = false;
+  gpPrev = cur;
+}

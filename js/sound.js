@@ -236,3 +236,93 @@ export function setSiren(vol) {
   if (!siren.nodes || !ctx) return;
   siren.nodes.g.gain.setTargetAtTime(vol * 0.08, ctx.currentTime, 0.15);
 }
+
+// ---------- car radio (procedural stations) ----------
+
+export const RADIO_STATIONS = ['RADIO OFF', 'LOFI 88.1', 'DRIVE FM', 'BASS 103'];
+let radioNodes = null;
+
+function stopRadio() {
+  if (!radioNodes) return;
+  for (const n of radioNodes) { try { n.stop(); } catch {} }
+  radioNodes = null;
+}
+
+// Each station is a small self-running synth patch: oscillators + LFOs, no
+// scheduling needed, it just grooves forever until stopped.
+export function setRadioStation(i) {
+  stopRadio();
+  if (!ctx || i <= 0) return;
+  const stops = [];
+  const bus = ctx.createGain();
+  bus.gain.value = 0.05;
+  bus.connect(master);
+
+  const osc = (type, freq) => {
+    const o = ctx.createOscillator();
+    o.type = type;
+    o.frequency.value = freq;
+    stops.push(o);
+    return o;
+  };
+
+  if (i === 1) {
+    // LOFI: two warm detuned sines drifting through a slow filter
+    const f = ctx.createBiquadFilter();
+    f.type = 'lowpass';
+    f.frequency.value = 900;
+    const a = osc('sine', 220);
+    const b = osc('sine', 220 * 1.5 + 1.5);
+    const lfo = osc('sine', 0.11);
+    const lfoG = ctx.createGain();
+    lfoG.gain.value = 70;
+    lfo.connect(lfoG).connect(a.frequency);
+    a.connect(f); b.connect(f); f.connect(bus);
+    a.start(); b.start(); lfo.start();
+  } else if (i === 2) {
+    // DRIVE FM: synthwave saw pad, filter sweeping, hat tick on top
+    const f = ctx.createBiquadFilter();
+    f.type = 'lowpass';
+    f.frequency.value = 600;
+    for (const fr of [110, 165, 220]) { const o = osc('sawtooth', fr); o.connect(f); o.start(); }
+    const sweep = osc('sine', 0.25);
+    const sweepG = ctx.createGain();
+    sweepG.gain.value = 380;
+    sweep.connect(sweepG).connect(f.frequency);
+    sweep.start();
+    f.connect(bus);
+    const hat = ctx.createBufferSource();
+    hat.buffer = noiseBuf;
+    hat.loop = true;
+    const hf = ctx.createBiquadFilter();
+    hf.type = 'highpass';
+    hf.frequency.value = 6000;
+    const hg = ctx.createGain();
+    hg.gain.value = 0;
+    const tick = osc('square', 4);
+    const tickG = ctx.createGain();
+    tickG.gain.value = 0.35;
+    tick.connect(tickG).connect(hg.gain);
+    hat.connect(hf).connect(hg).connect(bus);
+    hat.start(); tick.start();
+    stops.push(hat);
+  } else {
+    // BASS 103: sub sine + square bass hopping between two notes
+    const sub = osc('sine', 55);
+    sub.connect(bus);
+    sub.start();
+    const b = osc('square', 110);
+    const bg = ctx.createGain();
+    bg.gain.value = 0.4;
+    const hop = osc('square', 1.1);
+    const hopG = ctx.createGain();
+    hopG.gain.value = 27; // 110 <-> 137.5-ish
+    hop.connect(hopG).connect(b.frequency);
+    const bf = ctx.createBiquadFilter();
+    bf.type = 'lowpass';
+    bf.frequency.value = 500;
+    b.connect(bg).connect(bf).connect(bus);
+    b.start(); hop.start();
+  }
+  radioNodes = stops;
+}

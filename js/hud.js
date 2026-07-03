@@ -84,7 +84,7 @@ export function updateHUD(world) {
   }
 
   const hp = Math.max(0, player.health);
-  els.health.style.width = hp + '%';
+  els.health.style.width = Math.min(100, (hp / (world.maxHealth || 100)) * 100) + '%';
   els.health.style.background = hp > 40
     ? 'linear-gradient(90deg,#2faf4e,#5fe07a)'
     : 'linear-gradient(90deg,#b03030,#e05f5f)';
@@ -155,6 +155,34 @@ function drawMinimap(world) {
     g.moveTo(0, mz);
     g.lineTo(size, mz);
     g.stroke();
+  }
+
+  // gang turf tint
+  if (world.gang) {
+    const z = world.gang.zone;
+    const [x0, z0] = toMap(z.x0, z.z0);
+    const [x1, z1] = toMap(z.x1, z.z1);
+    g.fillStyle = world.gang.owned ? 'rgba(47,175,78,0.25)' : 'rgba(192,48,48,0.3)';
+    g.fillRect(x0, z0, x1 - x0, z1 - z0);
+  }
+
+  // robbable stores
+  if (world.shops) {
+    for (const s of world.shops) {
+      const [mx, mz] = toMap(s.pos.x, s.pos.z);
+      g.fillStyle = s.cd > 0 ? '#5a5a60' : '#2fd06a';
+      g.fillRect(mx - 2, mz - 2, 4, 4);
+    }
+  }
+
+  // tanks
+  if (world.tanks) {
+    for (const t of world.tanks) {
+      if (t.dead) continue;
+      const [mx, mz] = toMap(t.pos.x, t.pos.z);
+      g.fillStyle = '#ff3b3b';
+      g.fillRect(mx - 3, mz - 3, 6, 6);
+    }
   }
 
   // pickups
