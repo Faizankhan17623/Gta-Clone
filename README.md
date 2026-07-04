@@ -168,10 +168,7 @@ pigeons, day/night, death + respawn, and the save file.
 
 - **River + boats** along the south edge, with bridges (needs a map rework)
 - **Elevated metro loop** you can ride and roof-surf (needs a map rework)
-- Melee combat + web-yank finishers, dodge roll
-- Unlockable suits with perks (symbiote, stealth)
 - A rival web-swinger boss who chases you across rooftops
-- Multi-stage heists, interiors (bank, nightclub, garage)
-- Skill tree paid in style points: double-jump, web-pull, slow-mo aim
-- Photo mode, stats & achievements, settings menu, save slots
-- Landmark towers, NPC dialogue barks, slow-motion stunt moments
+- Multi-stage heists and enterable interiors (bank, nightclub, garage)
+- Kiosk menus on mobile (touch buttons for casino / wardrobe / dealership)
+- Save slots, landmark towers, multiplayer someday
