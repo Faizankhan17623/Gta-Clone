@@ -29,9 +29,14 @@ Then open **http://localhost:8080** and click PLAY.
 | **Right Click (tap)** | Zip straight to a rooftop |
 | Space / Shift (mid-swing) | Reel the web in / let it out |
 | **W into a wall (airborne)** | Wall-run up it — Space kicks off |
-| **Q** | Web-shot: pin peds, gangsters or cars in webbing |
+| **Q** | Web-shot (again on a webbed enemy = **web-yank** takedown) |
+| **F** | Punch combo on the ground · **web-dash** in the air (level 4) |
+| Double-tap W/A/S/D | Dodge roll with i-frames |
+| C (hold) / T | Charge super-jump / sling a web trampoline |
+| **M** | Full city map — click to set a waypoint |
+| **P / Esc** | Pause: settings, lifetime stats, photo mode |
 | Left Click | Shoot |
-| 1 / 2 / 3 | Pistol / Machine Gun / RPG |
+| 1 / 2 / 3 | Pistol / Machine Gun / RPG (kiosk menus while at one) |
 | E | Enter vehicle / rob store (hold) |
 
 ### Vehicles
@@ -100,7 +105,19 @@ Walk into the yellow beam: **Delivery** → **Street race** (5 checkpoints) →
 **Hit contract** → **Boss fight** (shoot down the rival crime chopper).
 Rewards scale as you complete more.
 
+### Progression
+- **XP levels** unlock skills: double-jump (2), web-dash (4), slow-motion
+  airborne aim (6), parkour sprint (8).
+- **Wardrobe suits** with perks: Classic (+50% style), Symbiote (2x melee,
+  10s webs), Stealth (heat fades twice as fast).
+- **Lifetime stats and 10 achievements**, all in the pause menu.
+
 ### Tech
+- **Playable on phones**: virtual joystick + buttons, and it's a **PWA** —
+  add to home screen, runs full-screen, works offline after the first load.
+- Pause menu with volume / sensitivity / invert-Y / low-graphics settings,
+  **photo mode** with filters, full-screen map with waypoints, chase music
+  that swells with the wanted level, NPC speech bubbles, intro flyover.
 - Procedural WebAudio everything — guns, explosions, engines, sirens, rotor
   thump, thunder, mission stingers, radio. Zero audio files.
 - Post-processing bloom, ACES tone mapping, PMREM reflections.
@@ -137,7 +154,8 @@ js/input.js       Keyboard / mouse / pointer-lock / gamepad input
 ```
 npm start                  # serve on :8080 (or PORT=xxxx for the tests)
 node test/fulltest.mjs     # gameplay smoke suite — 22 checks
-node test/featurecheck.mjs # feature audit: every feature verified live — 19 checks
+node test/featurecheck.mjs # feature audit: every feature verified live — 42 checks
+node test/mobiletest.mjs   # phone emulation: joystick, buttons, touch UI
 ```
 
 Headless-browser suites (Playwright + Edge/Chrome) drive the real game:

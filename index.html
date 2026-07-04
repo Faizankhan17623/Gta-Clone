@@ -2,12 +2,15 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#090d13">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
 <title>OPEN CITY — browser open world</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='18' fill='%23111722'/><text x='50' y='72' font-size='62' text-anchor='middle' fill='%23ffd24a' font-family='Arial' font-weight='bold' font-style='italic'>OC</text></svg>">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body { width: 100%; height: 100%; overflow: hidden; background: #000; font-family: 'Segoe UI', Arial, sans-serif; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #000; font-family: 'Segoe UI', Arial, sans-serif; touch-action: none; overscroll-behavior: none; }
   canvas#game { display: block; }
 
   #hud { position: fixed; inset: 0; pointer-events: none; user-select: none; }
@@ -118,8 +121,17 @@
 
   #start {
     position: fixed; inset: 0; background: radial-gradient(ellipse at 50% 30%, #1d2a3a 0%, #090d13 70%);
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    display: flex; flex-direction: column; align-items: center; justify-content: safe center;
     color: #fff; z-index: 10; text-align: center;
+    overflow-y: auto; padding: 20px 10px; box-sizing: border-box;
+  }
+  /* phones: shrink the menu so PLAY always fits on screen */
+  @media (max-width: 700px), (max-height: 620px) {
+    #start h1 { font-size: 40px; }
+    #start .tag { font-size: 13px; margin-bottom: 12px; }
+    #start .controls { font-size: 11px; line-height: 1.6; padding: 10px 14px; }
+    #start .controls b { min-width: 78px; }
+    #playbtn { margin-top: 14px; font-size: 18px; padding: 12px 36px; }
   }
   #start h1 {
     font-size: 72px; font-weight: 900; font-style: italic; letter-spacing: 4px;
@@ -196,18 +208,26 @@
       <div><b>E</b> Enter / Exit vehicle or helicopter</div>
       <div><b>Left Click</b> Shoot (on foot) / Tank cannon</div>
       <div><b>Right Click</b> Hold = web-swing, quick tap = zip to rooftops</div>
-      <div><b>Q</b> Web-shot: pin enemies, cars — even drones</div>
+      <div><b>Q</b> Web-shot (again on a webbed enemy = web-yank) · <b>F</b> Punch combo / air web-dash</div>
       <div><b>W into wall</b> Wall-run while airborne (Space to kick off)</div>
       <div><b>C (hold)</b> Charge a super-jump · <b>Space (falling)</b> Web parachute</div>
-      <div><b>T</b> Web trampoline · <b>Shift on roof edge</b> Parapet grind</div>
+      <div><b>T</b> Web trampoline · <b>Shift on roof edge</b> Grind · <b>Double-tap WASD</b> Dodge roll</div>
+      <div><b>M</b> City map + waypoints · <b>P / Esc</b> Pause, settings, stats, photo mode</div>
       <div><b>R</b> Car radio · <b>1 / 2 / 3</b> Pistol / Machine Gun / RPG</div>
       <div><b>Missions</b> Yellow beam — deliveries, races, sky rings, taxi, hits, boss</div>
       <div><b>City</b> Rob stores · gang turf · WEB DEN · casino · dealership · garage pad · stunt ramps · rampage skulls</div>
-      <div><b>Tip</b> Style pays on landing. 2+ stars = drones, 4 = SWAT, 5 = a stealable tank. Gamepad works.</div>
+      <div><b>Grow</b> XP levels unlock double-jump, web-dash, slow-mo aim · WARDROBE sells suits with perks</div>
+      <div><b>Tip</b> 2+ stars = drones, 4 = SWAT, 5 = a tank. Works on phones — add it to your home screen!</div>
     </div>
     <button id="playbtn">CLICK TO PLAY</button>
   </div>
 
   <script type="module" src="js/main.js"></script>
+  <script>
+    // installable + offline after first visit
+    if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    }
+  </script>
 </body>
 </html>

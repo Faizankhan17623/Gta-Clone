@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { resolveCircle, pointBlocked, HALF } from './city.js';
+import { resolveCircle, pointBlocked, groundHeight, HALF } from './city.js';
 import { addExplosion, addTracer, addFlash, addSmoke } from './effects.js';
 import { addCrime } from './police.js';
 
@@ -146,12 +146,15 @@ export function physStepHeli(h, ctl, dt, colliders) {
   const targetVy = ctl.up > 0 ? 12 : ctl.up < 0 ? -10 : 0;
   h.vel.y += (targetVy - h.vel.y) * Math.min(1, 3.5 * dt);
 
+  const prevY = h.pos.y;
   h.pos.addScaledVector(h.vel, dt);
 
   if (h.pos.y > 110) { h.pos.y = 110; h.vel.y = Math.min(0, h.vel.y); }
-  if (h.pos.y < 0.6) {
+  // land on whatever is underneath — street or rooftop helipad-style
+  const gy = groundHeight(h.pos, colliders, 0.3, Math.max(prevY, h.pos.y)) + 0.6;
+  if (h.pos.y < gy) {
     if (h.vel.y < -13) h.health -= (-h.vel.y - 13) * 5; // hard landing
-    h.pos.y = 0.6;
+    h.pos.y = gy;
     h.vel.y = 0;
     h.vel.x *= Math.max(0, 1 - 4 * dt);
     h.vel.z *= Math.max(0, 1 - 4 * dt);
@@ -304,6 +307,6 @@ function fireAtPlayer(world, h, focus, hooks) {
   if (Math.random() < 0.45) {
     if (player.inHeli) player.inHeli.health -= 7;
     else if (player.inCar) player.inCar.health -= 7;
-    else player.health -= 6;
+    else if (!(player.dodgeT > 0)) player.health -= 6;
   }
 }

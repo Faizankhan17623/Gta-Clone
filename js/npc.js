@@ -95,6 +95,11 @@ export function updatePeds(world, dt) {
 
     let speed;
     if (threat) {
+      if (!p.fleeing && Math.random() < 0.35) {
+        const YELLS = ['AAAAH!', "HE'S GOT WEBS!", 'RUN!!', 'CALL THE COPS!', 'NOT TODAY!'];
+        world.bark?.(p.pos, YELLS[(Math.random() * YELLS.length) | 0]);
+      }
+      p.fleeing = true;
       speed = 5.4;
       _v.subVectors(p.pos, threat);
       _v.y = 0;
@@ -107,6 +112,7 @@ export function updatePeds(world, dt) {
       p.pos.x = Math.max(-B, Math.min(B, p.pos.x));
       p.pos.z = Math.max(-B, Math.min(B, p.pos.z));
     } else {
+      p.fleeing = false;
       // stroll around the block sidewalk loop
       speed = 1.7;
       const tgt = p.corners[p.target];

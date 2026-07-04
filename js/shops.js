@@ -5,6 +5,7 @@ import { addCrime } from './police.js';
 import { sfxPickup, sfxMissionPass, sfxMissionFail } from './sound.js';
 import { webCfg } from './web.js';
 import { makeVehicle } from './car.js';
+import { applySuit } from './characters.js';
 
 // Robbable corner stores (hold E: cash + heat) and the upgrade den where
 // swing money buys permanent buffs.
@@ -69,6 +70,10 @@ export function initShops(scene, world, savedUpgrades) {
   const denPos = world.city.spawn.clone().add(new THREE.Vector3(14, 0, -10));
   const den = kiosk(scene, denPos, '#241a30', '#c95aff', 'WEB DEN');
 
+  // wardrobe — pink, beside the den
+  const wardrobePos = world.city.spawn.clone().add(new THREE.Vector3(14, 0, 12));
+  kiosk(scene, wardrobePos, '#301a2a', '#ff6ab0', 'WARDROBE');
+
   // casino — gold, a block over
   const casinoPos = world.city.spawn.clone().add(new THREE.Vector3(-16, 0, 12));
   kiosk(scene, casinoPos, '#2e2410', '#ffd24a', 'LUCKY 7 CASINO');
@@ -99,7 +104,11 @@ export function initShops(scene, world, savedUpgrades) {
   world.nearKiosk = false;
   applyUpgrades(world);
 
-  const state = { shops, den, denPos, casinoPos, dealerPos, garagePos, casinoCd: 0, garageVeh: null };
+  // suits restore from the save
+  world.suitsOwned = { street: true, ...(world.suitsOwnedSaved || {}) };
+  wearSuit(world, world.suitSaved || 'street', true);
+
+  const state = { shops, den, denPos, casinoPos, dealerPos, garagePos, wardrobePos, casinoCd: 0, garageVeh: null };
   return state;
 }
 
@@ -129,6 +138,21 @@ export function applyUpgrades(world) {
   if (world.upgrades.range) webCfg.range = 150;
   if (world.upgrades.winch) webCfg.reel = 17;
   world.maxHealth = world.upgrades.armor ? 150 : 100;
+}
+
+export const SUITS = [
+  { key: 'street', cost: 0, name: 'STREET CLOTHES', colors: { shirt: '#cfcfc6', pants: '#27406b', skin: '#c98e63' }, perks: {} },
+  { key: 'classic', cost: 600, name: 'CLASSIC RED-BLUE (+50% style)', colors: { shirt: '#c1121f', pants: '#1f3fa8', skin: '#c98e63' }, perks: { style: 1.5 } },
+  { key: 'symbiote', cost: 1200, name: 'SYMBIOTE (2x melee, 10s webs)', colors: { shirt: '#101014', pants: '#101014', skin: '#25252c', hair: '#101014' }, perks: { melee: 2, webDur: 10 } },
+  { key: 'stealth', cost: 900, name: 'STEALTH (heat fades 2x faster)', colors: { shirt: '#c9c9d2', pants: '#8f8f9c', skin: '#c98e63' }, perks: { decay: 12, busted: 3.2 } },
+];
+
+export function wearSuit(world, key, quiet = false) {
+  const suit = SUITS.find((x) => x.key === key) || SUITS[0];
+  world.suit = suit.key;
+  world.perks = { style: 1, melee: 1, webDur: 6, decay: 24, busted: 1.6, ...suit.perks };
+  applySuit(world.player.ch, suit.colors);
+  if (!quiet) showToast(`SUIT: ${suit.name}`);
 }
 
 const UPG = [
@@ -191,6 +215,7 @@ export function updateShops(state, world, dt, keys, pressed) {
       const roll = Math.random();
       if (roll < 0.05) {
         world.money += bet * 5;
+        if (world.stats) world.stats.jackpots++;
         sfxMissionPass();
         showToast(`JACKPOT!!! +$${bet * 5}`);
         showNews('massive jackpot hit at the Lucky 7');
@@ -233,6 +258,32 @@ export function updateShops(state, world, dt, keys, pressed) {
     world.shopHint = world.garageKind
       ? 'GARAGE — your ride respawns here'
       : 'GARAGE — exit any vehicle on the pad to keep it forever';
+  }
+
+  // wardrobe: 1-4 buy/wear suits
+  const wd = Math.hypot(state.wardrobePos.x - player.pos.x, state.wardrobePos.z - player.pos.z);
+  if (onFoot && wd < 3.6) {
+    world.nearKiosk = true;
+    world.shopHint = 'WARDROBE — ' + SUITS.map((u, i) =>
+      world.suitsOwned[u.key]
+        ? `${i + 1}) ${u.name}${world.suit === u.key ? ' ✔' : ''}`
+        : `${i + 1}) ${u.name} $${u.cost}`
+    ).join(' · ');
+    for (let i = 0; i < SUITS.length; i++) {
+      if (!pressed['Digit' + (i + 1)]) continue;
+      const u = SUITS[i];
+      if (world.suitsOwned[u.key]) {
+        wearSuit(world, u.key);
+      } else if (world.money < u.cost) {
+        showToast('Not enough cash');
+      } else {
+        world.money -= u.cost;
+        world.suitsOwned[u.key] = true;
+        wearSuit(world, u.key);
+        sfxMissionPass();
+      }
+      world.onSave?.();
+    }
   }
 
   // upgrade den

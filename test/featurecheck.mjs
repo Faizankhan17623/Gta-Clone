@@ -272,7 +272,13 @@ async function resetPlayer() {
   const inTank = await ev(() => !!window.__debug.player.inCar?.tank);
   check('Tank is stealable', stole && inTank);
   await page.keyboard.press('KeyE');
-  await ev(() => { window.__debug.world.wanted = 0; window.__debug.player.inCar = null; window.__debug.player.mesh.visible = true; });
+  await ev(() => {
+    const d = window.__debug;
+    d.world.wanted = 0;
+    d.player.inCar = null;
+    d.player.mesh.visible = true;
+    for (const t of d.world.tanks) t.dead = true; // stand the army down
+  });
 }
 
 // ---- 13. missions: all six types ----
@@ -519,6 +525,132 @@ async function resetPlayer() {
 {
   const ui = await ev(() => !!document.getElementById('news'));
   check('News ticker element', ui);
+}
+
+// ---- 30. melee combo (F) ----
+{
+  await resetPlayer();
+  const killed = await ev(() => {
+    const d = window.__debug;
+    const p = d.world.peds[1];
+    p.dead = false;
+    p.webT = 0;
+    d.player.heading = 0;
+    p.pos.set(d.player.pos.x, 0, d.player.pos.z + 1.5);
+    d.melee();
+    return p.dead;
+  });
+  check('Melee punch (F)', killed);
+}
+
+// ---- 31. dodge roll (double-tap) ----
+{
+  await resetPlayer();
+  await page.keyboard.press('KeyW');
+  await page.waitForTimeout(90);
+  await page.keyboard.press('KeyW');
+  await page.waitForTimeout(120);
+  const d = await ev(() => window.__debug.player.dodgeT);
+  check('Dodge roll (double-tap W)', d > 0, `i-frames ${d.toFixed(2)}s`);
+  await page.waitForTimeout(600);
+}
+
+// ---- 32. XP levels ----
+{
+  const lvl = await ev(() => {
+    const d = window.__debug;
+    d.addXP(600); // enough for level 2+
+    return d.world.level;
+  });
+  check('XP levels + unlock', lvl >= 2, `level ${lvl}`);
+}
+
+// ---- 33. wardrobe suit ----
+{
+  await resetPlayer();
+  await ev(() => {
+    const d = window.__debug;
+    d.world.money += 600;
+    d.player.pos.copy(d.shops.wardrobePos);
+  });
+  await page.waitForTimeout(300);
+  await page.keyboard.press('Digit2');
+  await page.waitForTimeout(250);
+  const suit = await ev(() => window.__debug.getSuit());
+  check('Wardrobe suit + perk', suit === 'classic', suit);
+}
+
+// ---- 34. pause menu ----
+{
+  await resetPlayer();
+  await ev(() => window.__debug.pauseGame());
+  await page.waitForTimeout(200);
+  const paused = await ev(() => ({
+    state: window.__debug.getState(),
+    menu: document.getElementById('pausemenu').style.display !== 'none',
+  }));
+  await page.click('#pausemenu button'); // RESUME
+  await page.waitForTimeout(200);
+  const resumed = await ev(() => window.__debug.getState());
+  check('Pause menu + settings', paused.state === 'pause' && paused.menu && resumed === 'play');
+}
+
+// ---- 35. photo mode ----
+{
+  await ev(() => window.__debug.pauseGame());
+  await page.waitForTimeout(150);
+  await page.click('#pausemenu button:nth-of-type(2)'); // PHOTO MODE
+  await page.waitForTimeout(200);
+  const inPhoto = await ev(() => window.__debug.getState());
+  await page.keyboard.press('KeyP');
+  await page.waitForTimeout(200);
+  const back = await ev(() => window.__debug.getState());
+  check('Photo mode', inPhoto === 'photo' && back === 'play');
+}
+
+// ---- 36. big map + waypoint ----
+{
+  await ev(() => window.__debug.openBigMap());
+  await page.waitForTimeout(200);
+  const mapOpen = await ev(() => window.__debug.getState() === 'map');
+  await page.click('#bigmap canvas', { position: { x: 200, y: 200 } });
+  await page.waitForTimeout(200);
+  const wp = await ev(() => ({ w: !!window.__debug.world.waypoint, state: window.__debug.getState() }));
+  check('City map + waypoint', mapOpen && wp.w && wp.state === 'play');
+  await ev(() => { window.__debug.world.waypoint = null; });
+}
+
+// ---- 37. NPC barks ----
+{
+  const bark = await ev(async () => {
+    const d = window.__debug;
+    d.world.bark(d.player.pos, 'TEST YELL');
+    await new Promise((r) => setTimeout(r, 250));
+    return d.world.barks.length >= 1;
+  });
+  check('NPC speech bubbles', bark);
+}
+
+// ---- 38. PWA files served ----
+{
+  const pwa = await ev(async () => {
+    const m = await fetch('manifest.json');
+    const w = await fetch('sw.js');
+    const i = await fetch('icon.svg');
+    return m.ok && w.ok && i.ok;
+  });
+  check('PWA (manifest + service worker + icon)', pwa);
+}
+
+// ---- 39. achievements engine ----
+{
+  const got = await ev(async () => {
+    const d = window.__debug;
+    d.world.stats.jackpots = 1;
+    await new Promise((r) => setTimeout(r, 2500));
+    return !!d.world.ach.jackpot;
+  });
+  check('Achievements unlock', got);
 }
 
 console.log('---');

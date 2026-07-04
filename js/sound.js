@@ -155,6 +155,53 @@ export function setHum(vol) {
   cityHum.nodes.g.gain.setTargetAtTime(vol * 0.045, ctx.currentTime, 1.2);
 }
 
+// master volume 0..1 (settings menu)
+export function setMasterVolume(v) {
+  if (!master || !ctx) return;
+  master.gain.setTargetAtTime(Math.max(0, Math.min(1, v)) * 0.5, ctx.currentTime, 0.1);
+}
+
+// tense chase layer that swells with the wanted level
+export const chase = makeLoop(() => {
+  const bass = ctx.createOscillator();
+  bass.type = 'triangle';
+  bass.frequency.value = 55;
+  const pulse = ctx.createOscillator(); // pumping gate
+  pulse.type = 'square';
+  pulse.frequency.value = 2.2;
+  const pulseG = ctx.createGain();
+  pulseG.gain.value = 0.5;
+  const bg = ctx.createGain();
+  bg.gain.value = 0;
+  pulse.connect(pulseG).connect(bg.gain);
+  bass.connect(bg).connect(master);
+  // driving hats for high heat
+  const hat = ctx.createBufferSource();
+  hat.buffer = noiseBuf;
+  hat.loop = true;
+  const hf = ctx.createBiquadFilter();
+  hf.type = 'highpass';
+  hf.frequency.value = 7000;
+  const hg = ctx.createGain();
+  hg.gain.value = 0;
+  const tick = ctx.createOscillator();
+  tick.type = 'square';
+  tick.frequency.value = 4.4;
+  const tickG = ctx.createGain();
+  tickG.gain.value = 0.5;
+  tick.connect(tickG).connect(hg.gain);
+  hat.connect(hf).connect(hg).connect(master);
+  bass.start(); pulse.start(); hat.start(); tick.start();
+  return { bg, hg, stoppables: [bass, pulse, hat, tick] };
+});
+
+// heat 0..1: silence -> bass pulse -> full drums
+export function setChase(heat) {
+  if (!chase.nodes || !ctx) return;
+  chase.nodes.bg.gain.setTargetAtTime(heat * 0.09, ctx.currentTime, 0.8);
+  chase.nodes.hg.gain.setTargetAtTime(Math.max(0, heat - 0.5) * 0.1, ctx.currentTime, 0.8);
+}
+
 // ---------- looped sources (engine / rotor / siren) ----------
 
 function makeLoop(build) {

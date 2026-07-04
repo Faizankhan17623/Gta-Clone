@@ -115,6 +115,7 @@ export function checkRamp(state, world, car, dt) {
       if (r && !r.done) {
         r.done = true;
         world.money += 400;
+        world.addXP?.(50);
         sfxMissionPass();
         showToast('STUNT JUMP! +$400');
         showNews('daredevil clears a stunt ramp');

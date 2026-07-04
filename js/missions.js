@@ -286,6 +286,8 @@ function endMission(world) {
 function passMission(world) {
   world.money += mission.reward;
   mission.done++;
+  if (world.stats) world.stats.missions++;
+  world.addXP?.(200);
   sfxMissionPass();
   showMissionMsg('MISSION PASSED!', '+$' + mission.reward, '#7cf78c');
   endMission(world);
@@ -388,6 +390,7 @@ export function updateMissions(world, dt) {
         }
         mission.taxiStage = 'pick';
         mission.timeLeft += 25;
+        if (world.stats) world.stats.fares++;
         mission.text = 'Fare dropped! Next pickup is marked';
         showToast('FARE DROPPED +25s');
         sfxPickup();

@@ -290,7 +290,7 @@ function updateHunters(world, dt) {
       sfxShot('pistol');
       if (Math.random() < 0.5) {
         if (player.inCar) player.inCar.health -= 5;
-        else player.health -= 6;
+        else if (!(player.dodgeT > 0)) player.health -= 6;
       }
     }
   }
@@ -362,7 +362,7 @@ export function updateGang(world, dt) {
         sfxShot('pistol');
         if (Math.random() < 0.5 && dToPlayer < 30) {
           if (player.inCar) player.inCar.health -= 5;
-          else player.health -= 5;
+          else if (!(player.dodgeT > 0)) player.health -= 5;
         }
       }
     } else {

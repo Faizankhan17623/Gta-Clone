@@ -105,9 +105,9 @@ export function updateArmy(world, dt, hooks) {
     // turret tracks the player
     t.turret.rotation.y = wrapAngle(Math.atan2(dx, dz) - t.heading);
 
-    // cannon
+    // cannon — holds fire once the heat is off (it's already leaving)
     t.shootT -= dt;
-    if (t.shootT <= 0 && dist < 90 && !player.inHeli) {
+    if (t.shootT <= 0 && dist < 90 && world.wanted >= 4 && !player.inHeli) {
       t.shootT = 3.6;
       const from = t.pos.clone();
       from.y = 1.9;
@@ -131,5 +131,7 @@ export function killTank(world, t) {
   addExplosion(t.pos);
   darkenCar(t);
   world.money += 500;
+  if (world.stats) world.stats.tanks++;
+  world.addXP?.(80);
   showToast('TANK DESTROYED +$500');
 }

@@ -50,6 +50,19 @@ export function createCharacter({ shirt = '#ffffff', pants = '#2c3e66', skin = '
   return { group: g, lArm, rArm, lLeg, rLeg };
 }
 
+// Recolor an existing character — used by the wardrobe suits.
+export function applySuit(ch, { shirt, pants, skin, hair }) {
+  const g = ch.group;
+  const set = (mesh, c) => { if (c) mesh.material.color.set(c); };
+  set(g.children[0], shirt);          // torso
+  set(g.children[1], skin);           // head
+  set(g.children[2], hair ?? '#221a14'); // hair
+  set(ch.lArm.children[0], skin);
+  set(ch.rArm.children[0], skin);
+  set(ch.lLeg.children[0], pants);
+  set(ch.rLeg.children[0], pants);
+}
+
 export function animateWalk(ch, t, amp) {
   const s = Math.sin(t) * amp;
   ch.lLeg.rotation.x = s;

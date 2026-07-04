@@ -75,12 +75,22 @@ export function endFrame() {
 let gpPrev = Object.create(null);
 let gpFire = false;
 let gpWeb = false;
+let gpActive = false; // ignore pads until a real button press — RGB software
+                      // and some drivers register phantom gamepads whose idle
+                      // axes rest at -1, which would hold a movement key forever
 
 export function pollGamepad() {
   const pads = navigator.getGamepads ? navigator.getGamepads() : [];
   let gp = null;
   for (const p of pads) if (p && p.connected) { gp = p; break; }
   if (!gp) return;
+
+  if (!gpActive) {
+    for (const b of gp.buttons) {
+      if (b && b.pressed) { gpActive = true; break; }
+    }
+    if (!gpActive) return;
+  }
 
   const cur = Object.create(null);
   const ax = (i) => gp.axes[i] || 0;

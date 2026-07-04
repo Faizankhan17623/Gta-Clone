@@ -153,7 +153,7 @@ function updateSwat(world, dt) {
       aim.y += 1.1 + (Math.random() - 0.5) * 0.6;
       addTracer(from, aim);
       addFlash(aim, 0xffd080, 0.25);
-      if (Math.random() < 0.55) player.health -= 6;
+      if (Math.random() < 0.55 && !(player.dodgeT > 0)) player.health -= 6;
     }
   }
 }
@@ -256,7 +256,7 @@ function updateDrones(world, dt) {
       addFlash(aim, 0xff6a50, 0.2);
       if (Math.random() < 0.45) {
         if (player.inCar) player.inCar.health -= 4;
-        else if (!player.inHeli) player.health -= 5;
+        else if (!player.inHeli && !(player.dodgeT > 0)) player.health -= 5;
       }
     }
   }
@@ -268,7 +268,7 @@ export function updatePolice(world, dt) {
   // wanted level decay
   if (world.wanted > 0) {
     world.wantedTimer += dt;
-    if (world.wantedTimer > 24) {
+    if (world.wantedTimer > (world.perks?.decay ?? 24)) { // stealth suit cools heat faster
       world.wanted--;
       world.wantedTimer = 0;
     }
@@ -386,7 +386,7 @@ export function updatePolice(world, dt) {
   // busted timer
   if (copNearOnFoot) {
     world.bustedT += dt;
-    if (world.bustedT > 1.6) world.busted = true;
+    if (world.bustedT > (world.perks?.busted ?? 1.6)) world.busted = true;
   } else {
     world.bustedT = Math.max(0, world.bustedT - dt * 2);
   }

@@ -8,12 +8,14 @@ import { updatePolice, addCrime, copDie, clearCops } from './police.js';
 import { makeHeli, physStepHeli, spinRotors, explodeHeli, updateFallingHeli, updatePoliceHelis } from './heli.js';
 import { initEffects, addTracer, addExplosion, addFlash, addSmoke, addSparks, addSkid, updateEffects } from './effects.js';
 import { initHUD, updateHUD, setHint, showBanner, hideBanner, showToast, showNews } from './hud.js';
-import { initSound, sfxShot, sfxCrash, sfxPickup, sfxWeb, engine, setEngine, rotor, siren, setSiren, rainAmb, setRadioStation, RADIO_STATIONS, cityHum, setHum } from './sound.js';
+import { initSound, sfxShot, sfxCrash, sfxPickup, sfxWeb, sfxMissionPass, engine, setEngine, rotor, siren, setSiren, rainAmb, setRadioStation, RADIO_STATIONS, cityHum, setHum, chase, setChase, setMasterVolume } from './sound.js';
 import { createSkyDome, applyDayNight, DAY_START } from './daynight.js';
 import { initMissions, updateMissions, failMission, mission } from './missions.js';
 import { initWeather, updateWeather } from './weather.js';
 import { initWeb, fireWeb, releaseWeb, swingStep, updateWebVisual, poseSwing, poseFall } from './web.js';
 import { initShops, updateShops, ensureGarageVehicle, garageCheck } from './shops.js';
+import { initTouch, isTouch, showTouchUI } from './touch.js';
+import { initMenu, openMenu, closeMenu, openMap, closeMap, drawBigMap } from './menu.js';
 import { initStunts, updateStunts, placeTrampoline, tryBounce, checkRamp, bounceFx } from './stunts.js';
 import { initGang, updateGang, killGangMember } from './gangs.js';
 import { updateArmy, killTank } from './army.js';
@@ -28,7 +30,8 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setPixelRatio(('ontouchstart' in window || navigator.maxTouchPoints > 0)
+  ? 1 : Math.min(window.devicePixelRatio, 2)); // phones render lighter
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping; // film-grade color response
@@ -58,7 +61,7 @@ const hemi = new THREE.HemisphereLight(0xd5e4f2, 0x4a463c, 0.9);
 scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xfff0d0, 1.3);
 sun.castShadow = true;
-sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.mapSize.set(...(('ontouchstart' in window || navigator.maxTouchPoints > 0) ? [1024, 1024] : [2048, 2048]));
 sun.shadow.camera.left = -90;
 sun.shadow.camera.right = 90;
 sun.shadow.camera.top = 90;
@@ -82,6 +85,7 @@ const weather = initWeather(scene);
 initEffects(scene);
 initHUD();
 initInput();
+initTouch(); // phones get a joystick + buttons
 const web = initWeb(scene);
 
 // web parachute canopy
@@ -113,7 +117,8 @@ const player = {
   vy: 0,
   onGround: true,
   glide: false, // floaty hang-time after releasing a swing
-  wallT: 0,     // wall-run stamina
+  wallT: 3,     // wall-run stamina (~22m of vertical sprint)
+  dodgeT: 0,    // dodge-roll i-frames
 };
 player.pos.copy(city.spawn);
 
@@ -148,6 +153,22 @@ const world = {
   swat: [],
   drones: [],
   garageKind: save.garage || null,
+  xp: save.xp | 0,
+  level: 1,
+  stats: { swungM: 0, styleBest: 0, missions: 0, fares: 0, tanks: 0, jackpots: 0, ...(save.stats || {}) },
+  ach: { ...(save.ach || {}) },
+  suitSaved: save.suit || 'street',
+  suitsOwnedSaved: save.suits || {},
+  settings: { volume: 1, sens: 1, invertY: false, lowGfx: false, ...(save.settings || {}) },
+  perks: { style: 1, melee: 1, webDur: 6, decay: 24, busted: 1.6 },
+  waypoint: null,
+  barks: [],
+  slowmoT: 0,
+};
+world.level = 1 + Math.floor(Math.sqrt(world.xp / 120));
+world.bark = (pos, text) => {
+  if (world.barks.length > 4) world.barks.shift();
+  world.barks.push({ pos, text, t: 2.6, sx: -999, sy: -999 });
 };
 
 // rideable helicopters on the park helipads
@@ -163,13 +184,135 @@ const gang = initGang(scene, world, save.gang);
 const flocks = initAmbient(scene);
 const stuntsState = initStunts(scene, world);
 ensureGarageVehicle(shopsState, world);
+world.mapRamps = stuntsState.ramps;
+world.mapSkulls = stuntsState.skulls;
+
+// cyan waypoint beam, set from the big map
+const wpMarker = new THREE.Group();
+{
+  const ring = new THREE.Mesh(
+    new THREE.CylinderGeometry(2.2, 2.2, 0.6, 22, 1, true),
+    new THREE.MeshBasicMaterial({ color: 0x4ad2ff, transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false })
+  );
+  ring.position.y = 0.5;
+  wpMarker.add(ring);
+  const beam = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.7, 1.1, 46, 10, 1, true),
+    new THREE.MeshBasicMaterial({ color: 0x4ad2ff, transparent: true, opacity: 0.14, side: THREE.DoubleSide, depthWrite: false })
+  );
+  beam.position.y = 23;
+  wpMarker.add(beam);
+  wpMarker.visible = false;
+  scene.add(wpMarker);
+}
+
+function applySettings() {
+  const st = world.settings;
+  setMasterVolume(st.volume);
+  sun.castShadow = !st.lowGfx;
+  renderer.setPixelRatio(st.lowGfx ? 1 : (isTouch ? 1 : Math.min(window.devicePixelRatio, 2)));
+  saveGame();
+}
+
+initMenu({
+  settings: world.settings,
+  onSettings: applySettings,
+  onResume: resumeGame,
+  onRestart: () => { closeMenu(); respawn(); gameState = 'play'; showTouchUI(isTouch); },
+  onPhoto: enterPhotoMode,
+  onWaypoint: (x, z) => {
+    world.waypoint = new THREE.Vector3(Math.max(-HALF, Math.min(HALF, x)), 0, Math.max(-HALF, Math.min(HALF, z)));
+    wpMarker.position.set(world.waypoint.x, 0, world.waypoint.z);
+    wpMarker.visible = true;
+    closeBigMap();
+    showToast('WAYPOINT SET');
+  },
+});
+
+function pauseGame() {
+  if (gameState !== 'play') return;
+  gameState = 'pause';
+  showTouchUI(false);
+  document.exitPointerLock?.();
+  openMenu(world);
+}
+
+function resumeGame() {
+  closeMenu();
+  gameState = 'play';
+  showTouchUI(isTouch);
+  if (!isTouch) renderer.domElement.requestPointerLock?.();
+}
+
+function openBigMap() {
+  if (gameState !== 'play') return;
+  gameState = 'map';
+  showTouchUI(false);
+  document.exitPointerLock?.();
+  openMap(world);
+}
+
+function closeBigMap() {
+  closeMap();
+  gameState = 'play';
+  showTouchUI(isTouch);
+  if (!isTouch) renderer.domElement.requestPointerLock?.();
+}
+
+// ---------- photo mode ----------
+
+const PHOTO_FILTERS = ['', 'grayscale(1) contrast(1.15)', 'sepia(0.5) saturate(1.5) contrast(1.05)'];
+let photoFilter = 0;
+const photoPos = new THREE.Vector3();
+
+function enterPhotoMode() {
+  closeMenu();
+  gameState = 'photo';
+  photoPos.copy(camera.position);
+  document.getElementById('hud').style.display = 'none';
+  showTouchUI(false);
+  showToast('');
+  if (!isTouch) renderer.domElement.requestPointerLock?.();
+}
+
+function exitPhotoMode() {
+  gameState = 'play';
+  renderer.domElement.style.filter = '';
+  photoFilter = 0;
+  document.getElementById('hud').style.display = 'block';
+  showTouchUI(isTouch);
+}
+
+const _photoDir = new THREE.Vector3();
+
+function updatePhoto(dt) {
+  camYaw -= mouse.dx * 0.0024;
+  camPitch = Math.max(-1.4, Math.min(1.4, camPitch + mouse.dy * 0.0018));
+  _photoDir.set(Math.sin(camYaw) * Math.cos(camPitch), Math.sin(camPitch), Math.cos(camYaw) * Math.cos(camPitch));
+  const spd = keys['ShiftLeft'] ? 60 : 24;
+  if (keys['KeyW']) photoPos.addScaledVector(_photoDir, spd * dt);
+  if (keys['KeyS']) photoPos.addScaledVector(_photoDir, -spd * dt);
+  _right.set(Math.cos(camYaw), 0, -Math.sin(camYaw));
+  if (keys['KeyD']) photoPos.addScaledVector(_right, -spd * dt);
+  if (keys['KeyA']) photoPos.addScaledVector(_right, spd * dt);
+  if (keys['Space']) photoPos.y += spd * 0.6 * dt;
+  photoPos.y = Math.max(0.5, photoPos.y);
+  camera.position.copy(photoPos);
+  camera.lookAt(photoPos.clone().add(_photoDir));
+  if (pressed['KeyF']) { // cycle filters
+    photoFilter = (photoFilter + 1) % PHOTO_FILTERS.length;
+    renderer.domElement.style.filter = PHOTO_FILTERS[photoFilter];
+  }
+  if (pressed['KeyP'] || pressed['Escape']) exitPhotoMode();
+}
 
 function saveGame() {
   try {
     localStorage.setItem(SAVE_KEY, JSON.stringify({
       money: world.money, missions: mission.done, mg: ammo.mg, rpg: ammo.rpg,
       upg: world.upgrades, gang: { owned: gang.owned, kills: gang.kills }, radio: world.radioSt,
-      garage: world.garageKind,
+      garage: world.garageKind, xp: world.xp, stats: world.stats, ach: world.ach,
+      suit: world.suit, suits: world.suitsOwned, settings: world.settings,
     }));
   } catch {}
 }
@@ -267,8 +410,10 @@ const _camTarget = new THREE.Vector3();
 const _camDesired = new THREE.Vector3();
 
 function updateCamera(dt) {
-  camYaw -= mouse.dx * 0.0024;
-  camPitch = Math.max(-0.35, Math.min(0.75, camPitch + mouse.dy * 0.0018));
+  const sens = world.settings.sens || 1;
+  const inv = world.settings.invertY ? -1 : 1;
+  camYaw -= mouse.dx * 0.0024 * sens;
+  camPitch = Math.max(-0.35, Math.min(0.75, camPitch + mouse.dy * 0.0018 * sens * inv));
   if (keys['ArrowLeft']) camYaw += 1.8 * dt;
   if (keys['ArrowRight']) camYaw -= 1.8 * dt;
 
@@ -360,7 +505,8 @@ function updateOnFoot(dt) {
   if (keys['KeyA']) _move.sub(_right);
 
   const moving = _move.lengthSq() > 0;
-  const speed = keys['ShiftLeft'] || keys['ShiftRight'] ? 10 : 5.5;
+  const sprintSpeed = world.level >= 8 ? 12 : 10; // parkour sprint skill
+  const speed = keys['ShiftLeft'] || keys['ShiftRight'] ? sprintSpeed : 5.5;
 
   if (moving) {
     _move.normalize();
@@ -385,7 +531,31 @@ function updateOnFoot(dt) {
   if (pressed['Space'] && player.onGround) {
     player.vy = 7.5;
     player.onGround = false;
+    player.dblJump = false;
+  } else if (pressed['Space'] && !player.onGround && world.level >= 2 && !player.dblJump && player.vy < 5 && !keys['KeyW']) {
+    player.dblJump = true; // level 2 skill (W+Space stays reserved for the parachute)
+    player.vy = 7;
+    addStyle(4);
   }
+
+  // melee on the ground, web-dash (level 4) in the air
+  meleeT -= dt;
+  comboT -= dt;
+  if (comboT <= 0) combo = 0;
+  if (pressed['KeyF'] && meleeT <= 0) {
+    if (player.onGround) melee();
+    else if (world.level >= 4) { // web-dash burst
+      meleeT = 0.5;
+      camera.getWorldDirection(_rayDir);
+      player.vel.x += _rayDir.x * 18;
+      player.vel.z += _rayDir.z * 18;
+      player.vy += _rayDir.y * 12 + 2;
+      sfxWeb();
+      addStyle(8);
+    }
+  }
+  player.dodgeT = Math.max(0, player.dodgeT - dt);
+  checkDodge();
 
   // point-launch: hold C to coil down, release to rocket upward
   if (player.onGround && keys['KeyC']) {
@@ -438,7 +608,7 @@ function updateOnFoot(dt) {
       player.vy = 0;
       player.onGround = true;
       player.glide = false;
-      player.wallT = 1.0; // wall-run stamina recharges on the ground
+      player.wallT = 3.0; // wall-run stamina recharges on the ground
       cashOutStyle();
     }
   } else if (player.vy < 0 && player.pos.y > groundY + 0.05) {
@@ -483,9 +653,10 @@ function updateOnFoot(dt) {
   const wallHit = resolveCircle(player.pos, 0.5, city.colliders, player.pos.y + 0.5);
 
   // wall-run: push into a building in mid-air while holding W to sprint up it
+  // (stamina covers ~22m — enough to run straight up the smaller towers)
   if (wallHit && !player.onGround && keys['KeyW'] && player.wallT > 0) {
     player.wallT -= dt;
-    player.vy = Math.max(player.vy, 6.2);
+    player.vy = Math.max(player.vy, 7.5);
     addStyle(12 * dt);
     if (pressed['Space']) { // kick off the wall
       player.vy = 8;
@@ -531,21 +702,21 @@ function updateOnFoot(dt) {
   else if (nearVeh) setHint('Press <b>E</b> to enter vehicle');
   else if (world.shopHint) setHint(world.shopHint);
   else setHint(null);
-  if (pressed['KeyE'] || pressed['KeyF']) {
+  if (pressed['KeyE']) {
     if (nearHeli) enterHeli(nearHeli);
     else if (nearVeh) enterCar(nearVeh);
   }
 
   // shooting
   shootT -= dt;
-  if (mouse.down && shootT <= 0 && document.pointerLockElement) {
+  if (mouse.down && shootT <= 0 && (document.pointerLockElement || isTouch)) {
     shootT = WEAPONS[weaponIdx].rate;
     shoot();
   }
 
   // web swing: hold right mouse to fire a strand at a building
   web.cooldown = Math.max(0, web.cooldown - dt);
-  if (mouse.rdown && web.cooldown <= 0 && document.pointerLockElement) {
+  if (mouse.rdown && web.cooldown <= 0 && (document.pointerLockElement || isTouch)) {
     web.cooldown = 0.25;
     tryStartSwing();
   }
@@ -588,7 +759,8 @@ function findNearestHeli(maxDist) {
   let best = null;
   let bestD = maxDist;
   for (const h of world.helis) {
-    if (h.dead || h.pos.y > 3) continue;
+    // parked is relative: a heli sitting on a rooftop next to you counts
+    if (h.dead || Math.abs(h.pos.y - player.pos.y) > 4) continue;
     const d = Math.hypot(h.pos.x - player.pos.x, h.pos.z - player.pos.z);
     if (d < bestD) { bestD = d; best = h; }
   }
@@ -648,8 +820,16 @@ function exitHeli() {
   const h = player.inHeli;
   _fwd.set(Math.sin(h.heading), 0, Math.cos(h.heading));
   _right.copy(_fwd).cross(UP);
-  player.pos.set(h.pos.x - _right.x * 3.4, 0, h.pos.z - _right.z * 3.4);
-  resolveCircle(player.pos, 0.5, city.colliders);
+  player.pos.set(h.pos.x - _right.x * 3.4, h.pos.y, h.pos.z - _right.z * 3.4);
+  // step out onto whatever the heli landed on — rooftop or street
+  let py = groundHeight(player.pos, city.colliders, 0.1, h.pos.y);
+  if (py < h.pos.y - 3) {
+    // that side hangs over the edge — climb out beside the skids instead
+    player.pos.set(h.pos.x + _right.x * 3.4, h.pos.y, h.pos.z + _right.z * 3.4);
+    py = groundHeight(player.pos, city.colliders, 0.1, h.pos.y);
+  }
+  player.pos.y = py;
+  resolveCircle(player.pos, 0.5, city.colliders, player.pos.y + 0.5);
   player.vel.set(0, 0, 0);
   player.vy = 0;
   player.mesh.visible = true;
@@ -659,11 +839,136 @@ function exitHeli() {
   rotor.stop();
 }
 
+// ---------- XP, levels & skills ----------
+// Unlocks: L2 double-jump · L4 web-dash (F in air) · L6 slow-mo aim · L8 fast sprint
+
+function addXP(n) {
+  world.xp += n;
+  const lvl = 1 + Math.floor(Math.sqrt(world.xp / 120));
+  if (lvl > world.level) {
+    world.level = lvl;
+    sfxMissionPass();
+    const unlock = { 2: 'DOUBLE JUMP', 4: 'WEB-DASH (F in air)', 6: 'SLOW-MO AIM (airborne)', 8: 'PARKOUR SPRINT' }[lvl];
+    showToast(`LEVEL ${lvl}!${unlock ? ' UNLOCKED: ' + unlock : ''}`);
+    showNews(`the web-slinger reaches level ${lvl}`);
+    saveGame();
+  }
+}
+world.addXP = addXP;
+
+// ---------- achievements ----------
+
+const ACHIEVEMENTS = [
+  ['webhead', 'WEBHEAD — 1 km swung', (w) => w.stats.swungM > 1000],
+  ['marathon', 'MARATHON — 10 km swung', (w) => w.stats.swungM > 10000],
+  ['stylist', 'STYLIST — $200 style cash-out', (w) => w.stats.styleBest >= 200],
+  ['tankdown', 'TANK BUSTER — destroy a tank', (w) => w.stats.tanks >= 1],
+  ['turfboss', 'TURF BOSS — own the district', (w) => w.gang?.owned],
+  ['jackpot', 'LUCKY 7 — hit a jackpot', (w) => w.stats.jackpots >= 1],
+  ['veteran', 'VETERAN — reach level 5', (w) => w.level >= 5],
+  ['committed', 'COMMITTED — 9 missions passed', (w) => w.stats.missions >= 9],
+  ['tycoon', 'TYCOON — hold $10,000', (w) => w.money >= 10000],
+  ['cabbie', 'CABBIE — 5 fares delivered', (w) => w.stats.fares >= 5],
+];
+let achT = 0;
+
+function checkAchievements(dt) {
+  achT -= dt;
+  if (achT > 0) return;
+  achT = 2;
+  for (const [key, name, test] of ACHIEVEMENTS) {
+    if (world.ach[key] || !test(world)) continue;
+    world.ach[key] = 1;
+    sfxMissionPass();
+    showToast('🏆 ' + name);
+    showNews('achievement unlocked: ' + name.split(' — ')[0]);
+    saveGame();
+  }
+}
+
+// ---------- melee & dodge ----------
+
+let meleeT = 0;
+let combo = 0;
+let comboT = 0;
+
+function melee() {
+  meleeT = 0.35;
+  comboT = 1.1;
+  combo = Math.min(3, combo + 1);
+  // swing the arm
+  player.ch.rArm.rotation.x = -1.8;
+  _fwd.set(Math.sin(player.heading), 0, Math.cos(player.heading));
+  const reach = 2.4;
+  const inRange = (pos) => {
+    const dx = pos.x - player.pos.x;
+    const dz = pos.z - player.pos.z;
+    return dx * dx + dz * dz < reach * reach && (dx * _fwd.x + dz * _fwd.z) > 0;
+  };
+  let hit = false;
+  for (const p2 of world.peds) {
+    if (!p2.dead && inRange(p2.pos)) { killPed(world, p2, true); hit = true; break; }
+  }
+  if (!hit) for (const m of world.gangPeds) {
+    if (!m.dead && inRange(m.pos)) { killGangMember(world, m); hit = true; break; }
+  }
+  if (!hit) for (const tg of world.targets) {
+    if (!tg.dead && Math.abs(tg.pos.y + (tg.aimY ?? 0) - player.pos.y - 1) < 2.5 && inRange(tg.pos)) {
+      tg.hit(world);
+      hit = true;
+      break;
+    }
+  }
+  if (!hit) { // punch cars — the symbiote suit dents them hard
+    for (const group of [world.traffic, world.parked, world.cops]) {
+      for (const v of group) {
+        if (v.dead || !inRange(v.pos)) continue;
+        v.health -= 12 * combo * (world.perks.melee ?? 1);
+        addSparks(v.pos.clone().setY(1), 6);
+        sfxCrash(8);
+        if (v.health <= 0) {
+          if (v.police) copDie(world, v);
+          else explodeVehicle(v);
+        }
+        hit = true;
+        break;
+      }
+      if (hit) break;
+    }
+  }
+  if (hit) {
+    sfxCrash(6 + combo * 2);
+    addStyle(6 * combo);
+    addXP(10);
+    if (combo === 3) showToast('COMBO x3!');
+  }
+}
+
+const lastTap = Object.create(null);
+
+function checkDodge() {
+  for (const k of ['KeyW', 'KeyA', 'KeyS', 'KeyD']) {
+    if (!pressed[k]) continue;
+    const now = world.time;
+    if (now - (lastTap[k] || -9) < 0.28 && player.onGround && player.dodgeT <= 0) {
+      player.dodgeT = 0.6; // i-frames: gunfire misses a rolling target
+      _fwd.set(Math.sin(camYaw), 0, Math.cos(camYaw));
+      _right.copy(_fwd).cross(UP);
+      const dir = k === 'KeyW' ? _fwd : k === 'KeyS' ? _fwd.multiplyScalar(-1)
+        : k === 'KeyD' ? _right : _right.multiplyScalar(-1);
+      player.vel.x = dir.x * 16;
+      player.vel.z = dir.z * 16;
+      addStyle(5);
+    }
+    lastTap[k] = now;
+  }
+}
+
 // ---------- style meter ----------
 // Flashy traversal earns style points; touch the ground to bank them as cash.
 
 function addStyle(n) {
-  world.style += n;
+  world.style += n * (world.perks?.style ?? 1);
 }
 
 function cashOutStyle() {
@@ -671,6 +976,8 @@ function cashOutStyle() {
   world.style = 0;
   if (pts < 25) return;
   world.money += pts;
+  world.stats.styleBest = Math.max(world.stats.styleBest, pts);
+  addXP(pts * 0.5);
   showToast(`STYLE BONUS +$${pts}`);
 }
 
@@ -690,7 +997,7 @@ function webAttack() {
 
   for (const group of [world.peds, world.gangPeds]) {
     for (const p of group) {
-      if (p.dead || p.webT > 0) continue;
+      if (p.dead) continue;
       const t = raySphere(_rayOrigin, _rayDir, _sphere.set(p.pos.x, 1.1, p.pos.z), 1.0);
       if (t < bestT) { bestT = t; hitPed = p; hitVeh = null; }
     }
@@ -727,8 +1034,16 @@ function webAttack() {
   addTracer(_atkFrom.clone(), _sphere.set(tgt.pos.x, 1.1, tgt.pos.z).clone());
   addFlash(_sphere.clone(), 0xffffff, 0.4);
 
+  if (hitPed && hitPed.webT === undefined) hitPed.webT = 0;
+  if (hitPed && hitPed.webT > 0) { // web-yank finisher: rip a webbed enemy down
+    killPed(world, hitPed, true);
+    addStyle(25);
+    addXP(10);
+    showToast('WEB-YANK!');
+    return;
+  }
   if (hitPed) {
-    hitPed.webT = 6;
+    hitPed.webT = world.perks?.webDur ?? 6;
     if (!hitPed.webWrap) {
       hitPed.webWrap = new THREE.Mesh(
         new THREE.BoxGeometry(0.9, 1.9, 0.9),
@@ -796,12 +1111,16 @@ function updateSwinging(dt) {
   if (_move.lengthSq() > 0) _move.normalize();
 
   const prevY = player.pos.y;
+  const px0 = player.pos.x;
+  const pz0 = player.pos.z;
   swingStep(web, player.pos, player.vel, dt, {
     move: _move,
     pump: !!keys['KeyW'],
     reelIn: !!keys['Space'],
     reelOut: !!(keys['ShiftLeft'] || keys['ShiftRight']),
   });
+
+  world.stats.swungM += Math.hypot(player.pos.x - px0, player.pos.z - pz0);
 
   const B = HALF - 1.5;
   player.pos.x = Math.max(-B, Math.min(B, player.pos.x));
@@ -831,6 +1150,7 @@ function updateSwinging(dt) {
     player.vel.y = 0;
     player.onGround = true;
     player.glide = false;
+    player.wallT = 3.0;
     releaseWeb(web);
     return;
   }
@@ -874,7 +1194,7 @@ function updateSwinging(dt) {
 
   // one hand stays free for the pistol
   shootT -= dt;
-  if (mouse.down && shootT <= 0 && document.pointerLockElement) {
+  if (mouse.down && shootT <= 0 && (document.pointerLockElement || isTouch)) {
     shootT = WEAPONS[weaponIdx].rate;
     shoot();
   }
@@ -975,7 +1295,7 @@ function updateDriving(dt) {
   // tank cannon: left click lobs a shell where you're looking
   if (car.tank) {
     car.shootT = (car.shootT || 0) - dt;
-    if (mouse.down && car.shootT <= 0 && document.pointerLockElement) {
+    if (mouse.down && car.shootT <= 0 && (document.pointerLockElement || isTouch)) {
       car.shootT = 1.3;
       camera.getWorldDirection(_rayDir);
       sfxShot('rpg');
@@ -1023,7 +1343,7 @@ function updateDriving(dt) {
     return;
   }
 
-  if (pressed['KeyE'] || pressed['KeyF']) {
+  if (pressed['KeyE']) {
     if (car.vel.length() < 5) exitCar();
     else showToast('Slow down to exit!');
   }
@@ -1056,8 +1376,9 @@ function updateFlying(dt) {
     return;
   }
 
-  if (pressed['KeyE'] || pressed['KeyF']) {
-    if (h.pos.y < 2.2) exitHeli();
+  if (pressed['KeyE']) {
+    // "landed" is relative to what's underneath — rooftops count
+    if (h.pos.y - groundHeight(h.pos, city.colliders, 0.3, h.pos.y) < 2.2) exitHeli();
     else showToast('Land first!');
   }
 }
@@ -1346,6 +1667,8 @@ function triggerOver(text, color) {
   rotor.stop();
   setRadioStation(0);
   world.style = 0;
+  world.slowmoT = 1.1; // brief slow motion as you go down
+  renderer.domElement.style.filter = 'grayscale(0.85)';
   if (text === 'WASTED' && !player.inCar && !player.inHeli) {
     // keel over like the peds do
     player.mesh.rotation.z = Math.PI / 2;
@@ -1355,6 +1678,7 @@ function triggerOver(text, color) {
 
 function respawn() {
   hideBanner();
+  renderer.domElement.style.filter = '';
   if (player.inCar) {
     player.inCar.vel.set(0, 0, 0);
     if (!player.inCar.dead && !player.inCar.tank) world.parked.push(player.inCar);
@@ -1396,14 +1720,14 @@ document.getElementById('playbtn').addEventListener('click', () => {
   siren.start();
   rainAmb.start();
   cityHum.start();
+  chase.start();
+  applySettings();
   if (gameState === 'start') gameState = 'play';
-  renderer.domElement.requestPointerLock?.();
+  if (!isTouch) renderer.domElement.requestPointerLock?.();
+  showTouchUI(true);
 });
 document.addEventListener('pointerlockchange', () => {
-  if (!document.pointerLockElement && gameState === 'play') {
-    startEl.style.display = 'flex';
-    document.getElementById('playbtn').textContent = 'CLICK TO RESUME';
-  }
+  if (!document.pointerLockElement && !isTouch && gameState === 'play') pauseGame();
 });
 
 // ---------- main loop ----------
@@ -1454,7 +1778,7 @@ function update(dt) {
   }
 
   // bloom breathes with the night: stronger glow when the city lights are on
-  bloom.strength = 0.22 + dn.glow * 0.33;
+  bloom.strength = world.settings.lowGfx ? 0 : 0.22 + dn.glow * 0.33;
 
   // headlights when driving after dark
   const pcar = player.inCar;
@@ -1517,6 +1841,36 @@ function update(dt) {
   const hum = world.clock > 6.5 && world.clock < 21.5 ? 1 : 0.55;
   if (hum !== world._hum) { world._hum = hum; setHum(hum); }
   if (player.inCar || player.inHeli || web.attached || web.zip) chuteMesh.visible = false;
+
+  // chase music swells with the heat
+  if (world.wanted !== world._chase) { world._chase = world.wanted; setChase(world.wanted / 5); }
+
+  // NPC speech bubbles: project into screen space for the HUD
+  for (let i = world.barks.length - 1; i >= 0; i--) {
+    const b = world.barks[i];
+    b.t -= dt;
+    if (b.t <= 0) { world.barks.splice(i, 1); continue; }
+    _sphere.set(b.pos.x, (b.pos.y || 0) + 2.4, b.pos.z).project(camera);
+    b.sx = (_sphere.x * 0.5 + 0.5) * window.innerWidth;
+    b.sy = (-_sphere.y * 0.5 + 0.5) * window.innerHeight;
+    if (_sphere.z > 1) b.sy = -999; // behind the camera
+  }
+
+  // waypoint arrival
+  if (world.waypoint) {
+    wpMarker.rotation.y += dt;
+    if (Math.hypot(player.pos.x - world.waypoint.x, player.pos.z - world.waypoint.z) < 6) {
+      world.waypoint = null;
+      wpMarker.visible = false;
+      showToast('WAYPOINT REACHED');
+    }
+  }
+
+  checkAchievements(dt);
+
+  // pause / big map
+  if (pressed['KeyP']) pauseGame();
+  if (pressed['KeyM']) openBigMap();
   updateCamera(dt);
   updateSiren();
   updateHUD(world);
@@ -1525,11 +1879,41 @@ function update(dt) {
   else if (world.busted) triggerOver('BUSTED', '#4a8cff');
 }
 
+let introT = 0;
+const _introFrom = new THREE.Vector3(HALF * 0.55, 130, HALF * 0.55);
+const _introTo = new THREE.Vector3();
+
 function animate() {
   requestAnimationFrame(animate);
   pollGamepad();
-  const dt = Math.min(clock.getDelta(), 0.05);
-  if (gameState !== 'start') update(dt);
+  let dt = Math.min(clock.getDelta(), 0.05);
+
+  // dramatic slow-mo: dying, or the level-6 airborne aim skill
+  if (world.slowmoT > 0) {
+    world.slowmoT -= dt;
+    dt *= 0.35;
+  } else if (world.level >= 6 && gameState === 'play' &&
+      !player.onGround && !player.inCar && !player.inHeli && mouse.down && player.pos.y > 3) {
+    dt *= 0.45;
+  }
+
+  if (gameState === 'start') {
+    // slow flyover of the skyline behind the menu
+    introT += dt * 0.05;
+    const t = Math.min(1, introT);
+    _introTo.set(city.spawn.x + 20, 26, city.spawn.z + 46);
+    camera.position.lerpVectors(_introFrom, _introTo, t * (2 - t));
+    camera.lookAt(city.spawn.x, 8, city.spawn.z);
+  } else if (gameState === 'photo') {
+    updatePhoto(dt);
+  } else if (gameState === 'map') {
+    drawBigMap(world);
+    if (pressed['KeyM'] || pressed['Escape']) closeBigMap();
+  } else if (gameState === 'pause') {
+    // frozen — menu handles everything
+  } else {
+    update(dt);
+  }
   composer.render();
   endFrame();
 }
@@ -1551,6 +1935,11 @@ window.__debug = {
   shops: shopsState,
   flocks,
   stunts: stuntsState,
+  addXP,
+  melee,
+  pauseGame,
+  openBigMap,
+  getSuit: () => world.suit,
   getCamYaw: () => camYaw,
   setCamYaw: (v) => { camYaw = v; },
   setCamPitch: (v) => { camPitch = v; },

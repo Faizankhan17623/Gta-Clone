@@ -42,6 +42,26 @@ export function initHUD() {
     'border-top:1px solid rgba(255,210,74,0.35);padding:2px 0';
   document.body.appendChild(news);
   els.news = news;
+
+  // NPC speech-bubble pool
+  els.barks = [];
+  for (let i = 0; i < 5; i++) {
+    const b = document.createElement('div');
+    b.style.cssText =
+      'position:fixed;z-index:6;display:none;transform:translate(-50%,-100%);' +
+      'background:rgba(255,255,255,0.92);color:#111;font:700 12px Arial;' +
+      'padding:3px 8px;border-radius:8px;white-space:nowrap;pointer-events:none;';
+    document.body.appendChild(b);
+    els.barks.push(b);
+  }
+
+  // level badge next to the money counter
+  const lvl = document.createElement('div');
+  lvl.style.cssText =
+    'position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:6;' +
+    'color:#8fd0ff;font:800 13px Arial;letter-spacing:2px;text-shadow:1px 1px 0 #000;pointer-events:none;';
+  document.body.appendChild(lvl);
+  els.level = lvl;
 }
 
 let newsTimer = null;
@@ -141,6 +161,21 @@ export function updateHUD(world) {
     els.mission.style.display = 'none';
   }
 
+  // NPC speech bubbles (screen coords projected by main)
+  for (let i = 0; i < els.barks.length; i++) {
+    const div = els.barks[i];
+    const b = world.barks && world.barks[i];
+    if (!b || b.sy < 0) { div.style.display = 'none'; continue; }
+    div.textContent = b.text;
+    div.style.left = b.sx + 'px';
+    div.style.top = b.sy + 'px';
+    div.style.opacity = Math.min(1, b.t).toFixed(2);
+    div.style.display = 'block';
+  }
+
+  // level + style readout
+  els.level.textContent = `LVL ${world.level || 1}` + (world.style > 5 ? ` · STYLE ${Math.round(world.style)}` : '');
+
   // hurt flash + low health pulse
   let dmg = world.damageFlash || 0;
   if (hp > 0 && hp < 30) dmg = Math.max(dmg, 0.22 + Math.sin(world.time * 6) * 0.1);
@@ -229,6 +264,15 @@ function drawMinimap(world) {
       g.arc(mx, mz, pulse, 0, Math.PI * 2);
       g.fill();
     }
+  }
+
+  // waypoint
+  if (world.waypoint) {
+    const [mx, mz] = toMap(world.waypoint.x, world.waypoint.z);
+    g.fillStyle = '#4ad2ff';
+    g.beginPath();
+    g.arc(mx, mz, 4, 0, Math.PI * 2);
+    g.fill();
   }
 
   // cops
