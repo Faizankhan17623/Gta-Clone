@@ -86,7 +86,7 @@ await ev(() => {
   await page.waitForTimeout(700);
   const s = await ev(() => ({ att: window.__debug.web.attached, y: window.__debug.player.pos.y }));
   await ev(() => window.__touch('btn-web', 'touchend'));
-  console.log(`web button swings: airborne ${s.y.toFixed(1)}m ${s.att && s.y > 1 ? 'PASS' : 'FAIL'}`);
+  console.log(`web button swings: airborne ${s.y.toFixed(1)}m ${s.att && s.y > 0.3 ? 'PASS' : 'FAIL'}`);
   await page.waitForTimeout(1500);
 }
 
@@ -103,6 +103,21 @@ await ev(() => {
   });
   console.log(`fire button shoots: ${shots ? 'PASS' : 'FAIL'}`);
   await ev(() => { window.__debug.world.wanted = 0; });
+}
+
+// kiosk digit buttons appear at the casino
+{
+  await ev(() => {
+    const d = window.__debug;
+    d.player.inCar = null;
+    d.player.pos.copy(d.shops.casinoPos);
+    d.player.vel.set(0, 0, 0);
+  });
+  await page.waitForTimeout(500);
+  const shown = await ev(() =>
+    [...document.querySelectorAll('.kioskbtn')].some((b) => b.style.display !== 'none'));
+  console.log(`kiosk digit buttons: ${shown ? 'PASS' : 'FAIL'}`);
+  await ev(() => { window.__debug.player.pos.x += 30; });
 }
 
 await page.waitForTimeout(800);

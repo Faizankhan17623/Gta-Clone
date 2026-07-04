@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { roadCenter, N, HALF } from './city.js';
 import { showToast, showNews } from './hud.js';
+import { sfxPickup as pickupSfx } from './sound.js';
 import { sfxPickup, sfxMissionPass } from './sound.js';
 import { addSparks } from './effects.js';
 
@@ -46,7 +47,28 @@ export function initStunts(scene, world) {
   world.rampageT = 0;
   world.rampageCount = 0;
   world.tramps = [];
-  return { ramps, skulls };
+
+  // 20 hidden packages: glowing web-tokens tucked on the rooftops.
+  // Deterministic building picks, so saved collection indices stay valid.
+  const tokens = [];
+  const buildings = world.city.colliders.filter((c) => (c.h ?? 0) >= 12);
+  const step = Math.max(1, Math.floor(buildings.length / 20));
+  const tokGeo = new THREE.OctahedronGeometry(0.55);
+  for (let i = 0; i < 20; i++) {
+    const c = buildings[(i * step + 3) % buildings.length];
+    const mesh = new THREE.Mesh(
+      tokGeo,
+      new THREE.MeshBasicMaterial({ color: 0x4ad2ff, transparent: true, opacity: 0.9 })
+    );
+    mesh.position.set((c.x0 + c.x1) / 2, (c.h ?? 0) + 0.8, (c.z0 + c.z1) / 2);
+    const got = world.tokensGot.includes(i);
+    mesh.visible = !got;
+    scene.add(mesh);
+    tokens.push({ i, pos: mesh.position, mesh, got });
+  }
+  world.stats.tokens = world.tokensGot.length;
+
+  return { ramps, skulls, tokens };
 }
 
 // Fire a trampoline web at a ground point the camera looks at (T key).
@@ -163,9 +185,29 @@ export function updateStunts(state, world, dt) {
     }
   }
 
-  // ramp glow pulse
-  for (const r of state.ramps) {
-    if (!r.done) r.mesh.material.emissive?.set?.(0);
+  // hidden packages: spin, bob, collect
+  for (const tk of state.tokens) {
+    if (tk.got) continue;
+    tk.mesh.rotation.y += dt * 2.4;
+    tk.mesh.position.y += Math.sin(world.time * 2 + tk.i) * 0.004;
+    if (player.pos.distanceTo(tk.pos) < 3) {
+      tk.got = true;
+      tk.mesh.visible = false;
+      world.tokensGot.push(tk.i);
+      world.stats.tokens = world.tokensGot.length;
+      const n = world.stats.tokens;
+      world.money += 100;
+      world.addXP?.(25);
+      pickupSfx();
+      showToast(`HIDDEN PACKAGE ${n}/20 +$100`);
+      if (n === 10) { world.money += 1000; showToast('10 PACKAGES! BONUS +$1000'); }
+      if (n === 20) {
+        world.money += 2500;
+        showToast('ALL 20 PACKAGES! +$2500');
+        showNews('every hidden package in the city has been found');
+      }
+      world.onSave?.();
+    }
   }
 }
 

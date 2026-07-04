@@ -113,11 +113,13 @@ export function initMenu(h) {
 export function openMenu(world) {
   const st = world.stats;
   const ach = world.ach ? Object.keys(world.ach).length : 0;
+  const achTotal = world.achTotal || 10;
   statsEl.innerHTML =
     `DISTANCE SWUNG&nbsp;<b style="color:#fff">${(st.swungM / 1000).toFixed(2)} km</b><br>` +
     `BEST STYLE CASH-OUT&nbsp;<b style="color:#fff">$${st.styleBest | 0}</b> · LEVEL <b style="color:#fff">${world.level}</b> (${world.xp | 0} XP)<br>` +
     `MISSIONS <b style="color:#fff">${st.missions | 0}</b> · FARES <b style="color:#fff">${st.fares | 0}</b> · TANKS <b style="color:#fff">${st.tanks | 0}</b> · JACKPOTS <b style="color:#fff">${st.jackpots | 0}</b><br>` +
-    `ACHIEVEMENTS UNLOCKED&nbsp;<b style="color:#fff">${ach}/10</b>`;
+    `PACKAGES <b style="color:#fff">${st.tokens | 0}/20</b> · RIVALS BEATEN <b style="color:#fff">${st.rivals | 0}</b><br>` +
+    `ACHIEVEMENTS UNLOCKED&nbsp;<b style="color:#fff">${ach}/${achTotal}</b>`;
   menuEl.style.display = 'flex';
 }
 

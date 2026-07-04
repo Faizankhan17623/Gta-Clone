@@ -4,7 +4,8 @@ import { showToast, showMissionMsg, showNews } from './hud.js';
 import { sfxMissionPass, sfxMissionFail, sfxPickup } from './sound.js';
 import { makeHeli } from './heli.js';
 import { makeVehicle, physStep, separateCars, darkenCar } from './car.js';
-import { createCharacter } from './characters.js';
+import { createCharacter, animateIdle } from './characters.js';
+import { poseSwing } from './web.js';
 import { addSmoke, addFlash, addSparks, addExplosion } from './effects.js';
 
 // Mission system: a yellow beam marks the mission start point. Walk or drive
@@ -28,6 +29,10 @@ export const mission = {
   witness: null,   // escort
   attackers: [],
   roof: null,      // rooftop hit
+  cps: [],         // race checkpoints
+  cpIdx: 0,
+  rivals: [],      // AI racers
+  swinger: null,   // the rival web-slinger
   markerPos: new THREE.Vector3(),
   objectivePos: new THREE.Vector3(),
 };
@@ -114,7 +119,7 @@ function placeAirRing(world, from) {
 }
 
 function startMission(world) {
-  let type = ['delivery', 'race', 'air', 'taxi', 'fire', 'hit', 'roofhit', 'escort', 'boss'][mission.done % 9];
+  let type = ['delivery', 'race', 'air', 'taxi', 'fire', 'hit', 'roofhit', 'escort', 'boss', 'rival'][mission.done % 10];
 
   if (type === 'hit') {
     // need a living ped a reasonable chase away
@@ -132,7 +137,7 @@ function startMission(world) {
   mission.type = type;
   mission.reward = {
     delivery: 500, race: 800, hit: 450, air: 1000, taxi: 700, boss: 2500,
-    fire: 900, roofhit: 850, escort: 1100,
+    fire: 900, roofhit: 850, escort: 1100, rival: 3000,
   }[type] + mission.done * 150;
   startMarker.visible = false;
 
@@ -226,11 +231,75 @@ function startMission(world) {
     mission.title = 'DELIVERY';
     mission.text = 'Get a car and reach the pink marker';
   } else if (type === 'race') {
-    mission.cpLeft = 5;
-    mission.objectivePos.copy(randomRoadPoint(world.player.pos, 80, 200));
-    mission.timeLeft = 40;
+    // one shared route: you against two AI racers
+    mission.cps = [];
+    let prev = world.player.pos;
+    for (let i = 0; i < 5; i++) {
+      const pt = randomRoadPoint(prev, 90, 200);
+      mission.cps.push(pt);
+      prev = pt;
+    }
+    mission.cpIdx = 0;
+    mission.rivals = [];
+    for (let i = 0; i < 2; i++) {
+      const rp = randomRoadPoint(world.player.pos, 15, 45);
+      const car = makeVehicle(world.scene, rp.x, rp.z, 0, '#d07020', { accel: 15, top: 30 });
+      world.traffic.push(car); // collidable/shootable like any car
+      mission.rivals.push({ car, idx: 0 });
+    }
+    mission.objectivePos.copy(mission.cps[0]);
+    mission.timeLeft = 45;
     mission.title = 'STREET RACE';
-    mission.text = 'Checkpoints left: 5 — you need a car';
+    mission.text = 'Beat the orange racers through 5 checkpoints!';
+    showNews('illegal street race tearing through the city');
+  } else if (type === 'rival') {
+    // the rival web-slinger: he swings rooftop to rooftop — bring him down
+    const ch = createCharacter({ shirt: '#5a1020', pants: '#14090c', skin: '#25252c', hair: '#14090c' });
+    world.scene.add(ch.group);
+    const a = Math.random() * Math.PI * 2;
+    ch.group.position.set(world.player.pos.x + Math.sin(a) * 50, 0, world.player.pos.z + Math.cos(a) * 50);
+    const line = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.035, 0.035, 1, 5, 1, true),
+      new THREE.MeshBasicMaterial({ color: 0xf2f2ec })
+    );
+    line.visible = false;
+    world.scene.add(line);
+    const rv = {
+      ch,
+      mesh: ch.group,
+      pos: ch.group.position,
+      hp: 150,
+      dead: false,
+      state: 'idle',
+      t: 0,
+      dur: 1,
+      stunT: 0,
+      tauntT: 3,
+      from: new THREE.Vector3(),
+      to: new THREE.Vector3(),
+      anchor: new THREE.Vector3(),
+      line,
+    };
+    rv.target = {
+      pos: rv.pos, aimY: 1.1, r: 1.2, webbable: true,
+      get dead() { return rv.dead; },
+      hit(w) {
+        rv.hp -= 30;
+        if (rv.hp <= 0 && !rv.dead) {
+          rv.dead = true;
+          rv.mesh.rotation.z = Math.PI / 2;
+          rv.line.visible = false;
+        }
+      },
+      web() { rv.stunT = 2; }, // webbing him interrupts the next swing
+    };
+    world.targets.push(rv.target);
+    mission.swinger = rv;
+    mission.timeLeft = 120;
+    mission.title = 'THE RIVAL';
+    mission.text = 'Another web-slinger! Shoot or web him out of the sky';
+    showNews('a rival web-slinger challenges the city');
+    targetArrow.visible = true;
   } else {
     mission.timeLeft = 75;
     mission.title = 'HIT CONTRACT';
@@ -270,6 +339,21 @@ function endMission(world) {
   }
   mission.attackers = [];
   mission.witness = null;
+  // race rivals leave
+  for (const r of mission.rivals) {
+    world.scene.remove(r.car.mesh);
+    const ti = world.traffic.indexOf(r.car);
+    if (ti >= 0) world.traffic.splice(ti, 1);
+  }
+  mission.rivals = [];
+  // the rival swinger vanishes into the skyline
+  if (mission.swinger) {
+    world.scene.remove(mission.swinger.mesh);
+    world.scene.remove(mission.swinger.line);
+    const ti = world.targets.indexOf(mission.swinger.target);
+    if (ti >= 0) world.targets.splice(ti, 1);
+    mission.swinger = null;
+  }
   // rooftop hit cleanup
   if (mission.roof) {
     world.scene.remove(mission.roof.mesh);
@@ -335,18 +419,116 @@ export function updateMissions(world, dt) {
       passMission(world);
     }
   } else if (mission.type === 'race') {
+    // AI racers chase the same checkpoints; rubber-band so it stays a fight
+    for (const r of mission.rivals) {
+      if (r.car.dead || r.idx >= 5) continue;
+      const tgt = mission.cps[r.idx];
+      let err = Math.atan2(tgt.x - r.car.pos.x, tgt.z - r.car.pos.z) - r.car.heading;
+      while (err > Math.PI) err -= Math.PI * 2;
+      while (err < -Math.PI) err += Math.PI * 2;
+      physStep(r.car, {
+        steer: Math.max(-1, Math.min(1, err * 2.4)),
+        throttle: r.idx > mission.cpIdx ? 0.72 : 1, // ease off when leading
+        handbrake: false,
+      }, dt, world.city.colliders);
+      if (Math.hypot(r.car.pos.x - tgt.x, r.car.pos.z - tgt.z) < 7.5) {
+        r.idx++;
+        if (r.idx >= 5) {
+          failMission(world, 'You got smoked by the street racers');
+          return;
+        }
+      }
+    }
     if (car && !car.dead &&
         Math.hypot(car.pos.x - mission.objectivePos.x, car.pos.z - mission.objectivePos.z) < 6.5) {
-      mission.cpLeft--;
-      if (mission.cpLeft <= 0) {
+      mission.cpIdx++;
+      if (mission.cpIdx >= 5) {
+        showNews('unknown driver wins the street race');
         passMission(world);
-      } else {
-        sfxPickup();
-        mission.timeLeft += 20;
-        mission.text = `Checkpoints left: ${mission.cpLeft}`;
-        showToast('CHECKPOINT +20s');
-        mission.objectivePos.copy(randomRoadPoint(mission.objectivePos, 90, 220));
-        objMarker.position.copy(mission.objectivePos);
+        return;
+      }
+      sfxPickup();
+      mission.timeLeft += 20;
+      const lead = Math.max(...mission.rivals.map((r) => r.idx));
+      mission.text = `Checkpoint ${mission.cpIdx}/5 — best rival at ${lead}/5`;
+      showToast('CHECKPOINT +20s');
+      mission.objectivePos.copy(mission.cps[mission.cpIdx]);
+      objMarker.position.copy(mission.objectivePos);
+    }
+  } else if (mission.type === 'rival') {
+    const rv = mission.swinger;
+    if (rv.dead) {
+      if (world.stats) world.stats.rivals = (world.stats.rivals | 0) + 1;
+      showNews('the rival web-slinger has been defeated');
+      passMission(world);
+      return;
+    }
+    mission.objectivePos.copy(rv.pos);
+    targetArrow.position.set(rv.pos.x, rv.pos.y + 2.9 + Math.sin(t * 5) * 0.25, rv.pos.z);
+    targetArrow.rotation.y += dt * 3;
+    mission.text = `Rival HP ${Math.max(0, rv.hp)} — he swings away, keep up!`;
+
+    rv.tauntT -= dt;
+    if (rv.tauntT <= 0) {
+      rv.tauntT = 6 + Math.random() * 4;
+      const TAUNTS = ['TOO SLOW!', 'THIS CITY IS MINE!', 'IS THAT ALL?', "CAN'T CATCH ME!"];
+      world.bark?.(rv.pos, TAUNTS[(Math.random() * TAUNTS.length) | 0]);
+    }
+
+    if (rv.stunT > 0) { // webbed: dangles in place
+      rv.stunT -= dt;
+      rv.line.visible = false;
+      animateIdle(rv.ch);
+    } else if (rv.state === 'idle') {
+      rv.t -= dt;
+      animateIdle(rv.ch);
+      rv.line.visible = false;
+      if (rv.t <= 0) {
+        // pick the next rooftop, generally away from the player
+        const away = Math.atan2(rv.pos.x - world.player.pos.x, rv.pos.z - world.player.pos.z);
+        const ang = away + (Math.random() - 0.5) * 1.6;
+        const tx = rv.pos.x + Math.sin(ang) * 75;
+        const tz = rv.pos.z + Math.cos(ang) * 75;
+        let best = null;
+        let bestD = 55;
+        for (const c of world.city.colliders) {
+          if ((c.h ?? 0) < 12) continue;
+          const cx = (c.x0 + c.x1) / 2;
+          const cz = (c.z0 + c.z1) / 2;
+          const d = Math.hypot(cx - tx, cz - tz);
+          if (d < bestD && Math.abs(cx) < HALF - 10 && Math.abs(cz) < HALF - 10) { bestD = d; best = c; }
+        }
+        rv.from.copy(rv.pos);
+        if (best) rv.to.set((best.x0 + best.x1) / 2, best.h - 0.3, (best.z0 + best.z1) / 2);
+        else rv.to.set(Math.max(-HALF + 20, Math.min(HALF - 20, tx)), 0, Math.max(-HALF + 20, Math.min(HALF - 20, tz)));
+        rv.anchor.copy(rv.from).lerp(rv.to, 0.5);
+        rv.anchor.y = Math.max(rv.from.y, rv.to.y) + 26;
+        rv.dur = 2.1;
+        rv.t = 0;
+        rv.state = 'hop';
+        rv.mesh.rotation.y = Math.atan2(rv.to.x - rv.from.x, rv.to.z - rv.from.z);
+      }
+    } else { // mid-swing arc between rooftops
+      rv.t += dt;
+      const k = Math.min(1, rv.t / rv.dur);
+      rv.pos.lerpVectors(rv.from, rv.to, k);
+      rv.pos.y += Math.sin(k * Math.PI) * 16;
+      poseSwing(rv.ch, t);
+      // his web strand to the anchor
+      rv.line.visible = k < 0.6;
+      if (rv.line.visible) {
+        const hand = rv.pos.clone();
+        hand.y += 2.1;
+        const mid = hand.clone().add(rv.anchor).multiplyScalar(0.5);
+        rv.line.position.copy(mid);
+        rv.line.scale.y = Math.max(0.1, hand.distanceTo(rv.anchor));
+        rv.line.lookAt(rv.anchor);
+        rv.line.rotateX(Math.PI / 2);
+      }
+      if (k >= 1) {
+        rv.state = 'idle';
+        rv.t = 0.7 + Math.random() * 0.9;
+        rv.line.visible = false;
       }
     }
   } else if (mission.type === 'hit') {

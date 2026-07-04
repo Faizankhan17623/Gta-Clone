@@ -132,7 +132,9 @@ export function updateHUD(world) {
   if (player.inCar || player.inHeli) {
     const v = player.inCar || player.inHeli;
     els.speed.style.display = 'block';
-    els.speed.innerHTML = Math.round(v.vel.length() * 2.4) + ' <small>MPH</small>';
+    const nitro = player.inCar && !player.inCar.tank
+      ? ` <small style="color:#7ecbff">N₂O ${Math.round(player.nitro ?? 100)}%</small>` : '';
+    els.speed.innerHTML = Math.round(v.vel.length() * 2.4) + ' <small>MPH</small>' + nitro;
     els.crosshair.style.display = 'none';
     els.weapon.style.display = 'none';
   } else {

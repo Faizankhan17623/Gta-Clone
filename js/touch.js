@@ -28,6 +28,12 @@ const BTN =
   'user-select:none;-webkit-user-select:none;touch-action:none;';
 
 let uiRoot = null;
+const kioskBtns = [];
+
+// Digit buttons shown while the player stands at a shop kiosk.
+export function showKioskButtons(on) {
+  for (const b of kioskBtns) b.style.display = on ? 'flex' : 'none';
+}
 
 // Hidden until the game actually starts, so the menu stays tappable.
 export function showTouchUI(on) {
@@ -178,6 +184,15 @@ export function initTouch() {
     () => press('KeyP'), () => release('KeyP'));
   button('M', 'right:66px;top:52px;width:42px;height:42px;',
     () => press('KeyM'), () => release('KeyM'));
+
+  // 1-4 digit row: appears only while standing at a kiosk (casino, wardrobe...)
+  for (let i = 1; i <= 4; i++) {
+    const b = button(String(i),
+      `left:calc(50% + ${(i - 2.5) * 58}px);top:96px;width:48px;height:48px;font-size:17px;display:none;`,
+      () => press('Digit' + i), () => release('Digit' + i));
+    b.className = 'kioskbtn';
+    kioskBtns.push(b);
+  }
 
   return true;
 }

@@ -284,7 +284,7 @@ async function resetPlayer() {
 // ---- 13. missions: all six types ----
 {
   const types = [];
-  for (const [done, want] of [[0, 'delivery'], [1, 'race'], [2, 'air'], [3, 'taxi'], [4, 'fire'], [5, 'hit'], [6, 'roofhit'], [7, 'escort'], [8, 'boss']]) {
+  for (const [done, want] of [[0, 'delivery'], [1, 'race'], [2, 'air'], [3, 'taxi'], [4, 'fire'], [5, 'hit'], [6, 'roofhit'], [7, 'escort'], [8, 'boss'], [9, 'rival']]) {
     await resetPlayer();
     const got = await ev(async (doneN) => {
       const d = window.__debug;
@@ -300,7 +300,7 @@ async function resetPlayer() {
     await ev(() => { window.__debug.mission.timeLeft = 0.01; });
     await page.waitForTimeout(300);
   }
-  check('Missions: all nine types', JSON.stringify(types) === JSON.stringify(['delivery', 'race', 'air', 'taxi', 'fire', 'hit', 'roofhit', 'escort', 'boss']), types.join(', '));
+  check('Missions: all ten types', JSON.stringify(types) === JSON.stringify(['delivery', 'race', 'air', 'taxi', 'fire', 'hit', 'roofhit', 'escort', 'boss', 'rival']), types.join(', '));
   // boss chopper should now be leaving after the fail
   await ev(() => { for (const h of window.__debug.world.policeHelis) { h.boss = false; h.leaving = true; } });
 }
@@ -651,6 +651,96 @@ async function resetPlayer() {
     return !!d.world.ach.jackpot;
   });
   check('Achievements unlock', got);
+}
+
+// ---- 40. hidden packages ----
+{
+  await resetPlayer();
+  const got = await ev(() => {
+    const d = window.__debug;
+    const tk = d.stunts.tokens.find((t) => !t.got);
+    if (!tk) return false;
+    const before = d.world.stats.tokens;
+    d.player.pos.copy(tk.pos);
+    return { before, total: d.stunts.tokens.length };
+  });
+  await page.waitForTimeout(400);
+  const after = await ev(() => window.__debug.world.stats.tokens);
+  check('Hidden packages (20 rooftop tokens)', got.total === 20 && after === got.before + 1, `${after}/20 collected`);
+}
+
+// ---- 41. nitro boost ----
+{
+  await resetPlayer();
+  await ev(() => {
+    const d = window.__debug;
+    const car = d.world.parked.find((v) => !v.bike && !v.dead && v.accel === undefined);
+    d.player.pos.set(car.pos.x + 2, 0, car.pos.z);
+  });
+  await page.waitForTimeout(200);
+  await page.keyboard.press('KeyE');
+  await page.waitForTimeout(200);
+  await ev(() => {
+    const d = window.__debug;
+    const b = d.player.inCar;
+    b.pos.set(d.world.city.roadXs[2], b.pos.y, -220);
+    b.heading = 0;
+    b.vel.set(0, 0, 0);
+    d.setCamYaw(0);
+    d.player.nitro = 100;
+  });
+  await page.keyboard.down('KeyW');
+  await page.keyboard.down('ShiftLeft');
+  await page.waitForTimeout(2500);
+  const boosted = await ev(() => ({
+    sp: window.__debug.player.inCar?.vel.length() ?? 0,
+    n: window.__debug.player.nitro,
+  }));
+  await page.keyboard.up('ShiftLeft');
+  await page.keyboard.up('KeyW');
+  check('Nitro boost (Shift in car)', boosted.sp > 28 && boosted.n < 95, `${boosted.sp.toFixed(1)} m/s, tank ${boosted.n.toFixed(0)}%`);
+  await page.keyboard.press('KeyE');
+  await page.waitForTimeout(300);
+}
+
+// ---- 42. AI street racers ----
+{
+  await resetPlayer();
+  const rivals = await ev(async () => {
+    const d = window.__debug;
+    d.mission.active = false;
+    d.mission.done = 1; // race
+    d.player.pos.set(d.mission.markerPos.x, 0, d.mission.markerPos.z);
+    await new Promise((r) => setTimeout(r, 300));
+    return { type: d.mission.type, n: d.mission.rivals.length, cps: d.mission.cps.length };
+  });
+  check('AI street racers', rivals.type === 'race' && rivals.n === 2 && rivals.cps === 5, `${rivals.n} rivals, ${rivals.cps} checkpoints`);
+  await ev(() => { window.__debug.mission.timeLeft = 0.01; });
+  await page.waitForTimeout(300);
+}
+
+// ---- 43. the rival web-swinger ----
+{
+  await resetPlayer();
+  const rv = await ev(async () => {
+    const d = window.__debug;
+    d.mission.active = false;
+    d.mission.done = 9; // rival
+    d.player.pos.set(d.mission.markerPos.x, 0, d.mission.markerPos.z);
+    await new Promise((r) => setTimeout(r, 2500)); // let him take a swing
+    const sw = d.mission.swinger;
+    return sw ? { type: d.mission.type, hp: sw.hp, moved: sw.pos.length() > 0, target: d.world.targets.includes(sw.target) } : null;
+  });
+  check('Rival web-swinger boss', rv && rv.type === 'rival' && rv.hp === 150 && rv.target, 'he swings, he taunts, he is shootable');
+  // shoot him down via the target pipeline
+  const beaten = await ev(async () => {
+    const d = window.__debug;
+    const sw = d.mission.swinger;
+    for (let i = 0; i < 5; i++) sw.target.hit(d.world);
+    await new Promise((r) => setTimeout(r, 400));
+    return sw.dead && !d.mission.active; // mission passed
+  });
+  check('Rival can be defeated', beaten);
 }
 
 console.log('---');

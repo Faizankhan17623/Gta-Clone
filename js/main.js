@@ -14,7 +14,7 @@ import { initMissions, updateMissions, failMission, mission } from './missions.j
 import { initWeather, updateWeather } from './weather.js';
 import { initWeb, fireWeb, releaseWeb, swingStep, updateWebVisual, poseSwing, poseFall } from './web.js';
 import { initShops, updateShops, ensureGarageVehicle, garageCheck } from './shops.js';
-import { initTouch, isTouch, showTouchUI } from './touch.js';
+import { initTouch, isTouch, showTouchUI, showKioskButtons } from './touch.js';
 import { initMenu, openMenu, closeMenu, openMap, closeMap, drawBigMap } from './menu.js';
 import { initStunts, updateStunts, placeTrampoline, tryBounce, checkRamp, bounceFx } from './stunts.js';
 import { initGang, updateGang, killGangMember } from './gangs.js';
@@ -163,6 +163,7 @@ const world = {
   perks: { style: 1, melee: 1, webDur: 6, decay: 24, busted: 1.6 },
   waypoint: null,
   barks: [],
+  tokensGot: [...(save.tokens || [])],
   slowmoT: 0,
 };
 world.level = 1 + Math.floor(Math.sqrt(world.xp / 120));
@@ -312,6 +313,7 @@ function saveGame() {
       money: world.money, missions: mission.done, mg: ammo.mg, rpg: ammo.rpg,
       upg: world.upgrades, gang: { owned: gang.owned, kills: gang.kills }, radio: world.radioSt,
       garage: world.garageKind, xp: world.xp, stats: world.stats, ach: world.ach,
+      tokens: world.tokensGot,
       suit: world.suit, suits: world.suitsOwned, settings: world.settings,
     }));
   } catch {}
@@ -869,7 +871,10 @@ const ACHIEVEMENTS = [
   ['committed', 'COMMITTED — 9 missions passed', (w) => w.stats.missions >= 9],
   ['tycoon', 'TYCOON — hold $10,000', (w) => w.money >= 10000],
   ['cabbie', 'CABBIE — 5 fares delivered', (w) => w.stats.fares >= 5],
+  ['collector', 'COLLECTOR — all 20 hidden packages', (w) => w.stats.tokens >= 20],
+  ['rivaldown', 'ONLY ONE SPIDER — beat the rival swinger', (w) => (w.stats.rivals | 0) >= 1],
 ];
+world.achTotal = ACHIEVEMENTS.length;
 let achT = 0;
 
 function checkAchievements(dt) {
@@ -1260,6 +1265,23 @@ function updateDriving(dt) {
     steer: (keys['KeyA'] ? 1 : 0) + (keys['KeyD'] ? -1 : 0),
     handbrake: !!keys['Space'],
   };
+  // nitro: hold Shift for a burning speed burst (tank excluded, it's heavy enough)
+  player.nitro = player.nitro ?? 100;
+  const boosting = (keys['ShiftLeft'] || keys['ShiftRight']) && player.nitro > 1 && ctl.throttle > 0 && !car.tank;
+  if (boosting) {
+    player.nitro = Math.max(0, player.nitro - 40 * dt);
+    _fwd.set(Math.sin(car.heading), 0, Math.cos(car.heading));
+    car.vel.addScaledVector(_fwd, 15 * dt);
+    car.nitroFxT = (car.nitroFxT || 0) - dt;
+    if (car.nitroFxT <= 0) {
+      car.nitroFxT = 0.06;
+      addFlash(car.pos.clone().add(new THREE.Vector3(-_fwd.x * 2.1, 0.55, -_fwd.z * 2.1)), 0x66aaff, 0.5);
+    }
+    addStyle(4 * dt);
+  } else {
+    player.nitro = Math.min(100, player.nitro + 9 * dt);
+  }
+
   const impact = physStep(car, ctl, dt, city.colliders);
   checkRamp(stuntsState, world, car, dt); // stunt ramps launch fast cars
   if (impact > 8) {
@@ -1871,6 +1893,12 @@ function update(dt) {
   // pause / big map
   if (pressed['KeyP']) pauseGame();
   if (pressed['KeyM']) openBigMap();
+
+  // phones get 1-4 buttons while standing at a kiosk
+  if (isTouch && world.nearKiosk !== world._kioskUi) {
+    world._kioskUi = world.nearKiosk;
+    showKioskButtons(world.nearKiosk);
+  }
   updateCamera(dt);
   updateSiren();
   updateHUD(world);
