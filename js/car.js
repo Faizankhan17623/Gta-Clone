@@ -112,6 +112,10 @@ export function createBikeMesh(color) {
 // Note: `pos` aliases mesh.position so writes to pos move the mesh.
 export function makeVehicle(scene, x, z, heading, color, opts = {}) {
   const { group, wheels, lightbar } = opts.bike ? createBikeMesh(color) : createCarMesh(color, opts);
+  if (opts.monster) { // jack the body up on big wheels
+    group.scale.set(1.25, 1.35, 1.25);
+    for (const w of wheels) w.scale.setScalar(1.8);
+  }
   group.position.set(x, 0, z);
   group.rotation.y = heading;
   scene.add(group);
@@ -128,6 +132,7 @@ export function makeVehicle(scene, x, z, heading, color, opts = {}) {
     police: !!opts.police,
     bike: !!opts.bike,
     tank: !!opts.tank,
+    monster: !!opts.monster,
     // physics stats (physStep falls back to car defaults)
     accel: opts.accel ?? (opts.bike ? 26 : undefined),
     top: opts.top ?? (opts.bike ? 55 : undefined),

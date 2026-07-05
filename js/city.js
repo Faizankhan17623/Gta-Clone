@@ -3,7 +3,7 @@ import * as THREE from 'three';
 // City layout: N x N blocks separated by roads, surrounded by a perimeter road.
 export const BLOCK = 60;
 export const ROAD = 16;
-export const N = 8;
+export const N = 10; // 10x10 grid — a bigger metropolis (was 8x8)
 export const CITY = N * BLOCK + (N + 1) * ROAD; // 624
 export const HALF = CITY / 2;
 

@@ -147,6 +147,24 @@
   }
   #playbtn:hover { transform: scale(1.05); }
 
+  #charpick { pointer-events: auto; margin-bottom: 4px; }
+  #charpick .chartitle { color: #9fb2c8; font: 700 12px Arial; letter-spacing: 3px; margin-bottom: 8px; }
+  #charrow { display: flex; gap: 10px; justify-content: center; }
+  .charcard {
+    cursor: pointer; width: 128px; padding: 12px 8px; border-radius: 10px;
+    background: rgba(0,0,0,.5); border: 2px solid rgba(255,255,255,.14); transition: all .15s;
+  }
+  .charcard:hover { border-color: rgba(255,255,255,.4); }
+  .charcard.sel { border-color: #ffd24a; background: rgba(255,210,74,.1); }
+  .charcard .cname { font: 800 16px Arial; letter-spacing: 1px; color: #fff; }
+  .charcard .ctag { font: 600 10px Arial; color: #9fb2c8; margin: 3px 0 6px; }
+  .charcard .swatch { height: 28px; border-radius: 5px; margin-bottom: 6px; }
+  .charcard .stat { font: 600 9px Arial; color: #cfd8e3; line-height: 1.5; }
+  @media (max-width: 700px), (max-height: 620px) {
+    .charcard { width: 96px; padding: 8px 5px; }
+    .charcard .cname { font-size: 13px; }
+  }
+
   #start .tabs { display: flex; gap: 8px; pointer-events: auto; margin-bottom: 12px; }
   #start .tab {
     cursor: pointer; background: rgba(255,255,255,.07); color: #9fb2c8;
@@ -229,6 +247,11 @@
     <h1>OPEN CITY</h1>
     <div class="tag">Swing · Drive · Fly — a GTA-style open world in your browser</div>
 
+    <div id="charpick">
+      <div class="chartitle">CHOOSE YOUR SLINGER</div>
+      <div id="charrow"></div>
+    </div>
+
     <button id="playbtn">▶ PLAY</button>
 
     <div class="tabs">
@@ -256,6 +279,9 @@
       <div class="feat"><b>🎯 10 mission types</b> Deliveries, street races vs AI, sky-ring swing races, taxi, heists, a boss chopper, and a rival web-slinger.</div>
       <div class="feat"><b>🏙️ Living city</b> Rob stores, seize gang turf, casino, dealership, wardrobe suits, garage, 20 hidden packages, day/night + weather.</div>
       <div class="feat"><b>📈 Grow</b> XP levels unlock double-jump, web-dash & slow-mo aim · 12 achievements.</div>
+      <div class="feat"><b>🧍 Pick a slinger</b> WEAVER (balanced), BOLT (fast), or BRICK (tough) — each plays differently.</div>
+      <div class="feat"><b>🗼 Landmarks</b> Swing off the 150m Spire, the stadium, central park & the waterfront on a bigger 10×10 city.</div>
+      <div class="feat"><b>🤖 Bosses</b> A rival web-slinger AND a 500-armour war-mech — plus a monster truck at the dealership.</div>
       <div class="feat"><b>📷 Mobile</b> Camera selfie booth, screenshot sharing, haptics — installable as an app.</div>
     </div>
 

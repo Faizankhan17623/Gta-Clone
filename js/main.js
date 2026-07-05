@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { initInput, endFrame, pollGamepad, keys, pressed, mouse } from './input.js';
 import { buildCity, resolveCircle, pointBlocked, groundHeight, blockStart, BLOCK, HALF, N } from './city.js';
-import { createCharacter, animateWalk, animateIdle } from './characters.js';
+import { createCharacter, animateWalk, animateIdle, animateLand, CHARACTERS } from './characters.js';
 import { physStep, separateCars, darkenCar } from './car.js';
 import { spawnPeds, updatePeds, killPed, spawnTraffic, updateTraffic, disableTraffic, spawnParked } from './npc.js';
 import { updatePolice, addCrime, copDie, clearCops } from './police.js';
@@ -12,6 +12,7 @@ import { initSound, sfxShot, sfxCrash, sfxPickup, sfxWeb, sfxMissionPass, engine
 import { createSkyDome, applyDayNight, DAY_START } from './daynight.js';
 import { initMissions, updateMissions, failMission, mission } from './missions.js';
 import { initWeather, updateWeather } from './weather.js';
+import { buildLandmarks, updateLandmarks } from './landmarks.js';
 import { initWeb, fireWeb, releaseWeb, swingStep, updateWebVisual, poseSwing, poseFall } from './web.js';
 import { initShops, updateShops, ensureGarageVehicle, garageCheck } from './shops.js';
 import { initTouch, isTouch, showTouchUI, showKioskButtons } from './touch.js';
@@ -83,6 +84,7 @@ window.addEventListener('resize', () => {
 const city = buildCity(scene);
 const sky = createSkyDome(scene);
 const weather = initWeather(scene);
+const landmarks = buildLandmarks(scene, city);
 initEffects(scene);
 initHUD();
 initInput();
@@ -102,7 +104,9 @@ const SAVE_KEY = 'opencity-save-v1';
 let save = {};
 try { save = JSON.parse(localStorage.getItem(SAVE_KEY) || '{}') || {}; } catch { save = {}; }
 
-const playerChar = createCharacter({ shirt: '#cfcfc6', pants: '#27406b', skin: '#c98e63' });
+// chosen playable character (saved between sessions)
+const charDef = CHARACTERS.find((c) => c.key === save.char) || CHARACTERS[0];
+const playerChar = createCharacter(charDef.colors);
 scene.add(playerChar.group);
 
 const player = {
@@ -111,7 +115,8 @@ const player = {
   pos: playerChar.group.position,
   vel: new THREE.Vector3(),
   heading: 0,
-  health: 100,
+  health: charDef.health,
+  charDef,
   inCar: null,
   inHeli: null,
   animT: 0,
@@ -120,6 +125,7 @@ const player = {
   glide: false, // floaty hang-time after releasing a swing
   wallT: 3,     // wall-run stamina (~22m of vertical sprint)
   dodgeT: 0,    // dodge-roll i-frames
+  landT: 0,     // landing-crouch timer
 };
 player.pos.copy(city.spawn);
 
@@ -127,9 +133,9 @@ const world = {
   scene,
   city,
   player,
-  peds: spawnPeds(scene, city, 70),
-  traffic: spawnTraffic(scene, city, 18),
-  parked: spawnParked(scene, 26),
+  peds: spawnPeds(scene, city, 100),   // more life for the bigger city
+  traffic: spawnTraffic(scene, city, 28),
+  parked: spawnParked(scene, 38),
   cops: [],
   helis: [],
   policeHelis: [],
@@ -146,7 +152,8 @@ const world = {
   shake: 0,
   clock: DAY_START, // in-game hour, 24 real minutes per day
   sunDir: new THREE.Vector3(0.5, 1, 0.4).normalize(),
-  maxHealth: 100,
+  maxHealth: charDef.health,
+  charKey: charDef.key,
   tanks: [],
   style: 0, // swing style points, cashed out on landing
   radioSt: save.radio | 0,
@@ -324,6 +331,7 @@ function saveGame() {
       garage: world.garageKind, xp: world.xp, stats: world.stats, ach: world.ach,
       tokens: world.tokensGot,
       suit: world.suit, suits: world.suitsOwned, settings: world.settings,
+      char: world.charKey,
     }));
   } catch {}
 }
@@ -517,7 +525,8 @@ function updateOnFoot(dt) {
 
   const moving = _move.lengthSq() > 0;
   const sprintSpeed = world.level >= 8 ? 12 : 10; // parkour sprint skill
-  const speed = keys['ShiftLeft'] || keys['ShiftRight'] ? sprintSpeed : 5.5;
+  const cs = player.charDef.speed;
+  const speed = (keys['ShiftLeft'] || keys['ShiftRight'] ? sprintSpeed : 5.5) * cs;
 
   if (moving) {
     _move.normalize();
@@ -540,7 +549,7 @@ function updateOnFoot(dt) {
   }
 
   if (pressed['Space'] && player.onGround) {
-    player.vy = 7.5;
+    player.vy = 7.5 * player.charDef.jump;
     player.onGround = false;
     player.dblJump = false;
   } else if (pressed['Space'] && !player.onGround && world.level >= 2 && !player.dblJump && player.vy < 5 && !keys['KeyW']) {
@@ -601,6 +610,7 @@ function updateOnFoot(dt) {
   // probe from the pre-fall height so a fast frame can't punch through a roof
   const groundY = groundHeight(player.pos, city.colliders, 0.1, prevY);
   if (player.pos.y <= groundY) {
+    const fellFar = player.vy < -11;
     const bounce = tryBounce(world, player.pos, player.vy);
     if (bounce) { // sprung off a web trampoline
       player.vy = bounce;
@@ -620,6 +630,7 @@ function updateOnFoot(dt) {
       player.onGround = true;
       player.glide = false;
       player.wallT = 3.0; // wall-run stamina recharges on the ground
+      if (fellFar) player.landT = 0.28; // crouch on a real drop
       cashOutStyle();
     }
   } else if (player.vy < 0 && player.pos.y > groundY + 0.05) {
@@ -688,8 +699,11 @@ function updateOnFoot(dt) {
   player.pos.z = Math.max(-B, Math.min(B, player.pos.z));
 
   const sp = Math.hypot(player.vel.x, player.vel.z);
+  player.landT = Math.max(0, player.landT - dt);
   if (!player.onGround) {
     poseFall(player.ch);
+  } else if (player.landT > 0) {
+    animateLand(player.ch, 1 - player.landT / 0.28);
   } else if (sp > 0.5) {
     player.animT += sp * dt * 2.0;
     animateWalk(player.ch, player.animT, sp > 7 ? 0.95 : 0.6);
@@ -937,7 +951,7 @@ function melee() {
     for (const group of [world.traffic, world.parked, world.cops]) {
       for (const v of group) {
         if (v.dead || !inRange(v.pos)) continue;
-        v.health -= 12 * combo * (world.perks.melee ?? 1);
+        v.health -= 12 * combo * (world.perks.melee ?? 1) * (player.charDef.melee ?? 1);
         addSparks(v.pos.clone().setY(1), 6);
         sfxCrash(8);
         if (v.health <= 0) {
@@ -1745,6 +1759,50 @@ function respawn() {
 // ---------- start screen / pointer lock ----------
 
 const startEl = document.getElementById('start');
+
+// character picker: cards on the start screen, choice saved for next time
+let chosenChar = charDef.key;
+(function buildCharPicker() {
+  const row = document.getElementById('charrow');
+  if (!row) return;
+  for (const c of CHARACTERS) {
+    const card = document.createElement('div');
+    card.className = 'charcard' + (c.key === chosenChar ? ' sel' : '');
+    card.innerHTML =
+      `<div class="swatch" style="background:linear-gradient(135deg,${c.colors.shirt},${c.colors.pants})"></div>` +
+      `<div class="cname">${c.name}</div><div class="ctag">${c.tagline}</div>` +
+      `<div class="stat">SPD ${'★'.repeat(Math.round(c.speed * 4))}<br>HP ${c.health}<br>JMP ${'★'.repeat(Math.round(c.jump * 4))}</div>`;
+    card.onclick = () => {
+      chosenChar = c.key;
+      document.querySelectorAll('.charcard').forEach((el) => el.classList.remove('sel'));
+      card.classList.add('sel');
+      applyCharacter(c);
+    };
+    row.appendChild(card);
+  }
+})();
+
+function applyCharacter(c) {
+  player.charDef = c;
+  world.charKey = c.key;
+  world.maxHealth = c.health;
+  player.health = c.health;
+  applySuitColors(c.colors);
+  saveGame();
+}
+
+// recolor the player rig to a character's palette (reuses the wardrobe path)
+function applySuitColors(colors) {
+  const g = player.ch;
+  const set = (mesh, col) => { if (col && mesh) mesh.material.color.set(col); };
+  set(g.group.children[0], colors.shirt);
+  set(g.group.children[1], colors.skin);
+  set(g.lArm.children[0], colors.skin);
+  set(g.rArm.children[0], colors.skin);
+  set(g.lLeg.children[0], colors.pants);
+  set(g.rLeg.children[0], colors.pants);
+}
+
 document.getElementById('playbtn').addEventListener('click', () => {
   startEl.style.display = 'none';
   initSound();
@@ -1862,12 +1920,14 @@ function update(dt) {
   updateHelis(dt);
   updateRockets(dt);
   updatePickups(dt);
+  if (mission && mission.type === 'mech') mission._boom = explodeRocket;
   updateMissions(world, dt);
   updateShops(shopsState, world, dt, keys, pressed);
   updateGang(world, dt);
   updateArmy(world, dt, armyHooks);
   updateAmbient(flocks, world, dt);
   updateStunts(stuntsState, world, dt);
+  updateLandmarks(landmarks, dt, world.time);
   updateEffects(dt);
 
   // ambience follows the clock
@@ -1987,6 +2047,8 @@ window.__debug = {
   openBigMap,
   getSuit: () => world.suit,
   snapPhoto: () => { world.captureNext = true; },
+  characters: CHARACTERS,
+  setCharacter: (k) => { const c = CHARACTERS.find((x) => x.key === k); if (c) applyCharacter(c); },
   getCamYaw: () => camYaw,
   setCamYaw: (v) => { camYaw = v; },
   setCamPitch: (v) => { camPitch = v; },

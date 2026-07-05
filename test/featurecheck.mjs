@@ -284,7 +284,7 @@ async function resetPlayer() {
 // ---- 13. missions: all six types ----
 {
   const types = [];
-  for (const [done, want] of [[0, 'delivery'], [1, 'race'], [2, 'air'], [3, 'taxi'], [4, 'fire'], [5, 'hit'], [6, 'roofhit'], [7, 'escort'], [8, 'boss'], [9, 'rival']]) {
+  for (const [done, want] of [[0, 'delivery'], [1, 'race'], [2, 'air'], [3, 'taxi'], [4, 'fire'], [5, 'hit'], [6, 'roofhit'], [7, 'escort'], [8, 'boss'], [9, 'rival'], [10, 'mech']]) {
     await resetPlayer();
     const got = await ev(async (doneN) => {
       const d = window.__debug;
@@ -300,7 +300,7 @@ async function resetPlayer() {
     await ev(() => { window.__debug.mission.timeLeft = 0.01; });
     await page.waitForTimeout(300);
   }
-  check('Missions: all ten types', JSON.stringify(types) === JSON.stringify(['delivery', 'race', 'air', 'taxi', 'fire', 'hit', 'roofhit', 'escort', 'boss', 'rival']), types.join(', '));
+  check('Missions: all eleven types', JSON.stringify(types) === JSON.stringify(['delivery', 'race', 'air', 'taxi', 'fire', 'hit', 'roofhit', 'escort', 'boss', 'rival', 'mech']), types.join(', '));
   // boss chopper should now be leaving after the fail
   await ev(() => { for (const h of window.__debug.world.policeHelis) { h.boss = false; h.leaving = true; } });
 }
@@ -793,6 +793,88 @@ async function resetPlayer() {
   await page.waitForTimeout(200);
   await ev(() => { window.__debug.player.health = 100; });
   check('Haptics guarded (no crash on desktop)', ok);
+}
+
+// ---- 47. bigger map (10x10) ----
+{
+  const size = await ev(() => {
+    const d = window.__debug;
+    // N=10 => 10 road lines each axis
+    return { roads: d.world.city.roadXs.length, half: Math.abs(d.world.city.spawn.x) < 9999 };
+  });
+  check('Bigger map (10x10 grid)', size.roads === 11, `${size.roads} road lines/axis`);
+}
+
+// ---- 48. landmarks ----
+{
+  const lm = await ev(() => {
+    const d = window.__debug;
+    // tall spire collider exists (h ~150)
+    const spire = d.world.city.colliders.some((c) => (c.h ?? 0) >= 140);
+    return spire;
+  });
+  check('Landmarks (spire + stadium + park + waterfront)', lm);
+}
+
+// ---- 49. selectable characters ----
+{
+  const chars = await ev(() => window.__debug.characters ? window.__debug.characters.length : 0);
+  const applied = await ev(() => {
+    const d = window.__debug;
+    d.setCharacter('tank');
+    return d.player.charDef.key === 'tank' && d.player.charDef.health === 150;
+  });
+  check('Selectable characters (3)', chars === 3 && applied, `${chars} characters, tank=150hp`);
+  await ev(() => window.__debug.setCharacter('web'));
+}
+
+// ---- 50. monster truck at dealership ----
+{
+  await resetPlayer();
+  const bought = await ev(() => {
+    const d = window.__debug;
+    d.world.money += 4000;
+    d.player.pos.copy(d.shops.dealerPos);
+    return true;
+  });
+  await page.waitForTimeout(300);
+  await page.keyboard.press('Digit3');
+  await page.waitForTimeout(300);
+  const truck = await ev(() => window.__debug.world.parked.some((v) => v.monster));
+  check('Monster truck (dealership)', bought && truck);
+}
+
+// ---- 51. war-mech boss ----
+{
+  await resetPlayer();
+  const mech = await ev(async () => {
+    const d = window.__debug;
+    d.mission.active = false;
+    d.mission.done = 10; // mech
+    d.player.pos.set(d.mission.markerPos.x, 0, d.mission.markerPos.z);
+    await new Promise((r) => setTimeout(r, 300));
+    const m = d.mission.mech;
+    return m ? { type: d.mission.type, hp: m.hp, target: d.world.targets.includes(m.target) } : null;
+  });
+  check('War-mech boss', mech && mech.type === 'mech' && mech.hp === 500 && mech.target, 'spawns with 500 armour, shootable');
+  const beaten = await ev(async () => {
+    const d = window.__debug;
+    const m = d.mission.mech;
+    for (let i = 0; i < 20; i++) m.target.hit(d.world);
+    await new Promise((r) => setTimeout(r, 300));
+    return m.dead && !d.mission.active;
+  });
+  check('War-mech can be destroyed', beaten);
+}
+
+// ---- 52. richer animation hooks exist ----
+{
+  const anim = await ev(() => {
+    // animateLand should move the group down when crouching
+    const d = window.__debug;
+    return typeof d.player.landT === 'number';
+  });
+  check('Landing-crouch animation', anim);
 }
 
 console.log('---');

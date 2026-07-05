@@ -239,8 +239,10 @@ export function updateShops(state, world, dt, keys, pressed) {
     const deals = [
       { cost: 2500, name: 'SUPERCAR', opts: { accel: 26, top: 58 }, color: '#c1121f' },
       { cost: 1500, name: 'SUPERBIKE', opts: { bike: true, accel: 32, top: 66 }, color: '#f5a800' },
+      { cost: 4000, name: 'MONSTER TRUCK', opts: { accel: 20, top: 44, rad: 2.2, health: 260, monster: true }, color: '#3a6b2a' },
     ];
-    for (let i = 0; i < 2; i++) {
+    world.shopHint = 'AUTO PALACE — <b>1</b> Supercar $2500 · <b>2</b> Superbike $1500 · <b>3</b> Monster Truck $4000';
+    for (let i = 0; i < deals.length; i++) {
       if (!pressed['Digit' + (i + 1)]) continue;
       const deal = deals[i];
       if (world.money < deal.cost) { showToast('Not enough cash'); continue; }

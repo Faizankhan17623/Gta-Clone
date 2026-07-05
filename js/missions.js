@@ -33,6 +33,7 @@ export const mission = {
   cpIdx: 0,
   rivals: [],      // AI racers
   swinger: null,   // the rival web-slinger
+  mech: null,      // the war-mech boss
   markerPos: new THREE.Vector3(),
   objectivePos: new THREE.Vector3(),
 };
@@ -119,7 +120,7 @@ function placeAirRing(world, from) {
 }
 
 function startMission(world) {
-  let type = ['delivery', 'race', 'air', 'taxi', 'fire', 'hit', 'roofhit', 'escort', 'boss', 'rival'][mission.done % 10];
+  let type = ['delivery', 'race', 'air', 'taxi', 'fire', 'hit', 'roofhit', 'escort', 'boss', 'rival', 'mech'][mission.done % 11];
 
   if (type === 'hit') {
     // need a living ped a reasonable chase away
@@ -137,7 +138,7 @@ function startMission(world) {
   mission.type = type;
   mission.reward = {
     delivery: 500, race: 800, hit: 450, air: 1000, taxi: 700, boss: 2500,
-    fire: 900, roofhit: 850, escort: 1100, rival: 3000,
+    fire: 900, roofhit: 850, escort: 1100, rival: 3000, mech: 4000,
   }[type] + mission.done * 150;
   startMarker.visible = false;
 
@@ -199,6 +200,47 @@ function startMission(world) {
     mission.timeLeft = 40 + mission.objectivePos.distanceTo(p) * 0.28;
     mission.title = 'ESCORT';
     mission.text = 'Lead the witness (white car) to the marker — keep them alive';
+  } else if (type === 'mech') {
+    const g = new THREE.Group();
+    const steel = new THREE.MeshStandardMaterial({ color: 0x555b66, metalness: 0.7, roughness: 0.4 });
+    const eyeM = new THREE.MeshBasicMaterial({ color: 0xff3030 });
+    const torso = new THREE.Mesh(new THREE.BoxGeometry(4, 4, 3), steel);
+    torso.position.y = 6;
+    g.add(torso);
+    const head = new THREE.Mesh(new THREE.BoxGeometry(2, 1.6, 2), steel);
+    head.position.y = 9;
+    g.add(head);
+    const eye = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.4, 0.2), eyeM);
+    eye.position.set(0, 9, 1.05);
+    g.add(eye);
+    for (const sx of [-1.6, 1.6]) {
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(1.2, 4.4, 1.2), steel);
+      leg.position.set(sx, 2.2, 0);
+      g.add(leg);
+      const arm = new THREE.Mesh(new THREE.BoxGeometry(1, 3.6, 1), steel);
+      arm.position.set(sx * 1.7, 6, 0);
+      g.add(arm);
+    }
+    const p = world.player.pos;
+    const a = Math.random() * Math.PI * 2;
+    g.position.set(p.x + Math.sin(a) * 60, 0, p.z + Math.cos(a) * 60);
+    world.scene.add(g);
+    const mech = { mesh: g, pos: g.position, hp: 500, dead: false, shootT: 2, stepT: 0 };
+    mech.target = {
+      pos: mech.pos, aimY: 6, r: 3.2,
+      get dead() { return mech.dead; },
+      hit(w) {
+        mech.hp -= 30;
+        if (mech.hp <= 0 && !mech.dead) mech.dead = true;
+      },
+    };
+    world.targets.push(mech.target);
+    mission.mech = mech;
+    mission.timeLeft = 150;
+    mission.title = 'WAR-MECH';
+    mission.text = 'A war-mech stomps the city! 500 armour — hit its glowing eye';
+    showNews('a rogue war-mech is rampaging downtown');
+    targetArrow.visible = true;
   } else if (type === 'air') {
     mission.cpLeft = 5;
     mission.timeLeft = 35;
@@ -346,6 +388,13 @@ function endMission(world) {
     if (ti >= 0) world.traffic.splice(ti, 1);
   }
   mission.rivals = [];
+  // the war-mech powers down
+  if (mission.mech) {
+    world.scene.remove(mission.mech.mesh);
+    const ti = world.targets.indexOf(mission.mech.target);
+    if (ti >= 0) world.targets.splice(ti, 1);
+    mission.mech = null;
+  }
   // the rival swinger vanishes into the skyline
   if (mission.swinger) {
     world.scene.remove(mission.swinger.mesh);
@@ -529,6 +578,46 @@ export function updateMissions(world, dt) {
         rv.state = 'idle';
         rv.t = 0.7 + Math.random() * 0.9;
         rv.line.visible = false;
+      }
+    }
+  } else if (mission.type === 'mech') {
+    const mk = mission.mech;
+    if (mk.dead) {
+      showNews('the war-mech has been destroyed');
+      passMission(world);
+      return;
+    }
+    mission.objectivePos.copy(mk.pos);
+    targetArrow.position.set(mk.pos.x, mk.pos.y + 11 + Math.sin(t * 5) * 0.3, mk.pos.z);
+    targetArrow.rotation.y += dt * 3;
+    mission.text = `Mech armour ${Math.max(0, mk.hp)} — dodge its cannon!`;
+    // stomp toward the player
+    const focus = world.player.pos;
+    const dx = focus.x - mk.pos.x;
+    const dz = focus.z - mk.pos.z;
+    const d = Math.hypot(dx, dz) || 1;
+    if (d > 14) {
+      mk.pos.x += (dx / d) * 6 * dt;
+      mk.pos.z += (dz / d) * 6 * dt;
+    }
+    mk.mesh.rotation.y = Math.atan2(dx, dz);
+    mk.stepT += dt;
+    mk.mesh.position.y = Math.abs(Math.sin(mk.stepT * 4)) * 0.4; // lumbering bob
+    // cannon volley
+    mk.shootT -= dt;
+    if (mk.shootT <= 0 && d < 80 && !world.player.inHeli) {
+      mk.shootT = 2.2;
+      const from = mk.pos.clone();
+      from.y = 6;
+      const aim = focus.clone();
+      aim.y += 1;
+      aim.x += (Math.random() - 0.5) * 6;
+      aim.z += (Math.random() - 0.5) * 6;
+      addFlash(from, 0xff6a30, 0.9);
+      mission._boom?.(aim); // reuse rocket explosion via a hook set by main
+      if (!mission._boom) {
+        addFlash(aim, 0xff9a28, 2.5);
+        if (Math.random() < 0.5 && !(world.player.dodgeT > 0)) world.player.health -= 12;
       }
     }
   } else if (mission.type === 'hit') {
