@@ -49,6 +49,14 @@ export function initMenu(h) {
   photo.onclick = () => hooks.onPhoto();
   menuEl.appendChild(photo);
 
+  if (hooks.cameraSupported) {
+    const cam = document.createElement('button');
+    cam.textContent = '📷 SELFIE CAM';
+    cam.style.cssText = BTN + 'background:linear-gradient(180deg,#b6f5c0,#3dcf6a);';
+    cam.onclick = () => hooks.onCamera();
+    menuEl.appendChild(cam);
+  }
+
   const restart = document.createElement('button');
   restart.textContent = 'RESTART (RESPAWN)';
   restart.style.cssText = BTN + 'background:linear-gradient(180deg,#ff8a6a,#d05a3a);';

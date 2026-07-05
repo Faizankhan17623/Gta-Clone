@@ -184,6 +184,8 @@ export function initTouch() {
     () => press('KeyP'), () => release('KeyP'));
   button('M', 'right:66px;top:52px;width:42px;height:42px;',
     () => press('KeyM'), () => release('KeyM'));
+  button('📸', 'right:118px;top:52px;width:42px;height:42px;font-size:18px;',
+    () => press('KeyG'), () => release('KeyG')); // snap a screenshot
 
   // 1-4 digit row: appears only while standing at a kiosk (casino, wardrobe...)
   for (let i = 1; i <= 4; i++) {

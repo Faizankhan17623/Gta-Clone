@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { sfxExplosion } from './sound.js';
+import { vibrate } from './device.js';
 
 let scene = null;
 let boomLight = null; // one persistent light reused for every explosion (no shader recompiles)
@@ -86,6 +87,7 @@ export function addDebris(pos, count = 8, color = 0x33333a) {
 
 export function addExplosion(pos) {
   sfxExplosion();
+  vibrate([40, 30, 60]); // explosion rumble on phones
   const p = pos.clone();
   p.y = Math.max(1.2, pos.y);
   addFlash(p, 0xff9a28, 4.5);

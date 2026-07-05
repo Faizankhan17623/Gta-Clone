@@ -16,6 +16,7 @@ import { initWeb, fireWeb, releaseWeb, swingStep, updateWebVisual, poseSwing, po
 import { initShops, updateShops, ensureGarageVehicle, garageCheck } from './shops.js';
 import { initTouch, isTouch, showTouchUI, showKioskButtons } from './touch.js';
 import { initMenu, openMenu, closeMenu, openMap, closeMap, drawBigMap } from './menu.js';
+import { vibrate, goFullscreen, grabCanvas, saveOrShare, openCamera, closeCamera, cameraSupported } from './device.js';
 import { initStunts, updateStunts, placeTrampoline, tryBounce, checkRamp, bounceFx } from './stunts.js';
 import { initGang, updateGang, killGangMember } from './gangs.js';
 import { updateArmy, killTank } from './army.js';
@@ -221,6 +222,13 @@ initMenu({
   onResume: resumeGame,
   onRestart: () => { closeMenu(); respawn(); gameState = 'play'; showTouchUI(isTouch); },
   onPhoto: enterPhotoMode,
+  onCamera: () => {
+    closeMenu();
+    openCamera(() => { if (gameState === 'pause') openMenu(world); }).then((r) => {
+      if (r !== 'ok') { openMenu(world); showToast(r === 'denied' ? 'Camera permission denied' : r === 'unsupported' ? 'No camera on this device' : 'Camera unavailable (needs HTTPS)'); }
+    });
+  },
+  cameraSupported: cameraSupported(),
   onWaypoint: (x, z) => {
     world.waypoint = new THREE.Vector3(Math.max(-HALF, Math.min(HALF, x)), 0, Math.max(-HALF, Math.min(HALF, z)));
     wpMarker.position.set(world.waypoint.x, 0, world.waypoint.z);
@@ -304,6 +312,7 @@ function updatePhoto(dt) {
     photoFilter = (photoFilter + 1) % PHOTO_FILTERS.length;
     renderer.domElement.style.filter = PHOTO_FILTERS[photoFilter];
   }
+  if (mouse.down || pressed['Enter'] || pressed['KeyG']) world.captureNext = true; // snap
   if (pressed['KeyP'] || pressed['Escape']) exitPhotoMode();
 }
 
@@ -1746,6 +1755,7 @@ document.getElementById('playbtn').addEventListener('click', () => {
   applySettings();
   if (gameState === 'start') gameState = 'play';
   if (!isTouch) renderer.domElement.requestPointerLock?.();
+  else goFullscreen(); // phones: immersive landscape
   showTouchUI(true);
 });
 document.addEventListener('pointerlockchange', () => {
@@ -1817,6 +1827,7 @@ function update(dt) {
   // hurt feedback
   if (player.health < prevHealth - 0.5) {
     world.damageFlash = Math.min(1, world.damageFlash + (prevHealth - player.health) * 0.03 + 0.25);
+    vibrate(Math.min(120, (prevHealth - player.health) * 6)); // phone buzzes when hurt
   }
   prevHealth = player.health;
   world.damageFlash = Math.max(0, world.damageFlash - dt * 1.6);
@@ -1890,9 +1901,10 @@ function update(dt) {
 
   checkAchievements(dt);
 
-  // pause / big map
+  // pause / big map / screenshot
   if (pressed['KeyP']) pauseGame();
   if (pressed['KeyM']) openBigMap();
+  if (pressed['KeyG']) world.captureNext = true;
 
   // phones get 1-4 buttons while standing at a kiosk
   if (isTouch && world.nearKiosk !== world._kioskUi) {
@@ -1943,6 +1955,12 @@ function animate() {
     update(dt);
   }
   composer.render();
+  if (world.captureNext) {
+    world.captureNext = false;
+    grabCanvas(renderer.domElement).then((b) => saveOrShare(b, 'open-city-photo.png'));
+    showToast('📸 PHOTO SAVED');
+    vibrate(30);
+  }
   endFrame();
 }
 
@@ -1968,6 +1986,7 @@ window.__debug = {
   pauseGame,
   openBigMap,
   getSuit: () => world.suit,
+  snapPhoto: () => { world.captureNext = true; },
   getCamYaw: () => camYaw,
   setCamYaw: (v) => { camYaw = v; },
   setCamPitch: (v) => { camPitch = v; },
