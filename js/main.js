@@ -34,6 +34,8 @@ import { initBlackjack, openBlackjack } from './blackjack.js';
 import { initVigilante, updateVigilante, endVigilante } from './vigilante.js';
 import { initArmored, updateArmored } from './armored.js';
 import { initSlots, openSlots } from './slots.js';
+import { initRoulette, openRoulette } from './roulette.js';
+import { initPropRaids, updatePropRaids } from './propraid.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
@@ -221,8 +223,10 @@ initHeist(scene, world, save);
 initTurfWar(scene, world);
 initVigilante(world, save);
 initArmored(world);
-initBlackjack({ onClose: leaveCards, onSlots: () => openSlots(world) });
-initSlots({ onClose: leaveCards, onTable: () => openBlackjack(world) });
+initBlackjack({ onClose: leaveCards, onSlots: () => openSlots(world), onRoulette: () => openRoulette(world) });
+initSlots({ onClose: leaveCards, onTable: () => openBlackjack(world), onRoulette: () => openRoulette(world) });
+initRoulette({ onClose: leaveCards, onTable: () => openBlackjack(world), onSlots: () => openSlots(world) });
+initPropRaids(scene, world);
 let prevMissionDone = mission.done;
 let prevTokens = world.tokensGot.length;
 let prevClock = world.clock;
@@ -893,6 +897,7 @@ function updateOnFoot(dt) {
   else if (world.raceHint) setHint(world.raceHint);
   else if (world.dogHint) setHint(world.dogHint);
   else if (world.turfHint) setHint(world.turfHint);
+  else if (world.raidHint) setHint(world.raidHint);
   else setHint(null);
   if (pressed['KeyE']) {
     if (nearHeli) enterHeli(nearHeli);
@@ -2274,11 +2279,12 @@ function update(dt) {
   updateTurfWar(world, dt);
   updateVigilante(world, dt, pressed);
   updateArmored(world, dt);
+  updatePropRaids(world, dt);
   updateEffects(dt);
 
-  // heist/turf status stays on screen even from inside a vehicle
-  if ((player.inCar || player.inBoat || player.inHeli) && (world.heistHint || world.turfHint)) {
-    setHint(world.heistHint || world.turfHint);
+  // heist/turf/raid status stays on screen even from inside a vehicle
+  if ((player.inCar || player.inBoat || player.inHeli) && (world.heistHint || world.turfHint || world.raidHint)) {
+    setHint(world.heistHint || world.turfHint || world.raidHint);
   }
 
   // H starts the stadium arena when you're standing in the ring
@@ -2442,6 +2448,7 @@ window.__debug = {
   enterCards,
   vig: () => world.vig,
   armored: () => world.armored,
+  propRaid: () => world.propRaid,
   startArena: () => { world._startArena = true; },
   boardBoat: (i = 0) => enterBoat(world.boats[i]),
   exitBoat,

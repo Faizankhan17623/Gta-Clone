@@ -93,7 +93,7 @@ function build(world) {
     '</div>' +
     '<div id="sl-msg" style="font:800 17px Arial;color:#ffd24a;margin:12px 0;min-height:22px"></div>' +
     '<div id="sl-bets" style="display:flex;gap:10px"></div>' +
-    '<div style="margin-top:14px"><button id="sl-table"></button><button id="sl-leave"></button></div>' +
+    '<div style="margin-top:14px"><button id="sl-table"></button><button id="sl-roul"></button><button id="sl-leave"></button></div>' +
     '<div style="font:700 11px Arial;color:#9fb2c8;margin-top:10px">7-7-7 pays 25× · 💎💎💎 40× · triple 10× · pair 2×</div>';
   document.body.appendChild(ui);
 
@@ -117,6 +117,14 @@ function build(world) {
     if (spinning) return;
     ui.style.display = 'none';
     hooks?.onTable?.();
+  };
+  const roul = el('sl-roul');
+  roul.textContent = '🎡 ROULETTE';
+  roul.style.cssText = btn('', '').style.cssText + 'background:linear-gradient(180deg,#7ecbff,#3d8fd0);margin-right:10px;';
+  roul.onclick = () => {
+    if (spinning) return;
+    ui.style.display = 'none';
+    hooks?.onRoulette?.();
   };
   const leave = el('sl-leave');
   leave.textContent = '✕ LEAVE';

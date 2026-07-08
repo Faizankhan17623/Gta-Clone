@@ -112,7 +112,7 @@ function build(world) {
     '<div id="bj-msg" style="font:800 17px Arial;color:#ffd24a;margin:10px 0;min-height:22px"></div>' +
     '<div id="bj-bets" style="display:flex;gap:10px"></div>' +
     '<div id="bj-acts" style="display:none;gap:10px"></div>' +
-    '<div style="margin-top:14px"><button id="bj-again"></button><button id="bj-slots"></button><button id="bj-leave"></button></div>';
+    '<div style="margin-top:14px"><button id="bj-again"></button><button id="bj-slots"></button><button id="bj-roul"></button><button id="bj-leave"></button></div>';
   document.body.appendChild(ui);
 
   const btn = (label, bg) => {
@@ -172,6 +172,13 @@ function build(world) {
   slots.onclick = () => {
     ui.style.display = 'none';
     hooks?.onSlots?.();
+  };
+  const roul = el('bj-roul');
+  roul.textContent = '🎡 ROULETTE';
+  roul.style.cssText = btn('', '').style.cssText + 'background:linear-gradient(180deg,#7ecbff,#3d8fd0);margin-right:10px;';
+  roul.onclick = () => {
+    ui.style.display = 'none';
+    hooks?.onRoulette?.();
   };
   const leave = el('bj-leave');
   leave.textContent = '✕ LEAVE TABLE';

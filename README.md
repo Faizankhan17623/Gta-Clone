@@ -88,9 +88,13 @@ Plug one in and play: left stick moves, right stick looks, **A** jump/up,
 - **Vigilante**: steal a police cruiser mid-patrol, press **V**, and chase
   down fleeing criminals. Every takedown chains a tougher, faster target;
   payouts escalate and your best streak is saved.
-- **The Lucky 7 casino**: blackjack (hit/stand/double, 3:2 blackjack) and a
-  slot machine (7-7-7 jackpot pays 25×) — walk in with E, switch between
-  the games at the table.
+- **The Lucky 7 casino**: blackjack (hit/stand/double, 3:2 blackjack), a
+  slot machine (7-7-7 jackpot pays 25×) and European roulette (red/black,
+  dozens, or a 36× lucky number) — walk in with E, hop between the games
+  at the table.
+- **Property raids**: own real estate and crooks will come for it — a crew
+  hits your casino/stadium/Spire every few minutes. Wipe them out for cash
+  and rep, or the place gets ransacked and pays no income for the day.
 - **Gang territory**: the Vipers hold the north-east district and shoot on
   sight. Put ten of them down to seize the turf — then defend it when the
   **Jackals raid** in periodic turf wars, or lose the district again.

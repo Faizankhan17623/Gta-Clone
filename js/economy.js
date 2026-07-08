@@ -127,7 +127,11 @@ export function updateEconomy(world, dt, keys, pressed) {
   if (world.incomeT > 60) {
     world.incomeT = 0;
     let total = 0;
-    for (const p of PROPERTIES) if (world.props.owned[p.key]) total += p.income;
+    for (const p of PROPERTIES) {
+      if (!world.props.owned[p.key]) continue;
+      if (world.propRansacked?.[p.key] === world.dailyDay) continue; // looted today
+      total += p.income;
+    }
     if (total > 0) {
       world.money += total;
       showToast(`PROPERTY INCOME +$${total}`);
