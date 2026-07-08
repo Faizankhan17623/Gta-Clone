@@ -124,6 +124,11 @@ function coronation(world) {
   world.onSave?.();
 }
 
+// the CROWNY cheat: royalty without the résumé
+export function forceCrown(world) {
+  if (!world.crowned) coronation(world);
+}
+
 export function openLegend(world) {
   if (!ui) build();
   const list = items(world);

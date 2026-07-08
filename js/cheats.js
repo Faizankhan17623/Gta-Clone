@@ -14,6 +14,9 @@ const CODES = {
   WOOFWOOF: 'dog',
   WHOAWHOA: 'slowmo',
   IRONSKIN: 'heal',
+  CROWNY: 'crown',
+  CASHRAIN: 'cashrain',
+  SUNDOWN: 'night',
 };
 
 export function initCheats(actions) {

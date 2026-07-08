@@ -46,7 +46,7 @@ import { initUfo, updateUfo } from './ufo.js';
 import { initLottery, updateLottery } from './lottery.js';
 import { initFightClub, updateFightClub, endFightClub } from './fightclub.js';
 import { initPoker, openPoker } from './poker.js';
-import { initLegend, openLegend, updateLegend } from './legend.js';
+import { initLegend, openLegend, updateLegend, forceCrown } from './legend.js';
 import { initCheats } from './cheats.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
@@ -265,6 +265,17 @@ initCheats({
   dog: () => { world.dog?.owned && world.dog.pos.set(player.pos.x + 2, 0, player.pos.z + 2); },
   slowmo: () => { world.slowmoT = 6; },
   heal: () => { player.health = world.maxHealth; },
+  crown: () => forceCrown(world),
+  night: () => { world.clock = 21.5; },
+  cashrain: () => {
+    let n = 0;
+    for (const pk of world.pickups) {
+      if (pk.type !== 'money' || n >= 10) continue;
+      const a = (n / 10) * Math.PI * 2;
+      pk.mesh.position.set(player.pos.x + Math.sin(a) * 5, 1.0, player.pos.z + Math.cos(a) * 5);
+      n++;
+    }
+  },
 });
 let prevMissionDone = mission.done;
 let prevTokens = world.tokensGot.length;
