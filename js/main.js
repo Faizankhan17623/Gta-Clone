@@ -27,6 +27,10 @@ import { initEconomy, updateEconomy, addChaos, resetChaos, trackDaily, newDay } 
 import { showInterstitial } from './ads.js';
 import { initRaces, updateRaces, endRace } from './races.js';
 import { initWater, updateWater, physStepBoat, inWater, WATER_Y } from './water.js';
+import { initDog, updateDog } from './dog.js';
+import { initHeist, updateHeist, failHeist } from './heist.js';
+import { initTurfWar, updateTurfWar } from './turfwar.js';
+import { initBlackjack, openBlackjack } from './blackjack.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
@@ -209,6 +213,10 @@ initEconomy(scene, world, save);
 initArena(scene, world, save);
 const racesState = initRaces(scene, world, save);
 const waterState = initWater(scene, world);
+initDog(scene, world, save);
+initHeist(scene, world, save);
+initTurfWar(scene, world);
+initBlackjack({ onClose: leaveCards });
 let prevMissionDone = mission.done;
 let prevTokens = world.tokensGot.length;
 let prevClock = world.clock;
@@ -292,6 +300,21 @@ function closeBigMap() {
   if (!isTouch) renderer.domElement.requestPointerLock?.();
 }
 
+// ---------- blackjack at the Lucky 7 ----------
+
+function enterCards() {
+  gameState = 'cards';
+  showTouchUI(false);
+  document.exitPointerLock?.();
+  openBlackjack(world);
+}
+
+function leaveCards() {
+  gameState = 'play';
+  showTouchUI(isTouch);
+  if (!isTouch) renderer.domElement.requestPointerLock?.();
+}
+
 // ---------- photo mode ----------
 
 const PHOTO_FILTERS = ['', 'grayscale(1) contrast(1.15)', 'sepia(0.5) saturate(1.5) contrast(1.05)'];
@@ -344,6 +367,7 @@ function saveGame() {
   try {
     localStorage.setItem(SAVE_KEY, JSON.stringify({
       money: world.money, missions: mission.done, mg: ammo.mg, rpg: ammo.rpg,
+      sg: ammo.sg, sn: ammo.sn, gren: ammo.gren,
       upg: world.upgrades, gang: { owned: gang.owned, kills: gang.kills }, radio: world.radioSt,
       garage: world.garageKind, xp: world.xp, stats: world.stats, ach: world.ach,
       tokens: world.tokensGot,
@@ -352,6 +376,7 @@ function saveGame() {
       props: world.props?.owned, rep: world.rep, chaosBest: world.chaosBest,
       dailyDay: world.dailyDay, dailyDone: world.dailyDone,
       arenaBest: world.arena?.best, races: world.raceBest, mods: world.garageMods,
+      dog: world.dog?.owned, heistDay: world.heist?.doneDay,
     }));
   } catch {}
 }
@@ -368,9 +393,12 @@ scene.add(headlight.target);
 const WEAPONS = [
   { name: 'PISTOL', rate: 0.26, dmg: 34, spread: 0.012, sfx: 'pistol' },
   { name: 'MACHINE GUN', rate: 0.085, dmg: 12, spread: 0.04, sfx: 'mg', ammo: 'mg' },
+  { name: 'SHOTGUN', rate: 0.8, dmg: 15, spread: 0.075, pellets: 6, sfx: 'pistol', ammo: 'sg' },
+  { name: 'SNIPER', rate: 1.35, dmg: 130, spread: 0.001, sfx: 'pistol', ammo: 'sn', zoom: true },
   { name: 'RPG', rate: 1.4, rocket: true, sfx: 'rpg', ammo: 'rpg' },
+  { name: 'GRENADE', rate: 0.9, grenade: true, sfx: 'pistol', ammo: 'gren' },
 ];
-const ammo = { mg: save.mg ?? 60, rpg: save.rpg ?? 3 };
+const ammo = { mg: save.mg ?? 60, rpg: save.rpg ?? 3, sg: save.sg ?? 24, sn: save.sn ?? 8, gren: save.gren ?? 5 };
 let weaponIdx = 0;
 let shootT = 0;
 const rockets = [];
@@ -428,7 +456,10 @@ function updatePickups(dt) {
       } else if (pk.type === 'ammo') {
         ammo.mg += 45;
         ammo.rpg += 2;
-        showToast('+45 MG · +2 RPG');
+        ammo.sg += 12;
+        ammo.sn += 4;
+        ammo.gren += 3;
+        showToast('+45 MG · +12 SG · +4 SNIPER · +2 RPG · +3 GRENADE');
       } else {
         player.health = Math.min(world.maxHealth, player.health + 50);
         showToast('+50 HEALTH');
@@ -524,8 +555,12 @@ function updateCamera(dt) {
     camera.lookAt(_camTarget);
   }
 
-  // sense of speed: widen FOV as you go faster
-  const targetFov = Math.min(84, 70 + focusSpeed * 0.32);
+  // sense of speed: widen FOV as you go faster — unless scoping the sniper
+  let targetFov = Math.min(84, 70 + focusSpeed * 0.32);
+  if (!player.inCar && !player.inHeli && !player.inBoat && !web.attached &&
+      WEAPONS[weaponIdx].zoom && gameState === 'play') {
+    targetFov = 42;
+  }
   if (Math.abs(camera.fov - targetFov) > 0.1) {
     camera.fov += (targetFov - camera.fov) * Math.min(1, 5 * dt);
     camera.updateProjectionMatrix();
@@ -821,29 +856,43 @@ function updateOnFoot(dt) {
   player.mesh.rotation.y = player.heading;
   player.mesh.rotation.x *= Math.max(0, 1 - 10 * dt); // settle out of the swing lean
 
-  // weapon switching (digits are shop keys while at any kiosk)
+  // weapon switching (digits are shop keys while at any kiosk); X cycles
   if (!world.nearDen && !world.nearKiosk) {
-    if (pressed['Digit1']) switchWeapon(0);
-    if (pressed['Digit2']) switchWeapon(1);
-    if (pressed['Digit3']) switchWeapon(2);
+    for (let i = 0; i < WEAPONS.length; i++) {
+      if (pressed['Digit' + (i + 1)]) switchWeapon(i);
+    }
   }
+  if (pressed['KeyX']) switchWeapon((weaponIdx + 1) % WEAPONS.length);
 
   // enter vehicle, helicopter or boat
   const nearVeh = findNearestVehicle(3.8);
   const nearHeli = findNearestHeli(6.5);
   const nearBoat = findNearestBoat(5.5);
+  // the Lucky 7 blackjack table sits at the casino property spot
+  world.cardsHint = null;
+  const casino = world.propMarks?.find((m) => m.def.key === 'casino');
+  if (casino && !nearVeh && !nearHeli && !nearBoat &&
+      Math.hypot(player.pos.x - casino.pos.x, player.pos.z - casino.pos.z) < 5) {
+    world.cardsHint = 'Press <b>E</b> to play BLACKJACK at the Lucky 7';
+  }
+
   if (nearHeli) setHint('Press <b>E</b> to fly helicopter');
   else if (nearVeh) setHint('Press <b>E</b> to enter vehicle');
   else if (nearBoat) setHint('Press <b>E</b> to take the ' + (nearBoat.kind === 'jet' ? 'jet-ski' : 'boat'));
+  else if (world.heistHint) setHint(world.heistHint);
+  else if (world.cardsHint) setHint(world.cardsHint);
   else if (world.shopHint) setHint(world.shopHint);
   else if (world.arenaHint) setHint(world.arenaHint);
   else if (world.propHint) setHint(world.propHint);
   else if (world.raceHint) setHint(world.raceHint);
+  else if (world.dogHint) setHint(world.dogHint);
+  else if (world.turfHint) setHint(world.turfHint);
   else setHint(null);
   if (pressed['KeyE']) {
     if (nearHeli) enterHeli(nearHeli);
     else if (nearVeh) enterCar(nearVeh);
     else if (nearBoat) enterBoat(nearBoat);
+    else if (world.cardsHint) enterCards();
   }
 
   // shooting
@@ -1620,8 +1669,27 @@ function updateFlying(dt) {
   if (pressed['KeyE']) {
     // "landed" is relative to what's underneath — rooftops count
     if (h.pos.y - groundHeight(h.pos, city.colliders, 0.3, h.pos.y) < 2.2) exitHeli();
-    else showToast('Land first!');
+    else bailOut(); // skydive!
   }
+}
+
+// Jump out of a flying helicopter: freefall over the city, chute on Space.
+// The pilotless bird drops out of the sky behind you.
+function bailOut() {
+  const h = player.inHeli;
+  player.pos.set(h.pos.x + 2.5, h.pos.y, h.pos.z + 2.5);
+  player.vel.set(h.vel.x * 0.6, 0, h.vel.z * 0.6);
+  player.vy = -2;
+  player.onGround = false;
+  player.glide = false;
+  player.mesh.visible = true;
+  player.inHeli = null;
+  rotor.stop();
+  h.dead = true; // no pilot — she's going down
+  world.slowmoT = 0.7;
+  addStyle(25);
+  showToast('SKYDIVE! Hold SPACE to parachute');
+  showNews('daredevil leaps from a helicopter over downtown');
 }
 
 // idle helis: rotors wind down; dead ones fall
@@ -1710,7 +1778,17 @@ function shoot() {
     fireRocket();
     return;
   }
+  if (w.grenade) {
+    throwGrenade();
+    return;
+  }
 
+  // shotguns fire a fan of pellets, everything else a single round
+  for (let p = (w.pellets || 1); p > 0; p--) fireBullet(w);
+}
+
+function fireBullet(w) {
+  camera.getWorldDirection(_rayDir);
   _rayDir.x += (Math.random() - 0.5) * w.spread * 2;
   _rayDir.y += (Math.random() - 0.5) * w.spread * 2;
   _rayDir.z += (Math.random() - 0.5) * w.spread * 2;
@@ -1848,6 +1926,38 @@ function updateRockets(dt) {
   }
 }
 
+// ---------- grenades ----------
+
+const grenades = [];
+const grenGeo = new THREE.SphereGeometry(0.22, 8, 6);
+const grenMat = new THREE.MeshLambertMaterial({ color: 0x2f4a2a });
+
+function throwGrenade() {
+  const mesh = new THREE.Mesh(grenGeo, grenMat);
+  const pos = player.pos.clone();
+  pos.y += 1.5;
+  mesh.position.copy(pos);
+  scene.add(mesh);
+  const vel = _rayDir.clone().multiplyScalar(19);
+  vel.y += 7; // lob it
+  grenades.push({ mesh, pos: mesh.position, vel, t: 0 });
+}
+
+function updateGrenades(dt) {
+  for (let i = grenades.length - 1; i >= 0; i--) {
+    const g = grenades[i];
+    g.t += dt;
+    g.vel.y -= 22 * dt;
+    g.pos.addScaledVector(g.vel, dt);
+    g.mesh.rotation.x += dt * 9;
+    if (g.t > 3 || g.pos.y <= 0.2 || pointBlocked(g.pos, city.colliders)) {
+      explodeRocket(g.pos.clone().setY(Math.max(0.6, g.pos.y)));
+      scene.remove(g.mesh);
+      grenades.splice(i, 1);
+    }
+  }
+}
+
 function explodeRocket(pos) {
   addExplosion(pos);
   world.shake = 0.5;
@@ -1908,6 +2018,7 @@ function triggerOver(text, color) {
   failMission(world, text === 'WASTED' ? 'You got wasted' : 'You got busted');
   endArena(world, true);
   endRace(world, true);
+  failHeist(world);
   resetChaos(world);
   engine.stop();
   rotor.stop();
@@ -2129,6 +2240,7 @@ function update(dt) {
   updatePoliceHelis(world, dt, heliHooks);
   updateHelis(dt);
   updateRockets(dt);
+  updateGrenades(dt);
   updatePickups(dt);
   if (mission && mission.type === 'mech') mission._boom = explodeRocket;
   updateMissions(world, dt);
@@ -2142,7 +2254,15 @@ function update(dt) {
   updateArena(world, dt);
   updateRaces(world, dt);
   updateWater(waterState, world, dt);
+  updateDog(world, dt, pressed);
+  updateHeist(world, dt, keys, pressed);
+  updateTurfWar(world, dt);
   updateEffects(dt);
+
+  // heist/turf status stays on screen even from inside a vehicle
+  if ((player.inCar || player.inBoat || player.inHeli) && (world.heistHint || world.turfHint)) {
+    setHint(world.heistHint || world.turfHint);
+  }
 
   // H starts the stadium arena when you're standing in the ring
   if (pressed['KeyH']) world._startArena = true;
@@ -2255,8 +2375,8 @@ function animate() {
   } else if (gameState === 'map') {
     drawBigMap(world);
     if (pressed['KeyM'] || pressed['Escape']) closeBigMap();
-  } else if (gameState === 'pause') {
-    // frozen — menu handles everything
+  } else if (gameState === 'pause' || gameState === 'cards') {
+    // frozen — the menu / card table overlay handles everything
   } else {
     update(dt);
   }
@@ -2302,6 +2422,7 @@ window.__debug = {
   setClock: (h) => { world.clock = h; },
   races: racesState,
   water: waterState,
+  enterCards,
   startArena: () => { world._startArena = true; },
   boardBoat: (i = 0) => enterBoat(world.boats[i]),
   exitBoat,

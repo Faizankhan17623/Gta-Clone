@@ -3,6 +3,7 @@ import { roadCenter } from './city.js';
 import { setHint, showToast, showNews, showMissionMsg } from './hud.js';
 import { sfxPickup, sfxMissionPass, sfxMissionFail } from './sound.js';
 import { addRep } from './economy.js';
+import { WATER_X0, WATER_Y } from './water.js';
 
 // Free-roam races: drive into a start ring in a car (or stand in one on foot
 // for the swing trial) and the countdown begins. Checkpoint rings, a timer,
@@ -29,6 +30,18 @@ const RACES = [
     cps: [[rc(4), rc(5), 20], [rc(4), rc(3), 26], [rc(6), rc(3), 22], [rc(7), rc(5), 28], [rc(6), rc(6), 20], [rc(5), rc(6), 12]],
     gold: 70, silver: 95, bronze: 125,
   },
+  {
+    key: 'harbor', name: 'HARBOR CIRCUIT', kind: 'boat', color: 0x3dd2ff, water: true,
+    start: [WATER_X0 + 34, -2],
+    cps: [[WATER_X0 + 130, -70], [WATER_X0 + 210, 0], [WATER_X0 + 130, 70], [WATER_X0 + 34, -2]],
+    gold: 58, silver: 80, bronze: 105,
+  },
+  {
+    key: 'slalom', name: 'BUOY SLALOM', kind: 'boat', color: 0xffd24a, water: true,
+    start: [WATER_X0 + 34, 40],
+    cps: [[WATER_X0 + 80, 70], [WATER_X0 + 120, 40], [WATER_X0 + 160, 70], [WATER_X0 + 200, 40], [WATER_X0 + 160, 10], [WATER_X0 + 80, 40]],
+    gold: 62, silver: 85, bronze: 110,
+  },
 ];
 
 const PAYOUT = { gold: 1500, silver: 800, bronze: 400 };
@@ -44,8 +57,8 @@ export function initRaces(scene, world, save) {
   world.raceBest = { ...(save.races || {}) };
   const defs = [];
   for (const def of RACES) {
-    const start = ringMesh(def.color, 4.5, 1.2);
-    start.position.set(def.start[0], 0.7, def.start[1]);
+    const start = ringMesh(def.color, def.water ? 6 : 4.5, 1.2);
+    start.position.set(def.start[0], (def.water ? WATER_Y : 0) + 0.7, def.start[1]);
     scene.add(start);
     defs.push({ def, start });
   }
@@ -118,17 +131,21 @@ export function updateRaces(world, dt) {
     if (st.cdT > 0 || world.mission?.active || world.arena?.active || player.inHeli) return;
     for (const { def, start } of st.defs) {
       start.rotation.y += dt;
-      const focus = player.inCar ? player.inCar.pos : player.pos;
+      const focus = player.inBoat ? player.inBoat.pos : player.inCar ? player.inCar.pos : player.pos;
       const d = Math.hypot(focus.x - def.start[0], focus.z - def.start[1]);
       if (d > 24) continue;
-      const ready = def.kind === 'car' ? !!player.inCar && !player.inCar.tank : !player.inCar;
-      if (d > 4.5) {
-        world.raceHint = `${def.name} — ${def.kind === 'car' ? 'drive into' : 'step into'} the ring to race` +
+      const ready = def.kind === 'car' ? !!player.inCar && !player.inCar.tank
+        : def.kind === 'boat' ? !!player.inBoat
+        : !player.inCar && !player.inBoat;
+      if (d > (def.water ? 6.5 : 4.5)) {
+        world.raceHint = `${def.name} — ${def.kind === 'foot' ? 'step' : 'drive'} into the ring to race` +
           (world.raceBest[def.key] ? ` (best ${world.raceBest[def.key]}s)` : '');
         continue;
       }
       if (!ready) {
-        world.raceHint = def.kind === 'car' ? `${def.name} — you need a car for this one` : `${def.name} — on foot only, webs ready`;
+        world.raceHint = def.kind === 'car' ? `${def.name} — you need a car for this one`
+          : def.kind === 'boat' ? `${def.name} — you need a boat or jet-ski`
+          : `${def.name} — on foot only, webs ready`;
         continue;
       }
       st.active = def;
@@ -156,11 +173,12 @@ export function updateRaces(world, dt) {
 
   st.t += dt;
 
-  // abandoning the vehicle (or wrecking it) forfeits a car race
+  // abandoning the vehicle (or wrecking it) forfeits a car/boat race
   if (def.kind === 'car' && (!player.inCar || player.inCar.dead)) { endRace(world, true); return; }
+  if (def.kind === 'boat' && !player.inBoat) { endRace(world, true); return; }
   if (st.t > def.bronze + 30) { endRace(world, true); return; }
 
-  const focus = player.inCar ? player.inCar.pos : player.pos;
+  const focus = player.inBoat ? player.inBoat.pos : player.inCar ? player.inCar.pos : player.pos;
   const c = def.cps[st.idx];
   const cy = c[2] || 0;
   const dy = cy > 0 ? Math.abs(player.pos.y - cy) : 0;
@@ -168,7 +186,7 @@ export function updateRaces(world, dt) {
   world.raceBlip = { x: c[0], z: c[1] };
   setHint(`${def.name} — gate ${st.idx + 1}/${def.cps.length} · <b>${st.t.toFixed(1)}s</b> (gold ${def.gold}s)`);
 
-  if (Math.hypot(focus.x - c[0], focus.z - c[1]) < (def.kind === 'car' ? 7 : 6.5) && dy < 7) {
+  if (Math.hypot(focus.x - c[0], focus.z - c[1]) < (def.kind === 'foot' ? 6.5 : def.kind === 'boat' ? 9 : 7) && dy < 7) {
     st.idx++;
     if (st.idx >= def.cps.length) { endRace(world, false); return; }
     sfxPickup();

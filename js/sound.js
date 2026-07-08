@@ -307,7 +307,7 @@ export function setSiren(vol) {
 
 // ---------- car radio (procedural stations) ----------
 
-export const RADIO_STATIONS = ['RADIO OFF', 'LOFI 88.1', 'DRIVE FM', 'BASS 103'];
+export const RADIO_STATIONS = ['RADIO OFF', 'LOFI 88.1', 'DRIVE FM', 'BASS 103', 'DESI 96.3', 'NITE JAZZ'];
 let radioNodes = null;
 
 function stopRadio() {
@@ -374,7 +374,7 @@ export function setRadioStation(i) {
     hat.connect(hf).connect(hg).connect(bus);
     hat.start(); tick.start();
     stops.push(hat);
-  } else {
+  } else if (i === 3) {
     // BASS 103: sub sine + square bass hopping between two notes
     const sub = osc('sine', 55);
     sub.connect(bus);
@@ -391,6 +391,76 @@ export function setRadioStation(i) {
     bf.frequency.value = 500;
     b.connect(bg).connect(bf).connect(bus);
     b.start(); hop.start();
+  } else if (i === 4) {
+    // DESI 96.3: droning fifth under a fast melodic arp, dholak-ish tick
+    const drone = osc('sawtooth', 146.8); // D3
+    const dg = ctx.createGain();
+    dg.gain.value = 0.35;
+    const df = ctx.createBiquadFilter();
+    df.type = 'lowpass';
+    df.frequency.value = 700;
+    drone.connect(dg).connect(df).connect(bus);
+    drone.start();
+    const lead = osc('square', 293.7);
+    const lg = ctx.createGain();
+    lg.gain.value = 0.22;
+    const arp = osc('sawtooth', 2.4); // fast ornament wobble
+    const arpG = ctx.createGain();
+    arpG.gain.value = 55;
+    arp.connect(arpG).connect(lead.frequency);
+    const lf = ctx.createBiquadFilter();
+    lf.type = 'bandpass';
+    lf.frequency.value = 900;
+    lead.connect(lg).connect(lf).connect(bus);
+    lead.start(); arp.start();
+    const perc = ctx.createBufferSource();
+    perc.buffer = noiseBuf;
+    perc.loop = true;
+    const pf = ctx.createBiquadFilter();
+    pf.type = 'bandpass';
+    pf.frequency.value = 300;
+    const pg = ctx.createGain();
+    pg.gain.value = 0;
+    const beat = osc('square', 3.2); // dha-dhin tick
+    const beatG = ctx.createGain();
+    beatG.gain.value = 0.5;
+    beat.connect(beatG).connect(pg.gain);
+    perc.connect(pf).connect(pg).connect(bus);
+    perc.start(); beat.start();
+    stops.push(perc);
+  } else {
+    // NITE JAZZ: soft triangle seventh chord drifting, brushed hat
+    const jf = ctx.createBiquadFilter();
+    jf.type = 'lowpass';
+    jf.frequency.value = 1100;
+    for (const fr of [174.6, 220, 261.6, 329.6]) { // Fmaj7-ish
+      const o = osc('triangle', fr);
+      const og = ctx.createGain();
+      og.gain.value = 0.22;
+      o.connect(og).connect(jf);
+      o.start();
+    }
+    const drift = osc('sine', 0.07);
+    const driftG = ctx.createGain();
+    driftG.gain.value = 5;
+    for (const stopped of stops) { if (stopped.frequency) drift.connect(driftG).connect(stopped.frequency); }
+    drift.start();
+    jf.connect(bus);
+    const brush = ctx.createBufferSource();
+    brush.buffer = noiseBuf;
+    brush.loop = true;
+    const bhf = ctx.createBiquadFilter();
+    bhf.type = 'highpass';
+    bhf.frequency.value = 7000;
+    const bhg = ctx.createGain();
+    bhg.gain.value = 0;
+    const swing = osc('sine', 1.6);
+    const swingG = ctx.createGain();
+    swingG.gain.value = 0.1;
+    swing.connect(swingG).connect(bhg.gain);
+    brush.connect(bhf).connect(bhg).connect(bus);
+    brush.start(); swing.start();
+    stops.push(brush);
   }
   radioNodes = stops;
 }
