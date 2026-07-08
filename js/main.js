@@ -36,6 +36,17 @@ import { initArmored, updateArmored } from './armored.js';
 import { initSlots, openSlots } from './slots.js';
 import { initRoulette, openRoulette } from './roulette.js';
 import { initPropRaids, updatePropRaids } from './propraid.js';
+import { initJetpack, updateJetpackPad, updateJetpack } from './jetpack.js';
+import { initAmbulance, updateAmbulance } from './ambulance.js';
+import { initExport, updateExport } from './export.js';
+import { initBounty, updateBounty } from './bounty.js';
+import { initBaseJump, updateBaseJump } from './basejump.js';
+import { initHoops, updateHoops } from './hoops.js';
+import { initUfo, updateUfo } from './ufo.js';
+import { initLottery, updateLottery } from './lottery.js';
+import { initFightClub, updateFightClub, endFightClub } from './fightclub.js';
+import { initPoker, openPoker } from './poker.js';
+import { initLegend, openLegend } from './legend.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
@@ -223,10 +234,21 @@ initHeist(scene, world, save);
 initTurfWar(scene, world);
 initVigilante(world, save);
 initArmored(world);
-initBlackjack({ onClose: leaveCards, onSlots: () => openSlots(world), onRoulette: () => openRoulette(world) });
+initBlackjack({ onClose: leaveCards, onSlots: () => openSlots(world), onRoulette: () => openRoulette(world), onPoker: () => openPoker(world) });
 initSlots({ onClose: leaveCards, onTable: () => openBlackjack(world), onRoulette: () => openRoulette(world) });
 initRoulette({ onClose: leaveCards, onTable: () => openBlackjack(world), onSlots: () => openSlots(world) });
+initPoker({ onClose: leaveCards, onTable: () => openBlackjack(world) });
 initPropRaids(scene, world);
+initJetpack(scene, world, save);
+initAmbulance(scene, world);
+initExport(scene, world, save);
+initBounty(scene, world);
+initBaseJump(scene, world);
+initHoops(scene, world, save);
+initUfo(scene, world);
+initLottery(scene, world, save);
+initFightClub(scene, world);
+initLegend({ onClose: leaveCards }, world, save);
 let prevMissionDone = mission.done;
 let prevTokens = world.tokensGot.length;
 let prevClock = world.clock;
@@ -387,6 +409,8 @@ function saveGame() {
       dailyDay: world.dailyDay, dailyDone: world.dailyDone,
       arenaBest: world.arena?.best, races: world.raceBest, mods: world.garageMods,
       dog: world.dog?.owned, heistDay: world.heist?.doneDay, vigBest: world.vig?.best,
+      jet: world.jetpack?.owned, hoops: [...(world.hoops?.got || [])], crowned: world.crowned,
+      lottoDay: world.lottery?.ticketDay, expDay: world.exportJob?.day, expIdx: world.exportJob?.idx,
     }));
   } catch {}
 }
@@ -898,6 +922,12 @@ function updateOnFoot(dt) {
   else if (world.dogHint) setHint(world.dogHint);
   else if (world.turfHint) setHint(world.turfHint);
   else if (world.raidHint) setHint(world.raidHint);
+  else if (world.bountyHint) setHint(world.bountyHint);
+  else if (world.fightHint) setHint(world.fightHint);
+  else if (world.expHint) setHint(world.expHint);
+  else if (world.jetHint) setHint(world.jetHint);
+  else if (world.lottoHint) setHint(world.lottoHint);
+  else if (world.medHint) setHint(world.medHint);
   else setHint(null);
   if (pressed['KeyE']) {
     if (nearHeli) enterHeli(nearHeli);
@@ -2039,6 +2069,8 @@ function triggerOver(text, color) {
   endRace(world, true);
   failHeist(world);
   endVigilante(world, text === 'WASTED' ? 'You got wasted' : 'You got busted');
+  endFightClub(world, 'knocked out cold');
+  if (world.jetpack) world.jetpack.on = false;
   resetChaos(world);
   engine.stop();
   rotor.stop();
@@ -2250,6 +2282,7 @@ function update(dt) {
   if (player.inBoat) updateBoating(dt);
   else if (player.inHeli) updateFlying(dt);
   else if (player.inCar) updateDriving(dt);
+  else if (world.jetpack?.on) updateJetpack(world, dt, keys, pressed, camYaw);
   else if (web.zip) updateZip(dt);
   else if (web.attached) updateSwinging(dt);
   else updateOnFoot(dt);
@@ -2280,11 +2313,22 @@ function update(dt) {
   updateVigilante(world, dt, pressed);
   updateArmored(world, dt);
   updatePropRaids(world, dt);
+  updateJetpackPad(world, dt, pressed);
+  updateAmbulance(world, dt, keys, pressed);
+  updateExport(world, dt);
+  updateBounty(world, dt, pressed);
+  updateBaseJump(world, dt);
+  updateHoops(world, dt);
+  updateUfo(world, dt);
+  updateLottery(world, dt, pressed);
+  updateFightClub(world, dt, pressed);
   updateEffects(dt);
 
-  // heist/turf/raid status stays on screen even from inside a vehicle
-  if ((player.inCar || player.inBoat || player.inHeli) && (world.heistHint || world.turfHint || world.raidHint)) {
-    setHint(world.heistHint || world.turfHint || world.raidHint);
+  // job status stays on screen even from inside a vehicle
+  if (player.inCar || player.inBoat || player.inHeli) {
+    const drivingHint = world.heistHint || world.turfHint || world.raidHint ||
+      world.medHint || world.expHint || world.bountyHint;
+    if (drivingHint) setHint(drivingHint);
   }
 
   // H starts the stadium arena when you're standing in the ring
@@ -2340,9 +2384,15 @@ function update(dt) {
 
   checkAchievements(dt);
 
-  // pause / big map / screenshot
+  // pause / big map / screenshot / legend board
   if (pressed['KeyP']) pauseGame();
   if (pressed['KeyM']) openBigMap();
+  if (pressed['KeyL']) {
+    gameState = 'cards'; // same frozen-overlay state the casino uses
+    showTouchUI(false);
+    document.exitPointerLock?.();
+    openLegend(world);
+  }
   if (pressed['KeyG']) world.captureNext = true;
 
   // phones get 1-4 buttons while standing at a kiosk

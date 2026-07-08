@@ -287,6 +287,23 @@ function drawMinimap(world) {
     g.fill();
   }
 
+  // ambulance patient / hospital
+  if (world.medBlip) {
+    const [mx, mz] = toMap(world.medBlip.x, world.medBlip.z);
+    g.fillStyle = '#ffffff';
+    g.fillRect(mx - 4, mz - 1.5, 8, 3);
+    g.fillRect(mx - 1.5, mz - 4, 3, 8);
+  }
+
+  // bounty mark
+  if (world.bountyBlip) {
+    const [mx, mz] = toMap(world.bountyBlip.x, world.bountyBlip.z);
+    g.fillStyle = '#d0a020';
+    g.beginPath();
+    g.arc(mx, mz, 4 + Math.sin(performance.now() * 0.01) * 1.2, 0, Math.PI * 2);
+    g.fill();
+  }
+
   // armored cash truck
   if (world.truckBlip) {
     const [mx, mz] = toMap(world.truckBlip.x, world.truckBlip.z);

@@ -62,6 +62,8 @@ export function initDog(scene, world, save) {
     heading: 0,
     barkT: 0,
     fetchTarget: null,
+    attackTarget: null,
+    attackT: 0,
     animT: 0,
   };
 }
@@ -93,8 +95,43 @@ export function updateDog(world, dt, pressed) {
   let goal = focus;
   let goalDist = 3.2;
 
-  // fetch: lock onto a money cube near the player and go grab it
-  if (!dog.fetchTarget || dog.fetchTarget.type !== 'money') {
+  // Z: sic him on the nearest enemy — REX pins them like a web-shot
+  dog.attackT -= dt;
+  if (pressed['KeyZ'] && dog.attackT <= 0 && !dog.attackTarget) {
+    let best = null, bestD = 30;
+    for (const tg of world.targets) {
+      if (tg.dead) continue;
+      const d = Math.hypot(tg.pos.x - focus.x, tg.pos.z - focus.z);
+      if (d < bestD && (tg.pos.y || 0) < 4) { bestD = d; best = tg; }
+    }
+    if (best) {
+      dog.attackTarget = best;
+      world.bark(dog.pos, 'GRRRR!');
+    } else {
+      world.bark(dog.pos, '...?');
+      showToast('REX sees nothing to bite (30m)');
+      dog.attackT = 1;
+    }
+  }
+  if (dog.attackTarget) {
+    if (dog.attackTarget.dead) {
+      dog.attackTarget = null;
+    } else {
+      goal = dog.attackTarget.pos;
+      goalDist = 1.3;
+      if (Math.hypot(goal.x - dog.pos.x, goal.z - dog.pos.z) < 1.6) {
+        dog.attackTarget.hit(world);
+        dog.attackTarget.hit(world);
+        world.bark(dog.pos, 'CHOMP!');
+        dog.attackTarget = null;
+        dog.attackT = 4;
+      }
+    }
+  }
+
+  // fetch: lock onto a money cube near the player and go grab it (biting comes first)
+  if (dog.attackTarget) dog.fetchTarget = null;
+  else if (!dog.fetchTarget || dog.fetchTarget.type !== 'money') {
     dog.fetchTarget = null;
     for (const pk of world.pickups) {
       if (pk.type !== 'money') continue;

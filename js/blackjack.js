@@ -112,7 +112,7 @@ function build(world) {
     '<div id="bj-msg" style="font:800 17px Arial;color:#ffd24a;margin:10px 0;min-height:22px"></div>' +
     '<div id="bj-bets" style="display:flex;gap:10px"></div>' +
     '<div id="bj-acts" style="display:none;gap:10px"></div>' +
-    '<div style="margin-top:14px"><button id="bj-again"></button><button id="bj-slots"></button><button id="bj-roul"></button><button id="bj-leave"></button></div>';
+    '<div style="margin-top:14px"><button id="bj-again"></button><button id="bj-slots"></button><button id="bj-roul"></button><button id="bj-poker"></button><button id="bj-leave"></button></div>';
   document.body.appendChild(ui);
 
   const btn = (label, bg) => {
@@ -179,6 +179,13 @@ function build(world) {
   roul.onclick = () => {
     ui.style.display = 'none';
     hooks?.onRoulette?.();
+  };
+  const pk = el('bj-poker');
+  pk.textContent = '🃏 POKER';
+  pk.style.cssText = btn('', '').style.cssText + 'background:linear-gradient(180deg,#ffd2a0,#d08a3a);margin-right:10px;';
+  pk.onclick = () => {
+    ui.style.display = 'none';
+    hooks?.onPoker?.();
   };
   const leave = el('bj-leave');
   leave.textContent = '✕ LEAVE TABLE';

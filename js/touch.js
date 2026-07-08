@@ -197,6 +197,15 @@ export function initTouch() {
     () => press('KeyM'), () => release('KeyM'));
   button('📸', 'right:274px;top:120px;width:42px;height:42px;font-size:18px;',
     () => press('KeyG'), () => release('KeyG')); // snap a screenshot
+  // second utility row: jetpack toggle, REX attack, vigilante start
+  button('JET', 'right:170px;top:172px;width:42px;height:42px;font-size:10px;',
+    () => press('KeyJ'), () => release('KeyJ'));
+  button('REX', 'right:222px;top:172px;width:42px;height:42px;font-size:10px;',
+    () => press('KeyZ'), () => release('KeyZ'));
+  button('VIG', 'right:274px;top:172px;width:42px;height:42px;font-size:10px;',
+    () => press('KeyV'), () => release('KeyV'));
+  button('👑', 'right:326px;top:172px;width:42px;height:42px;font-size:16px;',
+    () => press('KeyL'), () => release('KeyL')); // the legend board
 
   // 1-4 digit row: appears only while standing at a kiosk (casino, wardrobe...)
   // sits below the relocated hint bar at the top of the screen

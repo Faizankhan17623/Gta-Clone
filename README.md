@@ -34,10 +34,13 @@ Then open **http://localhost:8080** and click PLAY.
 | Double-tap W/A/S/D | Dodge roll with i-frames |
 | C (hold) / T | Charge super-jump / sling a web trampoline |
 | **M** | Full city map — click to set a waypoint |
+| **L** | The LEGEND board — 16-item completion list; 100% crowns you King of the City |
 | **P / Esc** | Pause: settings, lifetime stats, photo mode |
 | Left Click | Shoot |
 | 1–6 / **X** | Pick weapon / cycle: Pistol, MG, Shotgun, Sniper (scoped), RPG, Grenade |
-| E | Enter vehicle / rob store (hold) / play cards at the casino / crack the bank vault (hold) |
+| **J** | Jetpack on/off (once bought — Space climbs, C drops) |
+| **Z** | Send REX to bite the nearest enemy |
+| E | Enter vehicle / rob store (hold) / casino / bank vault (hold) / bounty board / lotto / fight club |
 
 ### Vehicles
 | Input | Action |
@@ -100,6 +103,11 @@ Plug one in and play: left stick moves, right stick looks, **A** jump/up,
   **Jackals raid** in periodic turf wars, or lose the district again.
 - **REX the dog**: adopt him at the kennel near spawn ($500). He follows
   you across the city, fetches money pickups, and barks when cops close in.
+- **Odd jobs & toys everywhere**: ambulance rescues, harbor vehicle exports,
+  bounty contracts with bodyguards, a bare-knuckle **fight club** on the
+  waterfront after dark, a lottery kiosk, **five-card poker** at the casino,
+  a **jetpack** shop, BASE-jump ring trials off the Spire, ten golden sky
+  hoops — and strange lights over the Spire past midnight.
 - **The WEB DEN** near spawn sells permanent upgrades: longer webs, faster
   winch, body armor (150 HP).
 - Money & health pickups, ammo crates, and a style meter that pays for flair.
