@@ -48,6 +48,7 @@ import { initFightClub, updateFightClub, endFightClub } from './fightclub.js';
 import { initPoker, openPoker } from './poker.js';
 import { initLegend, openLegend, updateLegend, forceCrown } from './legend.js';
 import { initCheats } from './cheats.js';
+import { initFinale, updateFinale, endFinale } from './finale.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
@@ -250,6 +251,10 @@ initUfo(scene, world);
 initLottery(scene, world, save);
 initFightClub(scene, world);
 initLegend({ onClose: leaveCards, saveKey: SAVE_KEY }, world, save);
+initFinale({
+  freeze: () => { gameState = 'cards'; showTouchUI(false); document.exitPointerLock?.(); },
+  unfreeze: leaveCards,
+}, scene, world, save);
 initCheats({
   cash: () => { world.money += 10000; },
   clear: () => { world.wanted = 0; world.wantedTimer = 0; clearCops(world); },
@@ -438,6 +443,7 @@ function saveGame() {
       arenaBest: world.arena?.best, races: world.raceBest, mods: world.garageMods,
       dog: world.dog?.owned, heistDay: world.heist?.doneDay, vigBest: world.vig?.best,
       jet: world.jetpack?.owned, hoops: [...(world.hoops?.got || [])], crowned: world.crowned,
+      lastStand: world.finale?.won,
       lottoDay: world.lottery?.ticketDay, expDay: world.exportJob?.day, expIdx: world.exportJob?.idx,
     }));
   } catch {}
@@ -941,6 +947,7 @@ function updateOnFoot(dt) {
   if (nearHeli) setHint('Press <b>E</b> to fly helicopter');
   else if (nearVeh) setHint('Press <b>E</b> to enter vehicle');
   else if (nearBoat) setHint('Press <b>E</b> to take the ' + (nearBoat.kind === 'jet' ? 'jet-ski' : 'boat'));
+  else if (world.finaleHint) setHint(world.finaleHint);
   else if (world.heistHint) setHint(world.heistHint);
   else if (world.cardsHint) setHint(world.cardsHint);
   else if (world.shopHint) setHint(world.shopHint);
@@ -2098,6 +2105,7 @@ function triggerOver(text, color) {
   failHeist(world);
   endVigilante(world, text === 'WASTED' ? 'You got wasted' : 'You got busted');
   endFightClub(world, 'knocked out cold');
+  endFinale(world);
   if (world.jetpack) world.jetpack.on = false;
   resetChaos(world);
   engine.stop();
@@ -2351,6 +2359,7 @@ function update(dt) {
   updateLottery(world, dt, pressed);
   updateFightClub(world, dt, pressed);
   updateLegend(world, dt);
+  updateFinale(world, dt, pressed);
   updateEffects(dt);
 
   // job status stays on screen even from inside a vehicle

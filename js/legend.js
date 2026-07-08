@@ -30,6 +30,8 @@ function items(world) {
     ['Adopt REX', world.dog?.owned ? 1 : 0],
     ['Buy the jetpack', world.jetpack?.owned ? 1 : 0],
     ['Reach level 8', Math.min(1, world.level / 8)],
+    // the 17th line unlocks AFTER the crown — the true 100%
+    ['Win THE LAST STAND', world.finale?.won ? 1 : 0],
   ];
 }
 
@@ -142,7 +144,9 @@ export function openLegend(world) {
   }).join('');
   el('lg-crown').style.display = world.crowned ? 'block' : 'none';
   ui.style.display = 'flex';
-  if (!world.crowned && pct >= 1) coronation(world);
+  // coronation keys off the first 16 — the Last Stand only exists once crowned
+  const basePct = list.slice(0, -1).reduce((sum, [, p]) => sum + p, 0) / (list.length - 1);
+  if (!world.crowned && basePct >= 1) coronation(world);
 }
 
 function el(id) { return ui.querySelector('#' + id); }
