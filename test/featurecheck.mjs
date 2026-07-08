@@ -335,7 +335,8 @@ async function resetPlayer() {
     fell: Math.abs(window.__debug.player.mesh.rotation.z - Math.PI / 2) < 0.1,
   }));
   await page.waitForFunction(() => window.__debug.getState() === 'play', null, { timeout: 8000 });
-  const back = await ev(() => window.__debug.player.health > 0 && window.__debug.player.mesh.rotation.z === 0);
+  // idle animation sways rotation.z by ~0.01, so "upright" is a tolerance check
+  const back = await ev(() => window.__debug.player.health > 0 && Math.abs(window.__debug.player.mesh.rotation.z) < 0.1);
   check('WASTED topple + respawn', over.state === 'over' && over.fell && back);
 }
 

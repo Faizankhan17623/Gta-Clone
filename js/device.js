@@ -22,6 +22,23 @@ export function goFullscreen() {
   }
 }
 
+// Keep the screen awake during play (tilt-free games get no touch events for
+// long stretches while driving). Re-acquired whenever the tab comes back.
+let wakeLock = null;
+
+export function keepAwake() {
+  if (!('wakeLock' in navigator)) return;
+  const acquire = () => {
+    navigator.wakeLock.request('screen')
+      .then((l) => { wakeLock = l; })
+      .catch(() => {});
+  };
+  acquire();
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && (!wakeLock || wakeLock.released)) acquire();
+  });
+}
+
 // Turn the freshly rendered canvas into a PNG blob. Must be called in the
 // same tick as the render (WebGL clears its buffer otherwise).
 export function grabCanvas(canvas) {

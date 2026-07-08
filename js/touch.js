@@ -29,10 +29,18 @@ const BTN =
 
 let uiRoot = null;
 const kioskBtns = [];
+const ctxBtns = {};
 
 // Digit buttons shown while the player stands at a shop kiosk.
 export function showKioskButtons(on) {
   for (const b of kioskBtns) b.style.display = on ? 'flex' : 'none';
+}
+
+// Context buttons (arena H, buy-property B) shown only when the action applies.
+export function showContextButtons(states) {
+  for (const [key, on] of Object.entries(states)) {
+    if (ctxBtns[key]) ctxBtns[key].style.display = on ? 'flex' : 'none';
+  }
 }
 
 // Hidden until the game actually starts, so the menu stays tappable.
@@ -42,6 +50,7 @@ export function showTouchUI(on) {
 
 export function initTouch() {
   if (!isTouch) return false;
+  document.body.classList.add('touch'); // lets the HUD CSS restack itself
 
   const ui = el('position:fixed;inset:0;z-index:25;pointer-events:none;display:none;');
   ui.id = 'touchui';
@@ -170,31 +179,41 @@ export function initTouch() {
   button('▼', 'right:124px;bottom:120px;width:52px;height:52px;',
     () => { downHeld = true; keys['ShiftLeft'] = true; },
     () => { downHeld = false; keys['ShiftLeft'] = false; });
-  // actions above the joystick
-  button('E', 'left:34px;bottom:176px;width:56px;height:56px;font-size:16px;',
+  // actions in an arc to the right of the joystick (the minimap sits above it)
+  button('E', 'left:170px;bottom:104px;width:56px;height:56px;font-size:16px;',
     () => press('KeyE'), () => release('KeyE'));
-  button('Q', 'left:104px;bottom:200px;width:50px;height:50px;',
+  button('Q', 'left:238px;bottom:128px;width:50px;height:50px;',
     () => press('KeyQ'), () => release('KeyQ'));
-  button('R', 'left:166px;bottom:176px;width:44px;height:44px;',
+  button('R', 'left:300px;bottom:104px;width:44px;height:44px;',
     () => press('KeyR'), () => release('KeyR'));
   button('F', 'right:210px;bottom:80px;width:56px;height:56px;font-size:16px;',
     () => press('KeyF'), () => release('KeyF')).id = 'btn-punch';
-  // top corner utilities
-  button('II', 'right:14px;top:52px;width:42px;height:42px;',
+  // utilities below the stars, pulled left so they never touch the WEB cluster
+  button('II', 'right:170px;top:120px;width:42px;height:42px;',
     () => press('KeyP'), () => release('KeyP'));
-  button('M', 'right:66px;top:52px;width:42px;height:42px;',
+  button('M', 'right:222px;top:120px;width:42px;height:42px;',
     () => press('KeyM'), () => release('KeyM'));
-  button('📸', 'right:118px;top:52px;width:42px;height:42px;font-size:18px;',
+  button('📸', 'right:274px;top:120px;width:42px;height:42px;font-size:18px;',
     () => press('KeyG'), () => release('KeyG')); // snap a screenshot
 
   // 1-4 digit row: appears only while standing at a kiosk (casino, wardrobe...)
+  // sits below the relocated hint bar at the top of the screen
   for (let i = 1; i <= 4; i++) {
     const b = button(String(i),
-      `left:calc(50% + ${(i - 2.5) * 58}px);top:96px;width:48px;height:48px;font-size:17px;display:none;`,
+      `left:calc(50% + ${(i - 2.5) * 58}px);top:118px;width:48px;height:48px;font-size:17px;display:none;`,
       () => press('Digit' + i), () => release('Digit' + i));
     b.className = 'kioskbtn';
     kioskBtns.push(b);
   }
+
+  // contextual actions in the freed-up bottom centre:
+  // FIGHT at the arena ring, BUY under a property beam
+  ctxBtns.arena = button('FIGHT', 'left:calc(50% - 34px);bottom:14px;width:68px;height:68px;font-size:14px;display:none;background:rgba(160,40,30,0.6);',
+    () => press('KeyH'), () => release('KeyH'));
+  ctxBtns.arena.id = 'btn-arena';
+  ctxBtns.buy = button('BUY', 'left:calc(50% - 30px);bottom:16px;width:60px;height:60px;font-size:15px;display:none;background:rgba(30,120,60,0.6);',
+    () => press('KeyB'), () => release('KeyB'));
+  ctxBtns.buy.id = 'btn-buy';
 
   return true;
 }

@@ -1,0 +1,42 @@
+{
+  "packageId": "io.github.faizankhan17623.opencity",
+  "host": "faizankhan17623.github.io",
+  "name": "OPEN CITY — web-swinging open world",
+  "launcherName": "OPEN CITY",
+  "display": "fullscreen",
+  "themeColor": "#090d13",
+  "themeColorDark": "#090d13",
+  "navigationColor": "#090d13",
+  "navigationColorDark": "#090d13",
+  "navigationDividerColor": "#090d13",
+  "navigationDividerColorDark": "#090d13",
+  "backgroundColor": "#090d13",
+  "enableNotifications": false,
+  "startUrl": "/Gta-Clone/",
+  "iconUrl": "https://faizankhan17623.github.io/Gta-Clone/icon-512.png",
+  "maskableIconUrl": "https://faizankhan17623.github.io/Gta-Clone/icon-maskable-512.png",
+  "splashScreenFadeOutDuration": 300,
+  "signingKey": {
+    "path": "./android.keystore",
+    "alias": "opencity"
+  },
+  "appVersionName": "1.0.0",
+  "appVersionCode": 1,
+  "shortcuts": [],
+  "generatorApp": "bubblewrap-cli",
+  "webManifestUrl": "https://faizankhan17623.github.io/Gta-Clone/manifest.json",
+  "fallbackType": "customtabs",
+  "features": {},
+  "alphaDependencies": {
+    "enabled": false
+  },
+  "enableSiteSettingsShortcut": false,
+  "isChromeOSOnly": false,
+  "isMetaQuest": false,
+  "fullScopeUrl": "https://faizankhan17623.github.io/Gta-Clone/",
+  "minSdkVersion": 21,
+  "orientation": "landscape",
+  "fingerprints": [],
+  "additionalTrustedOrigins": [],
+  "retainedBundles": []
+}

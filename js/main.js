@@ -15,13 +15,18 @@ import { initWeather, updateWeather } from './weather.js';
 import { buildLandmarks, updateLandmarks } from './landmarks.js';
 import { initWeb, fireWeb, releaseWeb, swingStep, updateWebVisual, poseSwing, poseFall } from './web.js';
 import { initShops, updateShops, ensureGarageVehicle, garageCheck } from './shops.js';
-import { initTouch, isTouch, showTouchUI, showKioskButtons } from './touch.js';
+import { initTouch, isTouch, showTouchUI, showKioskButtons, showContextButtons } from './touch.js';
 import { initMenu, openMenu, closeMenu, openMap, closeMap, drawBigMap } from './menu.js';
-import { vibrate, goFullscreen, grabCanvas, saveOrShare, openCamera, closeCamera, cameraSupported } from './device.js';
+import { vibrate, goFullscreen, keepAwake, grabCanvas, saveOrShare, openCamera, closeCamera, cameraSupported } from './device.js';
 import { initStunts, updateStunts, placeTrampoline, tryBounce, checkRamp, bounceFx } from './stunts.js';
 import { initGang, updateGang, killGangMember } from './gangs.js';
 import { updateArmy, killTank } from './army.js';
 import { initAmbient, updateAmbient } from './ambient.js';
+import { initArena, updateArena, endArena } from './arena.js';
+import { initEconomy, updateEconomy, addChaos, resetChaos, trackDaily, newDay } from './economy.js';
+import { showInterstitial } from './ads.js';
+import { initRaces, updateRaces, endRace } from './races.js';
+import { initWater, updateWater, physStepBoat, inWater, WATER_Y } from './water.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
@@ -119,6 +124,8 @@ const player = {
   charDef,
   inCar: null,
   inHeli: null,
+  inBoat: null,
+  swim: false,
   animT: 0,
   vy: 0,
   onGround: true,
@@ -188,13 +195,23 @@ let heliRespawnT = 0;
 
 // missions + saved progress
 initMissions(scene, world, save.missions || 0);
-const shopsState = initShops(scene, world, save.upg);
+const shopsState = initShops(scene, world, save.upg, save.mods);
 const gang = initGang(scene, world, save.gang);
 const flocks = initAmbient(scene);
 const stuntsState = initStunts(scene, world);
 ensureGarageVehicle(shopsState, world);
 world.mapRamps = stuntsState.ramps;
 world.mapSkulls = stuntsState.skulls;
+
+// meta systems: properties/rep/dailies, the stadium arena, races, the harbor
+world.cityFns = { blockStart, BLOCK };
+initEconomy(scene, world, save);
+initArena(scene, world, save);
+const racesState = initRaces(scene, world, save);
+const waterState = initWater(scene, world);
+let prevMissionDone = mission.done;
+let prevTokens = world.tokensGot.length;
+let prevClock = world.clock;
 
 // cyan waypoint beam, set from the big map
 const wpMarker = new THREE.Group();
@@ -332,6 +349,9 @@ function saveGame() {
       tokens: world.tokensGot,
       suit: world.suit, suits: world.suitsOwned, settings: world.settings,
       char: world.charKey,
+      props: world.props?.owned, rep: world.rep, chaosBest: world.chaosBest,
+      dailyDay: world.dailyDay, dailyDone: world.dailyDone,
+      arenaBest: world.arena?.best, races: world.raceBest, mods: world.garageMods,
     }));
   } catch {}
 }
@@ -392,6 +412,7 @@ for (let i = 0; i < 6; i++) makePickup('health');
 for (let i = 0; i < 8; i++) makePickup('ammo');
 
 function updatePickups(dt) {
+  if (player.inBoat) return; // nothing to scoop up out on the water
   const focus = player.inHeli ? player.inHeli.pos : player.inCar ? player.inCar.pos : player.pos;
   if (player.inHeli && player.inHeli.pos.y > 3) return; // can't grab them from the sky
   if (!player.inHeli && !player.inCar && player.pos.y > 3) return; // nor while web-swinging overhead
@@ -455,6 +476,23 @@ function updateCamera(dt) {
     camera.position.copy(camPos);
     _camTarget.set(h.pos.x, h.pos.y + 1.5, h.pos.z);
     camera.lookAt(_camTarget);
+  } else if (player.inBoat) {
+    const b = player.inBoat;
+    focusSpeed = b.vel.length();
+    let diff = b.heading - camYaw;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    camYaw += diff * Math.min(1, 2.8 * dt);
+
+    _camDesired.set(
+      b.pos.x - Math.sin(camYaw) * 12,
+      5.2 + camPitch * 6,
+      b.pos.z - Math.cos(camYaw) * 12
+    );
+    camPos.lerp(_camDesired, Math.min(1, 6 * dt));
+    camera.position.copy(camPos);
+    _camTarget.set(b.pos.x, 1.6, b.pos.z);
+    camera.lookAt(_camTarget);
   } else if (player.inCar) {
     const car = player.inCar;
     focusSpeed = car.vel.length();
@@ -513,7 +551,79 @@ const _fwd = new THREE.Vector3();
 const _right = new THREE.Vector3();
 const UP = new THREE.Vector3(0, 1, 0);
 
+// City streets end at HALF, but the harbor opens the east edge to the water.
+function clampPlayerBounds(pos) {
+  const B = HALF - 1.5;
+  const WZ = HALF + 36;
+  if (pos.x > B && Math.abs(pos.z) < WZ) {
+    pos.x = Math.min(pos.x, HALF + 256);
+    pos.z = Math.max(-WZ, Math.min(WZ, pos.z));
+  } else {
+    pos.x = Math.max(-B, Math.min(B, pos.x));
+    pos.z = Math.max(-B, Math.min(B, pos.z));
+  }
+}
+
+function updateSwim(dt) {
+  player.swim = true;
+  _fwd.set(Math.sin(camYaw), 0, Math.cos(camYaw));
+  _right.copy(_fwd).cross(UP);
+  _move.set(0, 0, 0);
+  if (keys['KeyW']) _move.add(_fwd);
+  if (keys['KeyS']) _move.sub(_fwd);
+  if (keys['KeyD']) _move.add(_right);
+  if (keys['KeyA']) _move.sub(_right);
+  const spd = (keys['ShiftLeft'] || keys['ShiftRight'] ? 7 : 4.5) * player.charDef.speed;
+  if (_move.lengthSq() > 0) {
+    _move.normalize();
+    player.vel.x = _move.x * spd;
+    player.vel.z = _move.z * spd;
+    const targetH = Math.atan2(_move.x, _move.z);
+    let diff = targetH - player.heading;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    player.heading += diff * Math.min(1, 8 * dt);
+  } else {
+    player.vel.x *= Math.max(0, 1 - 4 * dt);
+    player.vel.z *= Math.max(0, 1 - 4 * dt);
+  }
+  player.pos.x += player.vel.x * dt;
+  player.pos.z += player.vel.z * dt;
+  clampPlayerBounds(player.pos);
+  // ride just below the surface with a gentle bob
+  const swimY = WATER_Y - 1.25 + Math.sin(world.time * 2) * 0.06;
+  player.pos.y += (swimY - player.pos.y) * Math.min(1, 6 * dt);
+  player.vy = 0;
+  player.onGround = false;
+  player.glide = false;
+
+  // kick out of the water — enough to haul up onto a pier
+  if (pressed['Space']) {
+    player.vy = 8.5;
+    player.pos.y = WATER_Y + 0.5;
+    player.swim = false;
+    addStyle(3);
+    return;
+  }
+
+  // lazy crawl stroke
+  player.animT += dt * 4;
+  animateWalk(player.ch, player.animT, 0.45);
+  player.mesh.rotation.y = player.heading;
+  player.mesh.rotation.x += (0.9 - player.mesh.rotation.x) * Math.min(1, 6 * dt);
+
+  const nearBoat = findNearestBoat(4.5);
+  setHint(nearBoat ? 'Press <b>E</b> to board the boat' : null);
+  if (pressed['KeyE'] && nearBoat) enterBoat(nearBoat);
+}
+
 function updateOnFoot(dt) {
+  // falling or wading into harbor water starts a swim (vy > 0 = mid-hop out)
+  if (inWater(player.pos.x, player.pos.z) && player.pos.y < WATER_Y + 0.4 && player.vy <= 0) {
+    updateSwim(dt);
+    return;
+  }
+  player.swim = false;
   _fwd.set(Math.sin(camYaw), 0, Math.cos(camYaw));
   _right.copy(_fwd).cross(UP);
 
@@ -694,9 +804,7 @@ function updateOnFoot(dt) {
     for (const v of world.cops) if (!v.dead) pushOutOfCar(v);
   }
 
-  const B = HALF - 1.5;
-  player.pos.x = Math.max(-B, Math.min(B, player.pos.x));
-  player.pos.z = Math.max(-B, Math.min(B, player.pos.z));
+  clampPlayerBounds(player.pos);
 
   const sp = Math.hypot(player.vel.x, player.vel.z);
   player.landT = Math.max(0, player.landT - dt);
@@ -713,23 +821,29 @@ function updateOnFoot(dt) {
   player.mesh.rotation.y = player.heading;
   player.mesh.rotation.x *= Math.max(0, 1 - 10 * dt); // settle out of the swing lean
 
-  // weapon switching (digits buy upgrades while at the web den)
-  if (!world.nearDen) {
+  // weapon switching (digits are shop keys while at any kiosk)
+  if (!world.nearDen && !world.nearKiosk) {
     if (pressed['Digit1']) switchWeapon(0);
     if (pressed['Digit2']) switchWeapon(1);
     if (pressed['Digit3']) switchWeapon(2);
   }
 
-  // enter vehicle or helicopter
+  // enter vehicle, helicopter or boat
   const nearVeh = findNearestVehicle(3.8);
   const nearHeli = findNearestHeli(6.5);
+  const nearBoat = findNearestBoat(5.5);
   if (nearHeli) setHint('Press <b>E</b> to fly helicopter');
   else if (nearVeh) setHint('Press <b>E</b> to enter vehicle');
+  else if (nearBoat) setHint('Press <b>E</b> to take the ' + (nearBoat.kind === 'jet' ? 'jet-ski' : 'boat'));
   else if (world.shopHint) setHint(world.shopHint);
+  else if (world.arenaHint) setHint(world.arenaHint);
+  else if (world.propHint) setHint(world.propHint);
+  else if (world.raceHint) setHint(world.raceHint);
   else setHint(null);
   if (pressed['KeyE']) {
     if (nearHeli) enterHeli(nearHeli);
     else if (nearVeh) enterCar(nearVeh);
+    else if (nearBoat) enterBoat(nearBoat);
   }
 
   // shooting
@@ -778,6 +892,46 @@ function findNearestVehicle(maxDist) {
   for (const v of world.traffic) check(v);
   for (const v of world.tanks) check(v); // yes, you can steal the tank
   return best;
+}
+
+function findNearestBoat(maxDist) {
+  let best = null;
+  let bestD = maxDist;
+  for (const b of world.boats) {
+    if (b.dead) continue;
+    const d = Math.hypot(b.pos.x - player.pos.x, b.pos.z - player.pos.z);
+    if (d < bestD) { bestD = d; best = b; }
+  }
+  return best;
+}
+
+function enterBoat(b) {
+  player.inBoat = b;
+  player.swim = false;
+  player.mesh.visible = false;
+  setHint(null);
+  camYaw = b.heading;
+  engine.start();
+  if (world.radioSt > 0) setRadioStation(world.radioSt);
+  showToast(b.kind === 'jet' ? 'JET-SKI — fast and loose' : 'SPEEDBOAT');
+}
+
+function exitBoat() {
+  const b = player.inBoat;
+  _fwd.set(Math.sin(b.heading), 0, Math.cos(b.heading));
+  _right.copy(_fwd).cross(UP);
+  player.pos.set(b.pos.x - _right.x * 3.2, 0.2, b.pos.z - _right.z * 3.2);
+  player.vel.set(0, 0, 0);
+  player.vy = 0;
+  player.mesh.visible = true;
+  player.heading = b.heading;
+  player.inBoat = null;
+  camYaw = b.heading;
+  engine.stop();
+  setRadioStation(0);
+  // step onto a pier if one is alongside, otherwise you're in the drink
+  const g = groundHeight(player.pos, city.colliders, 0.1, 2.0);
+  player.pos.y = g > 0.5 ? g : 0.2;
 }
 
 function findNearestHeli(maxDist) {
@@ -1052,6 +1206,7 @@ function webAttack() {
     addTracer(player.pos.clone().setY(player.pos.y + 1.5), _sphere.set(hitTgt.pos.x, hitTgt.pos.y + (hitTgt.aimY ?? 0), hitTgt.pos.z).clone());
     showToast('WEBBED OUT OF THE SKY!');
     addStyle(20);
+    trackDaily(world, 'webbed');
     return;
   }
   const tgt = hitPed || hitVeh;
@@ -1088,6 +1243,7 @@ function webAttack() {
     showToast(hitVeh.police ? 'COP CAR WEBBED!' : 'CAR WEBBED!');
   }
   addStyle(15);
+  trackDaily(world, 'webbed');
 }
 
 // ---------- web swinging ----------
@@ -1148,11 +1304,11 @@ function updateSwinging(dt) {
     reelOut: !!(keys['ShiftLeft'] || keys['ShiftRight']),
   });
 
-  world.stats.swungM += Math.hypot(player.pos.x - px0, player.pos.z - pz0);
+  const swungD = Math.hypot(player.pos.x - px0, player.pos.z - pz0);
+  world.stats.swungM += swungD;
+  trackDaily(world, 'swungSinceDeath', swungD);
 
-  const B = HALF - 1.5;
-  player.pos.x = Math.max(-B, Math.min(B, player.pos.x));
-  player.pos.z = Math.max(-B, Math.min(B, player.pos.z));
+  clampPlayerBounds(player.pos);
 
   // slide along walls, losing only the speed that went into them
   const hit = resolveCircle(player.pos, 0.5, city.colliders, player.pos.y + 0.5);
@@ -1289,7 +1445,8 @@ function updateDriving(dt) {
     handbrake: !!keys['Space'],
   };
   // nitro: hold Shift for a burning speed burst (tank excluded, it's heavy enough)
-  player.nitro = player.nitro ?? 100;
+  const nitroMax = car.bigNitro ? 170 : 100; // garage nitro-tank upgrade
+  player.nitro = Math.min(nitroMax, player.nitro ?? nitroMax);
   const boosting = (keys['ShiftLeft'] || keys['ShiftRight']) && player.nitro > 1 && ctl.throttle > 0 && !car.tank;
   if (boosting) {
     player.nitro = Math.max(0, player.nitro - 40 * dt);
@@ -1302,7 +1459,7 @@ function updateDriving(dt) {
     }
     addStyle(4 * dt);
   } else {
-    player.nitro = Math.min(100, player.nitro + 9 * dt);
+    player.nitro = Math.min(nitroMax, player.nitro + (car.bigNitro ? 14 : 9) * dt);
   }
 
   const impact = physStep(car, ctl, dt, city.colliders);
@@ -1394,6 +1551,45 @@ function updateDriving(dt) {
   }
 }
 
+// ---------- boating ----------
+
+function updateBoating(dt) {
+  const b = player.inBoat;
+  const ctl = {
+    throttle: (keys['KeyW'] ? 1 : 0) + (keys['KeyS'] ? -1 : 0),
+    steer: (keys['KeyA'] ? 1 : 0) + (keys['KeyD'] ? -1 : 0),
+  };
+  const bump = physStepBoat(b, ctl, dt, world.time);
+  if (bump > 6) {
+    sfxCrash(bump);
+    world.shake = Math.min(0.4, bump * 0.02);
+  }
+  setEngine(b.vel.length());
+  player.pos.copy(b.pos); // keep systems that read the on-foot position honest
+
+  // spray off the stern at speed
+  const sp = b.vel.length();
+  if (sp > 9) {
+    b.wakeT = (b.wakeT || 0) - dt;
+    if (b.wakeT <= 0) {
+      b.wakeT = 0.07;
+      addSmoke(b.pos.clone().add(new THREE.Vector3(-Math.sin(b.heading) * 2.6, 0.3, -Math.cos(b.heading) * 2.6)), 0.4);
+      addStyle(2 * dt);
+    }
+  }
+
+  if (pressed['KeyR']) {
+    world.radioSt = (world.radioSt + 1) % RADIO_STATIONS.length;
+    setRadioStation(world.radioSt);
+    showToast(RADIO_STATIONS[world.radioSt]);
+  }
+
+  if (pressed['KeyE']) {
+    if (sp < 4) exitBoat();
+    else showToast('Slow down to hop off!');
+  }
+}
+
 // ---------- flying ----------
 
 function updateFlying(dt) {
@@ -1464,6 +1660,8 @@ function explodeVehicle(v) {
   v.vel.set(0, 0, 0);
   addExplosion(v.pos);
   darkenCar(v);
+  trackDaily(world, 'wrecked');
+  addChaos(world, 15);
   if (world.rampageT > 0) {
     world.rampageCount++;
     world.money += 150;
@@ -1708,6 +1906,9 @@ function triggerOver(text, color) {
   overTimer = 3.2;
   showBanner(text, color);
   failMission(world, text === 'WASTED' ? 'You got wasted' : 'You got busted');
+  endArena(world, true);
+  endRace(world, true);
+  resetChaos(world);
   engine.stop();
   rotor.stop();
   setRadioStation(0);
@@ -1733,6 +1934,11 @@ function respawn() {
     player.inHeli.vel.set(0, 0, 0);
     player.inHeli = null;
   }
+  if (player.inBoat) {
+    player.inBoat.vel.set(0, 0, 0);
+    player.inBoat = null;
+  }
+  player.swim = false;
   releaseWeb(web);
   player.glide = false;
   player.mesh.rotation.x = 0;
@@ -1813,7 +2019,10 @@ document.getElementById('playbtn').addEventListener('click', () => {
   applySettings();
   if (gameState === 'start') gameState = 'play';
   if (!isTouch) renderer.domElement.requestPointerLock?.();
-  else goFullscreen(); // phones: immersive landscape
+  else {
+    goFullscreen(); // phones: immersive landscape
+    keepAwake();    // and no screen dimming mid-chase
+  }
   showTouchUI(true);
 });
 document.addEventListener('pointerlockchange', () => {
@@ -1907,7 +2116,8 @@ function update(dt) {
     return;
   }
 
-  if (player.inHeli) updateFlying(dt);
+  if (player.inBoat) updateBoating(dt);
+  else if (player.inHeli) updateFlying(dt);
   else if (player.inCar) updateDriving(dt);
   else if (web.zip) updateZip(dt);
   else if (web.attached) updateSwinging(dt);
@@ -1928,12 +2138,38 @@ function update(dt) {
   updateAmbient(flocks, world, dt);
   updateStunts(stuntsState, world, dt);
   updateLandmarks(landmarks, dt, world.time);
+  updateEconomy(world, dt, keys, pressed);
+  updateArena(world, dt);
+  updateRaces(world, dt);
+  updateWater(waterState, world, dt);
   updateEffects(dt);
+
+  // H starts the stadium arena when you're standing in the ring
+  if (pressed['KeyH']) world._startArena = true;
+
+  // mission passed: count it for the daily, and every 3rd pass shows an ad break
+  if (mission.done !== prevMissionDone) {
+    if (mission.done > prevMissionDone) {
+      trackDaily(world, 'missionsToday');
+      if (mission.done % 3 === 0) showInterstitial();
+    }
+    prevMissionDone = mission.done;
+  }
+
+  // hidden packages count toward the daily too
+  if (world.tokensGot.length !== prevTokens) {
+    trackDaily(world, 'tokensToday', world.tokensGot.length - prevTokens);
+    prevTokens = world.tokensGot.length;
+  }
+
+  // midnight rolls the daily challenge over
+  if (world.clock < prevClock) newDay(world);
+  prevClock = world.clock;
 
   // ambience follows the clock
   const hum = world.clock > 6.5 && world.clock < 21.5 ? 1 : 0.55;
   if (hum !== world._hum) { world._hum = hum; setHum(hum); }
-  if (player.inCar || player.inHeli || web.attached || web.zip) chuteMesh.visible = false;
+  if (player.inCar || player.inHeli || player.inBoat || player.swim || web.attached || web.zip) chuteMesh.visible = false;
 
   // chase music swells with the heat
   if (world.wanted !== world._chase) { world._chase = world.wanted; setChase(world.wanted / 5); }
@@ -1970,6 +2206,16 @@ function update(dt) {
   if (isTouch && world.nearKiosk !== world._kioskUi) {
     world._kioskUi = world.nearKiosk;
     showKioskButtons(world.nearKiosk);
+  }
+  // ...and FIGHT / BUY buttons when those actions are in reach
+  if (isTouch) {
+    const wantArena = !!world.arenaHint && !world.arena.active;
+    const wantBuy = !!world.propHint && !wantArena;
+    if (wantArena !== world._ctxArena || wantBuy !== world._ctxBuy) {
+      world._ctxArena = wantArena;
+      world._ctxBuy = wantBuy;
+      showContextButtons({ arena: wantArena, buy: wantBuy });
+    }
   }
   updateCamera(dt);
   updateSiren();
@@ -2054,4 +2300,10 @@ window.__debug = {
   setCamPitch: (v) => { camPitch = v; },
   getState: () => gameState,
   setClock: (h) => { world.clock = h; },
+  races: racesState,
+  water: waterState,
+  startArena: () => { world._startArena = true; },
+  boardBoat: (i = 0) => enterBoat(world.boats[i]),
+  exitBoat,
+  teleport: (x, y, z) => { player.pos.set(x, y, z); },
 };

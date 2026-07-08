@@ -237,6 +237,12 @@ export function separateCars(a, b, bStatic = false) {
   return 0;
 }
 
+// Recolor a vehicle's main body panel (garage respray).
+export function resprayVehicle(v, color) {
+  const body = v.mesh.children[0];
+  if (body && body.material && body.material.color) body.material.color.set(color);
+}
+
 export function darkenCar(v) {
   const burnt = new THREE.MeshStandardMaterial({ color: 0x141416, roughness: 0.95, metalness: 0.05 });
   v.mesh.traverse((m) => {

@@ -171,7 +171,7 @@ export function physStepHeli(h, ctl, dt, colliders) {
     }
   }
 
-  const B = HALF + 40;
+  const B = HALF + 280; // room to fly out over the harbor
   h.pos.x = Math.max(-B, Math.min(B, h.pos.x));
   h.pos.z = Math.max(-B, Math.min(B, h.pos.z));
 

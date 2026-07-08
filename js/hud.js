@@ -129,8 +129,8 @@ export function updateHUD(world) {
     ? 'linear-gradient(90deg,#2faf4e,#5fe07a)'
     : 'linear-gradient(90deg,#b03030,#e05f5f)';
 
-  if (player.inCar || player.inHeli) {
-    const v = player.inCar || player.inHeli;
+  if (player.inCar || player.inHeli || player.inBoat) {
+    const v = player.inCar || player.inHeli || player.inBoat;
     els.speed.style.display = 'block';
     const nitro = player.inCar && !player.inCar.tank
       ? ` <small style="color:#7ecbff">N₂O ${Math.round(player.nitro ?? 100)}%</small>` : '';
@@ -175,8 +175,18 @@ export function updateHUD(world) {
     div.style.display = 'block';
   }
 
-  // level + style readout
-  els.level.textContent = `LVL ${world.level || 1}` + (world.style > 5 ? ` · STYLE ${Math.round(world.style)}` : '');
+  // level + rep + style readout, with the daily challenge underneath
+  let line = `LVL ${world.level || 1}`;
+  if (world.repTier && world.repTier !== 'NOBODY') line += ` · ${world.repTier}`;
+  if (world.style > 5) line += ` · STYLE ${Math.round(world.style)}`;
+  if (world.chaos > 10) line += ` · CHAOS ${Math.round(world.chaos)}`;
+  let sub = '';
+  if (world.daily && !world.dailyDone) {
+    const got = Math.min(Math.floor(world.counters?.[world.daily.stat] || 0), world.daily.goal);
+    sub = `DAILY: ${world.daily.text} (${got}/${world.daily.goal})`;
+  }
+  els.level.innerHTML = line +
+    (sub ? `<br><span style="font-size:10px;color:#ffd24a">${sub}</span>` : '');
 
   // hurt flash + low health pulse
   let dmg = world.damageFlash || 0;
@@ -266,6 +276,15 @@ function drawMinimap(world) {
       g.arc(mx, mz, pulse, 0, Math.PI * 2);
       g.fill();
     }
+  }
+
+  // active race checkpoint
+  if (world.raceBlip) {
+    const [mx, mz] = toMap(world.raceBlip.x, world.raceBlip.z);
+    g.fillStyle = '#ff9a3d';
+    g.beginPath();
+    g.arc(mx, mz, 4 + Math.sin(performance.now() * 0.008) * 1.2, 0, Math.PI * 2);
+    g.fill();
   }
 
   // waypoint

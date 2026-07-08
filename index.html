@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#090d13">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
@@ -108,6 +108,17 @@
     text-shadow: 3px 3px 0 #000, 0 0 24px rgba(0,0,0,.8); text-transform: uppercase;
   }
   #mm2 { font-size: 22px; font-weight: 700; color: #e8eef5; text-shadow: 2px 2px 0 #000; margin-top: 4px; }
+
+  /* touch devices: HUD rearranged around the on-screen controls */
+  body.touch #keysind { display: none; }
+  body.touch #hint { bottom: auto; top: 70px; font-size: 14px; max-width: 78vw; }
+  body.touch #bottomleft { transform: scale(0.66); transform-origin: bottom left; bottom: 170px; left: 12px; }
+  body.touch #weapon { right: 200px; bottom: 8px; font-size: 18px; }
+  body.touch #speed { right: 230px; bottom: 8px; font-size: 26px; }
+  body.touch #mission { left: 12px; top: 6px; padding: 6px 10px; min-width: 0; max-width: 150px; }
+  body.touch #mtitle { font-size: 13px; }
+  body.touch #mtext { font-size: 10px; }
+  body.touch #mtimer { font-size: 16px; }
 
   #vignette {
     position: fixed; inset: 0; pointer-events: none; z-index: 4;
@@ -268,6 +279,7 @@
       <div class="ctl"><span class="k">F</span> Punch combo / air web-dash &nbsp;·&nbsp; <span class="k">Q</span> Web-shot (again = yank)</div>
       <div class="ctl"><span class="k">C</span> Super-jump &nbsp;·&nbsp; <span class="k">T</span> Trampoline &nbsp;·&nbsp; <span class="k">E</span> Enter/rob</div>
       <div class="ctl"><span class="k">M</span> Map &nbsp;·&nbsp; <span class="k">P</span> Pause &nbsp;·&nbsp; <span class="k">G</span> Screenshot &nbsp;·&nbsp; <span class="k">1-3</span> Weapons</div>
+      <div class="ctl"><span class="k">H</span> Start arena (at the stadium) &nbsp;·&nbsp; <span class="k">B</span> Buy property under a green beam</div>
       <div class="ctl mob">📱 On phones: joystick + on-screen buttons. Gamepad works too.</div>
     </div>
 
@@ -283,6 +295,10 @@
       <div class="feat"><b>🗼 Landmarks</b> Swing off the 150m Spire, the stadium, central park & the waterfront on a bigger 10×10 city.</div>
       <div class="feat"><b>🤖 Bosses</b> A rival web-slinger AND a 500-armour war-mech — plus a monster truck at the dealership.</div>
       <div class="feat"><b>📷 Mobile</b> Camera selfie booth, screenshot sharing, haptics — installable as an app.</div>
+      <div class="feat"><b>🌊 The harbor</b> Open water past the east edge — speedboats, a jet-ski, swimming, and piers to dive off.</div>
+      <div class="feat"><b>🏁 Free-roam races</b> Two street circuits and a rooftop swing trial — gold/silver/bronze medals and saved best times.</div>
+      <div class="feat"><b>🏟️ The arena</b> Wave survival at the stadium: gangs, SWAT and drones, cash and rep per wave.</div>
+      <div class="feat"><b>💼 Empire</b> Buy the casino, stadium and Spire for passive income · reputation tiers · rotating daily challenges · garage tuning: respray, engine, armor, nitro.</div>
     </div>
 
     <div class="panel" id="p-tips">
@@ -293,6 +309,8 @@
       <div class="ctl">📦 20 packages hide on rooftops — you'll only find them by swinging up high.</div>
       <div class="ctl">📱 On your phone: open the menu → <b>Add to Home Screen</b> to install it.</div>
     </div>
+
+    <a href="privacy.html" style="margin-top:14px;color:#5b6675;font-size:11px;letter-spacing:1px;pointer-events:auto;">PRIVACY POLICY</a>
   </div>
 
   <script type="module" src="js/main.js"></script>

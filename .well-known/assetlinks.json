@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "io.github.faizankhan17623.opencity",
+      "sha256_cert_fingerprints": [
+        "0A:FD:51:22:CA:1C:3F:32:75:DC:AF:FE:EC:D1:67:45:75:BD:D8:91:F3:E7:E8:83:90:53:FB:D4:10:32:9E:1D"
+      ]
+    }
+  }
+]

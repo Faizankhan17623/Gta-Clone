@@ -4,8 +4,9 @@ import { showToast, showNews } from './hud.js';
 import { addCrime } from './police.js';
 import { sfxPickup, sfxMissionPass, sfxMissionFail } from './sound.js';
 import { webCfg } from './web.js';
-import { makeVehicle } from './car.js';
+import { makeVehicle, resprayVehicle } from './car.js';
 import { applySuit } from './characters.js';
+import { watchForCash } from './ads.js';
 
 // Robbable corner stores (hold E: cash + heat) and the upgrade den where
 // swing money buys permanent buffs.
@@ -56,7 +57,7 @@ function kiosk(scene, pos, color, signColor, label) {
   return group;
 }
 
-export function initShops(scene, world, savedUpgrades) {
+export function initShops(scene, world, savedUpgrades, savedMods) {
   const shops = [];
   // one store on a corner of six different blocks, spread over the city
   const picks = [[0, 0], [3, 1], [6, 2], [1, 5], [4, 6], [7, 7]];
@@ -98,6 +99,7 @@ export function initShops(scene, world, savedUpgrades) {
   scene.add(padRing);
 
   world.upgrades = { range: false, winch: false, armor: false, ...(savedUpgrades || {}) };
+  world.garageMods = { paint: null, engine: false, armor: false, nitro: false, ...(savedMods || {}) };
   world.shops = shops;
   world.shopHint = null;
   world.nearDen = false;
@@ -112,6 +114,25 @@ export function initShops(scene, world, savedUpgrades) {
   return state;
 }
 
+// Garage customization: colors cycle on respray; perf mods apply once per vehicle.
+export const GARAGE_PAINTS = ['#c1121f', '#f5a800', '#2fd06a', '#4a8cff', '#c95aff', '#f2f2f2', '#14181d'];
+
+export function applyGarageMods(world, v) {
+  const m = world.garageMods;
+  if (!m || !v || v.dead) return;
+  if (m.engine && !v.engineMod) {
+    v.engineMod = true;
+    v.accel = (v.accel ?? 17) + 7;
+    v.top = (v.top ?? 38) + 10;
+  }
+  if (m.armor && !v.armorMod) {
+    v.armorMod = true;
+    v.health = Math.max(v.health, 200);
+  }
+  if (m.nitro) v.bigNitro = true;
+  if (m.paint != null) resprayVehicle(v, GARAGE_PAINTS[m.paint % GARAGE_PAINTS.length]);
+}
+
 // Rebuild the saved garage vehicle on the pad (called at load + respawn).
 export function ensureGarageVehicle(state, world) {
   const kind = world.garageKind;
@@ -120,6 +141,7 @@ export function ensureGarageVehicle(state, world) {
   const g = state.garagePos;
   const opts = kind === 'bike' ? { bike: true } : {};
   const v = makeVehicle(world.scene, g.x, g.z, 0, kind === 'bike' ? '#23262d' : '#3d6b8f', opts);
+  applyGarageMods(world, v);
   state.garageVeh = v;
   world.parked.push(v);
 }
@@ -130,6 +152,7 @@ export function garageCheck(state, world, car) {
   if (Math.hypot(car.pos.x - state.garagePos.x, car.pos.z - state.garagePos.z) > 4.5) return;
   world.garageKind = car.bike ? 'bike' : 'car';
   state.garageVeh = car;
+  applyGarageMods(world, car);
   showToast('VEHICLE GARAGED — it respawns here if lost');
   world.onSave?.();
 }
@@ -204,7 +227,11 @@ export function updateShops(state, world, dt, keys, pressed) {
   const cd = Math.hypot(state.casinoPos.x - player.pos.x, state.casinoPos.z - player.pos.z);
   if (onFoot && cd < 3.6) {
     world.nearKiosk = true;
-    world.shopHint = 'LUCKY 7 — bet <b>1</b> $100 · <b>2</b> $500 · <b>3</b> $1000';
+    world.shopHint = 'LUCKY 7 — bet <b>1</b> $100 · <b>2</b> $500 · <b>3</b> $1000 · <b>4</b> FREE $500 (watch ad)';
+    if (pressed['Digit4'] && state.casinoCd <= 0) {
+      state.casinoCd = 4; // one ad at a time
+      watchForCash(world, 500);
+    }
     const bets = [100, 500, 1000];
     for (let i = 0; i < 3; i++) {
       if (!pressed['Digit' + (i + 1)] || state.casinoCd > 0) continue;
@@ -255,16 +282,55 @@ export function updateShops(state, world, dt, keys, pressed) {
     }
   }
 
-  // garage pad hint
-  if (onFoot && Math.hypot(state.garagePos.x - player.pos.x, state.garagePos.z - player.pos.z) < 5) {
-    world.shopHint = world.garageKind
-      ? 'GARAGE — your ride respawns here'
-      : 'GARAGE — exit any vehicle on the pad to keep it forever';
+  // garage pad: store a ride, then tune it up
+  // (the pad sits beside the wardrobe — whichever is closer owns the digit keys)
+  const gd = Math.hypot(state.garagePos.x - player.pos.x, state.garagePos.z - player.pos.z);
+  const wd = Math.hypot(state.wardrobePos.x - player.pos.x, state.wardrobePos.z - player.pos.z);
+  if (onFoot && gd < 5 && gd <= wd) {
+    if (!world.garageKind) {
+      world.shopHint = 'GARAGE — exit any vehicle on the pad to keep it forever';
+    } else {
+      world.nearKiosk = true;
+      const m = world.garageMods;
+      world.shopHint = 'GARAGE — <b>1</b> Respray $200 · ' +
+        `<b>2</b> Engine tune ${m.engine ? '✔' : '$800'} · ` +
+        `<b>3</b> Armor plate ${m.armor ? '✔' : '$600'} · ` +
+        `<b>4</b> Big nitro ${m.nitro ? '✔' : '$500'}`;
+      const mods = [
+        { key: 'engine', cost: 800, name: 'ENGINE TUNE (+speed)' },
+        { key: 'armor', cost: 600, name: 'ARMOR PLATING (200 HP)' },
+        { key: 'nitro', cost: 500, name: 'BIG NITRO TANK' },
+      ];
+      if (pressed['Digit1']) {
+        if (world.money < 200) showToast('Not enough cash');
+        else {
+          world.money -= 200;
+          m.paint = m.paint == null ? 0 : (m.paint + 1) % GARAGE_PAINTS.length;
+          applyGarageMods(world, state.garageVeh);
+          sfxPickup();
+          showToast('RESPRAYED — press 1 again to cycle colors');
+          world.onSave?.();
+        }
+      }
+      for (let i = 0; i < mods.length; i++) {
+        if (!pressed['Digit' + (i + 2)]) continue;
+        const u = mods[i];
+        if (m[u.key]) showToast('Already fitted');
+        else if (world.money < u.cost) showToast('Not enough cash');
+        else {
+          world.money -= u.cost;
+          m[u.key] = true;
+          applyGarageMods(world, state.garageVeh);
+          sfxMissionPass();
+          showToast(`FITTED: ${u.name}`);
+          world.onSave?.();
+        }
+      }
+    }
   }
 
   // wardrobe: 1-4 buy/wear suits
-  const wd = Math.hypot(state.wardrobePos.x - player.pos.x, state.wardrobePos.z - player.pos.z);
-  if (onFoot && wd < 3.6) {
+  if (onFoot && wd < 3.6 && wd < gd) {
     world.nearKiosk = true;
     world.shopHint = 'WARDROBE — ' + SUITS.map((u, i) =>
       world.suitsOwned[u.key]

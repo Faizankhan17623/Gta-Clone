@@ -120,6 +120,66 @@ await ev(() => {
   await ev(() => { window.__debug.player.pos.x += 30; });
 }
 
+// FIGHT button appears at the arena ring and starts a wave
+{
+  await ev(() => {
+    const d = window.__debug;
+    d.player.pos.set(d.world.arena.pos.x + 3, 0, d.world.arena.pos.z);
+    d.player.vel.set(0, 0, 0);
+  });
+  await page.waitForTimeout(500);
+  const visible = await ev(() => document.getElementById('btn-arena')?.style.display !== 'none');
+  await ev(() => window.__touch('btn-arena', 'touchstart'));
+  await page.waitForTimeout(120);
+  await ev(() => window.__touch('btn-arena', 'touchend'));
+  await page.waitForTimeout(400);
+  const started = await ev(() => window.__debug.world.arena.active);
+  console.log(`FIGHT button (arena): shown=${visible} started=${started} ${visible && started ? 'PASS' : 'FAIL'}`);
+  await ev(() => { // walk out to end it
+    const d = window.__debug;
+    d.player.pos.set(d.world.arena.pos.x + 60, 0, d.world.arena.pos.z);
+  });
+  await page.waitForTimeout(400);
+}
+
+// BUY button appears under a property beam and buys it
+{
+  await ev(() => {
+    const d = window.__debug;
+    d.world.money = 10000;
+    delete d.world.props.owned.casino;
+    const m = d.world.propMarks[0];
+    m.beam.visible = true;
+    d.player.pos.set(m.pos.x, 0, m.pos.z);
+    d.player.vel.set(0, 0, 0);
+  });
+  await page.waitForTimeout(500);
+  const visible = await ev(() => document.getElementById('btn-buy')?.style.display !== 'none');
+  await ev(() => window.__touch('btn-buy', 'touchstart'));
+  await page.waitForTimeout(120);
+  await ev(() => window.__touch('btn-buy', 'touchend'));
+  await page.waitForTimeout(300);
+  const owned = await ev(() => !!window.__debug.world.props.owned.casino);
+  console.log(`BUY button (property): shown=${visible} bought=${owned} ${visible && owned ? 'PASS' : 'FAIL'}`);
+}
+
+// boat drives with the joystick
+{
+  await ev(() => window.__debug.boardBoat(0));
+  await page.waitForTimeout(200);
+  await ev(() => { window.__touch('joypad', 'touchstart'); window.__touch('joypad', 'touchmove', 0, -40); });
+  await page.waitForTimeout(2000);
+  const sp = await ev(() => window.__debug.player.inBoat?.vel.length() ?? 0);
+  await ev(() => window.__touch('joypad', 'touchend'));
+  console.log(`boat via joystick: ${sp.toFixed(1)} m/s ${sp > 6 ? 'PASS' : 'FAIL'}`);
+  await ev(async () => {
+    const d = window.__debug;
+    d.player.inBoat.vel.set(0, 0, 0);
+    await new Promise((r) => setTimeout(r, 150));
+    d.exitBoat();
+  });
+}
+
 await page.waitForTimeout(800);
 console.log(`mobile runtime errors: ${errors} ${errors === 0 ? 'PASS' : 'FAIL'}`);
 await browser.close();
