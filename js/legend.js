@@ -3,6 +3,7 @@ import { showToast, showNews, showMissionMsg } from './hud.js';
 import { sfxMissionPass } from './sound.js';
 import { addExplosion } from './effects.js';
 import { makeVehicle } from './car.js';
+import { blockStart, BLOCK } from './city.js';
 
 // The Legend board (L): every way to conquer the city on one checklist.
 // Finish the lot and the city crowns you — a golden crown, $50,000, and
@@ -80,11 +81,56 @@ function crownRegalia(world) {
   // the King's ride: a golden supercar always waiting beside the statue
   const ride = makeVehicle(world.scene, spot.x + 6, spot.z, Math.PI / 2, '#ffd24a', { accel: 24, top: 48, health: 200 });
   world.parked.push(ride);
+
+  // the engraving on the plinth
+  const c = document.createElement('canvas');
+  c.width = 256; c.height = 96;
+  const g = c.getContext('2d');
+  g.fillStyle = '#3a3e46'; g.fillRect(0, 0, 256, 96);
+  g.fillStyle = '#ffd24a'; g.textAlign = 'center';
+  g.font = 'bold 22px Georgia'; g.fillText('THE KING', 128, 34);
+  g.font = 'bold 15px Georgia'; g.fillText('of OPEN CITY', 128, 58);
+  g.font = 'italic 12px Georgia'; g.fillText('who left nothing undone · 2026', 128, 80);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const plaque = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 0.85), new THREE.MeshBasicMaterial({ map: tex }));
+  plaque.position.copy(spot).add(new THREE.Vector3(0, 0, -1.32)).setY(0.75);
+  plaque.rotation.y = Math.PI;
+  world.scene.add(plaque);
+  world._plaque = plaque;
+}
+
+// one last secret: a golden fable rests on the very tip of the Spire.
+// whoever climbs high enough to find it gets the storyteller's goodbye.
+export function initFable(scene, world, save) {
+  const book = new THREE.Mesh(
+    new THREE.BoxGeometry(0.5, 0.14, 0.7),
+    new THREE.MeshStandardMaterial({ color: 0xffd24a, emissive: 0x806010, metalness: 0.8, roughness: 0.25 })
+  );
+  book.position.set(blockStart(2) + BLOCK / 2, 150.6, blockStart(7) + BLOCK / 2);
+  book.visible = !save.fable;
+  scene.add(book);
+  world.fable = { book, found: !!save.fable };
 }
 
 // the street knows royalty: nearby pedestrians hail the crowned King
 let hailT = 8;
 export function updateLegend(world, dt) {
+  const fb = world.fable;
+  if (fb && !fb.found) {
+    fb.book.rotation.y += dt;
+    const p = world.player.pos;
+    if (Math.abs(p.y - fb.book.position.y) < 3 &&
+        Math.hypot(p.x - fb.book.position.x, p.z - fb.book.position.z) < 2.5) {
+      fb.found = true;
+      fb.book.visible = false;
+      world.money += 777;
+      sfxMissionPass();
+      showToast('📖 You found the FABLE +$777');
+      showNews('the storyteller closes the book: every fable ends, this one ends well');
+      world.onSave?.();
+    }
+  }
   if (!world.crowned) return;
   hailT -= dt;
   if (hailT > 0) return;

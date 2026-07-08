@@ -46,7 +46,7 @@ import { initUfo, updateUfo } from './ufo.js';
 import { initLottery, updateLottery } from './lottery.js';
 import { initFightClub, updateFightClub, endFightClub } from './fightclub.js';
 import { initPoker, openPoker } from './poker.js';
-import { initLegend, openLegend, updateLegend, forceCrown } from './legend.js';
+import { initLegend, openLegend, updateLegend, forceCrown, initFable } from './legend.js';
 import { initCheats } from './cheats.js';
 import { initFinale, updateFinale, endFinale } from './finale.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
@@ -251,6 +251,7 @@ initUfo(scene, world);
 initLottery(scene, world, save);
 initFightClub(scene, world);
 initLegend({ onClose: leaveCards, saveKey: SAVE_KEY }, world, save);
+initFable(scene, world, save);
 initFinale({
   freeze: () => { gameState = 'cards'; showTouchUI(false); document.exitPointerLock?.(); },
   unfreeze: leaveCards,
@@ -443,7 +444,7 @@ function saveGame() {
       arenaBest: world.arena?.best, races: world.raceBest, mods: world.garageMods,
       dog: world.dog?.owned, heistDay: world.heist?.doneDay, vigBest: world.vig?.best,
       jet: world.jetpack?.owned, hoops: [...(world.hoops?.got || [])], crowned: world.crowned,
-      lastStand: world.finale?.won,
+      lastStand: world.finale?.won, fable: world.fable?.found,
       lottoDay: world.lottery?.ticketDay, expDay: world.exportJob?.day, expIdx: world.exportJob?.idx,
     }));
   } catch {}
