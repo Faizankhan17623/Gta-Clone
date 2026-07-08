@@ -32,6 +32,8 @@ import { initHeist, updateHeist, failHeist } from './heist.js';
 import { initTurfWar, updateTurfWar } from './turfwar.js';
 import { initBlackjack, openBlackjack } from './blackjack.js';
 import { initVigilante, updateVigilante, endVigilante } from './vigilante.js';
+import { initArmored, updateArmored } from './armored.js';
+import { initSlots, openSlots } from './slots.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
@@ -218,7 +220,9 @@ initDog(scene, world, save);
 initHeist(scene, world, save);
 initTurfWar(scene, world);
 initVigilante(world, save);
-initBlackjack({ onClose: leaveCards });
+initArmored(world);
+initBlackjack({ onClose: leaveCards, onSlots: () => openSlots(world) });
+initSlots({ onClose: leaveCards, onTable: () => openBlackjack(world) });
 let prevMissionDone = mission.done;
 let prevTokens = world.tokensGot.length;
 let prevClock = world.clock;
@@ -2269,6 +2273,7 @@ function update(dt) {
   updateHeist(world, dt, keys, pressed);
   updateTurfWar(world, dt);
   updateVigilante(world, dt, pressed);
+  updateArmored(world, dt);
   updateEffects(dt);
 
   // heist/turf status stays on screen even from inside a vehicle
@@ -2436,6 +2441,7 @@ window.__debug = {
   water: waterState,
   enterCards,
   vig: () => world.vig,
+  armored: () => world.armored,
   startArena: () => { world._startArena = true; },
   boardBoat: (i = 0) => enterBoat(world.boats[i]),
   exitBoat,

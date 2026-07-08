@@ -36,18 +36,19 @@ Then open **http://localhost:8080** and click PLAY.
 | **M** | Full city map — click to set a waypoint |
 | **P / Esc** | Pause: settings, lifetime stats, photo mode |
 | Left Click | Shoot |
-| 1 / 2 / 3 | Pistol / Machine Gun / RPG (kiosk menus while at one) |
-| E | Enter vehicle / rob store (hold) |
+| 1–6 / **X** | Pick weapon / cycle: Pistol, MG, Shotgun, Sniper (scoped), RPG, Grenade |
+| E | Enter vehicle / rob store (hold) / play cards at the casino / crack the bank vault (hold) |
 
 ### Vehicles
 | Input | Action |
 | --- | --- |
-| W A S D | Drive / fly |
+| W A S D | Drive / fly / boat |
 | Space | Handbrake / helicopter up |
 | Shift | Helicopter down |
-| **R** | Cycle the car radio (3 procedural stations) |
+| **R** | Cycle the car radio (5 procedural stations) |
 | Left Click (in tank) | Fire the cannon |
-| E | Exit |
+| **V** (in a police car) | Start a **vigilante** chase streak |
+| E | Exit — mid-flight in a helicopter it's a **skydive** (hold Space for the chute) |
 
 ### Gamepad
 Plug one in and play: left stick moves, right stick looks, **A** jump/up,
@@ -78,9 +79,23 @@ Plug one in and play: left stick moves, right stick looks, **A** jump/up,
 
 ### Crime & economy
 - **Rob the corner stores** (green rings, hold E) — cash plus 2-star heat.
+- **The bank job**: crack the City Bank vault (hold E), hold the lobby
+  against guards while the drill runs, then escape a 4-star manhunt to the
+  safehouse beam. Once per in-game day, $3000.
+- **The armored truck**: a 400 HP cash transporter runs routes every few
+  minutes (gold square on the minimap). Wreck it for $1000 plus a ring of
+  spilled cash cubes — and the heat that comes with it.
+- **Vigilante**: steal a police cruiser mid-patrol, press **V**, and chase
+  down fleeing criminals. Every takedown chains a tougher, faster target;
+  payouts escalate and your best streak is saved.
+- **The Lucky 7 casino**: blackjack (hit/stand/double, 3:2 blackjack) and a
+  slot machine (7-7-7 jackpot pays 25×) — walk in with E, switch between
+  the games at the table.
 - **Gang territory**: the Vipers hold the north-east district and shoot on
-  sight. Put ten of them down to seize the turf — one-time reward plus
-  passive protection income.
+  sight. Put ten of them down to seize the turf — then defend it when the
+  **Jackals raid** in periodic turf wars, or lose the district again.
+- **REX the dog**: adopt him at the kennel near spawn ($500). He follows
+  you across the city, fetches money pickups, and barks when cops close in.
 - **The WEB DEN** near spawn sells permanent upgrades: longer webs, faster
   winch, body armor (150 HP).
 - Money & health pickups, ammo crates, and a style meter that pays for flair.
@@ -97,13 +112,18 @@ Plug one in and play: left stick moves, right stick looks, **A** jump/up,
 - **Motorbikes** (every 4th parked vehicle): fast, nimble, lean into corners.
 - Helicopters on the park helipads. Space to climb — it always wins over a
   held sprint key.
-- **Car radio**: three procedural WebAudio stations (lofi, synthwave, bass).
+- **Boats & jet-skis** at the harbor past the east edge — plus two boat
+  races (Harbor Circuit and Buoy Slalom).
+- **Car radio**: five procedural WebAudio stations (lofi, synthwave, bass,
+  desi, night jazz).
 
-### Missions — six types in rotation
-Walk into the yellow beam: **Delivery** → **Street race** (5 checkpoints) →
-**Swing race** (5 floating sky rings, webs only) → **Taxi shift** (2 fares) →
-**Hit contract** → **Boss fight** (shoot down the rival crime chopper).
-Rewards scale as you complete more.
+### Missions — ten types in rotation
+Walk into the yellow beam: **Delivery**, **Street race**, **Swing race**
+(floating sky rings, webs only), **Taxi shift**, **Hit contract**,
+**Boss chopper**, **Firefighter**, **Rooftop hit**, **Witness escort**, and
+a **rival web-slinger** duel. Rewards scale as you complete more — plus
+free-roam races, the stadium arena, the bank heist, vigilante chases and
+turf wars outside the mission beam.
 
 ### Progression
 - **XP levels** unlock skills: double-jump (2), web-dash (4), slow-motion
@@ -147,6 +167,18 @@ js/sound.js       Procedural WebAudio (guns, loops, radio stations)
 js/effects.js     Tracers, explosions, smoke, sparks, debris, skid marks
 js/hud.js         HUD + minimap rendering
 js/input.js       Keyboard / mouse / pointer-lock / gamepad input
+js/economy.js     Properties, reputation, daily challenges, chaos meter
+js/races.js       Free-roam street / swing / boat races
+js/water.js       The harbor: water, boats, jet-ski, swimming
+js/arena.js       Stadium wave-survival arena
+js/heist.js       The City Bank job
+js/vigilante.js   Cop-car criminal chase streaks
+js/armored.js     The roaming armored cash truck
+js/turfwar.js     Jackal raids on your district
+js/blackjack.js   Lucky 7 blackjack table (DOM overlay)
+js/slots.js       Lucky 7 slot machine (DOM overlay)
+js/dog.js         REX the companion dog
+js/stunts.js      Ramps, rampage skulls, web trampolines
 -->
 
 ## Tests
@@ -166,9 +198,12 @@ pigeons, day/night, death + respawn, and the save file.
 
 ## Roadmap — ideas for the next era
 
-- **River + boats** along the south edge, with bridges (needs a map rework)
 - **Elevated metro loop** you can ride and roof-surf (needs a map rework)
-- A rival web-swinger boss who chases you across rooftops
-- Multi-stage heists and enterable interiors (bank, nightclub, garage)
-- Kiosk menus on mobile (touch buttons for casino / wardrobe / dealership)
-- Save slots, landmark towers, multiplayer someday
+- Enterable interiors (nightclub, garage) and multi-stage heist variety
+- More casino games (poker, roulette) and high-stakes VIP rooms
+- Property raids: defend your casino/stadium/Spire like gang turf
+- Save slots and multiplayer someday
+
+Recently shipped from this list: the harbor with boats + boat races, the
+rival web-swinger boss, the bank heist, mobile kiosk buttons, landmark
+towers, vigilante chases, the armored truck, blackjack & slots.

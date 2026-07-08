@@ -287,6 +287,13 @@ function drawMinimap(world) {
     g.fill();
   }
 
+  // armored cash truck
+  if (world.truckBlip) {
+    const [mx, mz] = toMap(world.truckBlip.x, world.truckBlip.z);
+    g.fillStyle = '#ffd24a';
+    g.fillRect(mx - 3.5, mz - 3.5, 7, 7);
+  }
+
   // fleeing vigilante target
   if (world.vigBlip) {
     const [mx, mz] = toMap(world.vigBlip.x, world.vigBlip.z);

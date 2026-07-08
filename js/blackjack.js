@@ -112,7 +112,7 @@ function build(world) {
     '<div id="bj-msg" style="font:800 17px Arial;color:#ffd24a;margin:10px 0;min-height:22px"></div>' +
     '<div id="bj-bets" style="display:flex;gap:10px"></div>' +
     '<div id="bj-acts" style="display:none;gap:10px"></div>' +
-    '<div style="margin-top:14px"><button id="bj-again"></button><button id="bj-leave"></button></div>';
+    '<div style="margin-top:14px"><button id="bj-again"></button><button id="bj-slots"></button><button id="bj-leave"></button></div>';
   document.body.appendChild(ui);
 
   const btn = (label, bg) => {
@@ -165,6 +165,13 @@ function build(world) {
   again.onclick = () => {
     state = { stage: 'bet', bet: 0, player: [], dealer: [], over: false, msg: '' };
     render(world);
+  };
+  const slots = el('bj-slots');
+  slots.textContent = '🎰 SLOTS';
+  slots.style.cssText = btn('', '').style.cssText + 'background:linear-gradient(180deg,#e0a6ff,#a04ad0);margin-right:10px;';
+  slots.onclick = () => {
+    ui.style.display = 'none';
+    hooks?.onSlots?.();
   };
   const leave = el('bj-leave');
   leave.textContent = '✕ LEAVE TABLE';
