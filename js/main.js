@@ -31,6 +31,7 @@ import { initDog, updateDog } from './dog.js';
 import { initHeist, updateHeist, failHeist } from './heist.js';
 import { initTurfWar, updateTurfWar } from './turfwar.js';
 import { initBlackjack, openBlackjack } from './blackjack.js';
+import { initVigilante, updateVigilante, endVigilante } from './vigilante.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
@@ -216,6 +217,7 @@ const waterState = initWater(scene, world);
 initDog(scene, world, save);
 initHeist(scene, world, save);
 initTurfWar(scene, world);
+initVigilante(world, save);
 initBlackjack({ onClose: leaveCards });
 let prevMissionDone = mission.done;
 let prevTokens = world.tokensGot.length;
@@ -376,7 +378,7 @@ function saveGame() {
       props: world.props?.owned, rep: world.rep, chaosBest: world.chaosBest,
       dailyDay: world.dailyDay, dailyDone: world.dailyDone,
       arenaBest: world.arena?.best, races: world.raceBest, mods: world.garageMods,
-      dog: world.dog?.owned, heistDay: world.heist?.doneDay,
+      dog: world.dog?.owned, heistDay: world.heist?.doneDay, vigBest: world.vig?.best,
     }));
   } catch {}
 }
@@ -939,6 +941,7 @@ function findNearestVehicle(maxDist) {
   };
   for (const v of world.parked) check(v);
   for (const v of world.traffic) check(v);
+  for (const v of world.cops) check(v); // commandeer a cruiser mid-patrol
   for (const v of world.tanks) check(v); // yes, you can steal the tank
   return best;
 }
@@ -1003,6 +1006,13 @@ function enterCar(v) {
     world.traffic.splice(idx, 1);
     addCrime(world, 1);
     showToast('CARJACKED!');
+  }
+  idx = world.cops.indexOf(v);
+  if (idx >= 0) {
+    world.cops.splice(idx, 1);
+    addCrime(world, 2);
+    showToast('CRUISER COMMANDEERED! Press V for vigilante work');
+    showNews('a police cruiser vanishes mid-patrol');
   }
   v.ai = null;
   player.inCar = v;
@@ -2019,6 +2029,7 @@ function triggerOver(text, color) {
   endArena(world, true);
   endRace(world, true);
   failHeist(world);
+  endVigilante(world, text === 'WASTED' ? 'You got wasted' : 'You got busted');
   resetChaos(world);
   engine.stop();
   rotor.stop();
@@ -2257,6 +2268,7 @@ function update(dt) {
   updateDog(world, dt, pressed);
   updateHeist(world, dt, keys, pressed);
   updateTurfWar(world, dt);
+  updateVigilante(world, dt, pressed);
   updateEffects(dt);
 
   // heist/turf status stays on screen even from inside a vehicle
@@ -2423,6 +2435,7 @@ window.__debug = {
   races: racesState,
   water: waterState,
   enterCards,
+  vig: () => world.vig,
   startArena: () => { world._startArena = true; },
   boardBoat: (i = 0) => enterBoat(world.boats[i]),
   exitBoat,

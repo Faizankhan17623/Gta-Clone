@@ -287,6 +287,15 @@ function drawMinimap(world) {
     g.fill();
   }
 
+  // fleeing vigilante target
+  if (world.vigBlip) {
+    const [mx, mz] = toMap(world.vigBlip.x, world.vigBlip.z);
+    g.fillStyle = '#ff4a3d';
+    g.beginPath();
+    g.arc(mx, mz, 4 + Math.sin(performance.now() * 0.012) * 1.4, 0, Math.PI * 2);
+    g.fill();
+  }
+
   // waypoint
   if (world.waypoint) {
     const [mx, mz] = toMap(world.waypoint.x, world.waypoint.z);
