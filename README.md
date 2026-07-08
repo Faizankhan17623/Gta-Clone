@@ -181,29 +181,3 @@ js/dog.js         REX the companion dog
 js/stunts.js      Ramps, rampage skulls, web trampolines
 -->
 
-## Tests
-
-```
-npm start                  # serve on :8080 (or PORT=xxxx for the tests)
-node test/fulltest.mjs     # gameplay smoke suite — 22 checks
-node test/featurecheck.mjs # feature audit: every feature verified live — 42 checks
-node test/mobiletest.mjs   # phone emulation: joystick, buttons, touch UI
-```
-
-Headless-browser suites (Playwright + Edge/Chrome) drive the real game:
-movement, weapons, web swing/zip/wall-run/traversal, glide, style meter,
-driving, motorbike, helicopter, police, tank spawn + stealing, web attack,
-store robbery, the upgrade den, gang territory, all six mission types,
-pigeons, day/night, death + respawn, and the save file.
-
-## Roadmap — ideas for the next era
-
-- **Elevated metro loop** you can ride and roof-surf (needs a map rework)
-- Enterable interiors (nightclub, garage) and multi-stage heist variety
-- More casino games (poker, roulette) and high-stakes VIP rooms
-- Property raids: defend your casino/stadium/Spire like gang turf
-- Save slots and multiplayer someday
-
-Recently shipped from this list: the harbor with boats + boat races, the
-rival web-swinger boss, the bank heist, mobile kiosk buttons, landmark
-towers, vigilante chases, the armored truck, blackjack & slots.
