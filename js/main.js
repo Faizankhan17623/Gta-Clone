@@ -46,7 +46,7 @@ import { initUfo, updateUfo } from './ufo.js';
 import { initLottery, updateLottery } from './lottery.js';
 import { initFightClub, updateFightClub, endFightClub } from './fightclub.js';
 import { initPoker, openPoker } from './poker.js';
-import { initLegend, openLegend } from './legend.js';
+import { initLegend, openLegend, updateLegend } from './legend.js';
 import { initCheats } from './cheats.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
@@ -263,6 +263,8 @@ initCheats({
   },
   heli: () => { world.helis.push(makeHeli(scene, player.pos.x + 6, 0.5, player.pos.z + 6, 0, false)); },
   dog: () => { world.dog?.owned && world.dog.pos.set(player.pos.x + 2, 0, player.pos.z + 2); },
+  slowmo: () => { world.slowmoT = 6; },
+  heal: () => { player.health = world.maxHealth; },
 });
 let prevMissionDone = mission.done;
 let prevTokens = world.tokensGot.length;
@@ -2337,6 +2339,7 @@ function update(dt) {
   updateUfo(world, dt);
   updateLottery(world, dt, pressed);
   updateFightClub(world, dt, pressed);
+  updateLegend(world, dt);
   updateEffects(dt);
 
   // job status stays on screen even from inside a vehicle
@@ -2364,9 +2367,22 @@ function update(dt) {
     prevTokens = world.tokensGot.length;
   }
 
-  // midnight rolls the daily challenge over
-  if (world.clock < prevClock) newDay(world);
+  // midnight rolls the daily challenge over — with fireworks over the city
+  if (world.clock < prevClock) {
+    newDay(world);
+    world.fwT = 4;
+    showNews('midnight fireworks light up the skyline');
+  }
   prevClock = world.clock;
+  if (world.fwT > 0) {
+    world.fwT -= dt;
+    world._fwTick = (world._fwTick || 0) - dt;
+    if (world._fwTick <= 0) {
+      world._fwTick = 0.3;
+      addExplosion(player.pos.clone().add(new THREE.Vector3(
+        (Math.random() - 0.5) * 120, 35 + Math.random() * 25, (Math.random() - 0.5) * 120)));
+    }
+  }
 
   // ambience follows the clock
   const hum = world.clock > 6.5 && world.clock < 21.5 ? 1 : 0.55;

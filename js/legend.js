@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { showToast, showNews, showMissionMsg } from './hud.js';
 import { sfxMissionPass } from './sound.js';
 import { addExplosion } from './effects.js';
+import { makeVehicle } from './car.js';
 
 // The Legend board (L): every way to conquer the city on one checklist.
 // Finish the lot and the city crowns you — a golden crown, $50,000, and
@@ -73,6 +74,27 @@ function crownRegalia(world) {
   arm.rotation.z = -0.5; // raised to the skyline
   world.scene.add(arm);
   world.city.colliders.push({ x0: spot.x - 1.3, z0: spot.z - 1.3, x1: spot.x + 1.3, z1: spot.z + 1.3, h: 1.4 });
+
+  // the King's ride: a golden supercar always waiting beside the statue
+  const ride = makeVehicle(world.scene, spot.x + 6, spot.z, Math.PI / 2, '#ffd24a', { accel: 24, top: 48, health: 200 });
+  world.parked.push(ride);
+}
+
+// the street knows royalty: nearby pedestrians hail the crowned King
+let hailT = 8;
+export function updateLegend(world, dt) {
+  if (!world.crowned) return;
+  hailT -= dt;
+  if (hailT > 0) return;
+  hailT = 7 + Math.random() * 6;
+  const p = world.player.pos;
+  for (const ped of world.peds) {
+    if (ped.dead) continue;
+    if (Math.hypot(ped.pos.x - p.x, ped.pos.z - p.z) < 12) {
+      world.bark(ped.pos, ['THE KING!', 'ALL HAIL!', 'it\'s really them!', 'nice crown!'][(Math.random() * 4) | 0]);
+      break;
+    }
+  }
 }
 
 function placeCrown(world) {

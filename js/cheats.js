@@ -12,6 +12,8 @@ const CODES = {
   OINKOFF: 'clear',
   SKYBIRD: 'heli',
   WOOFWOOF: 'dog',
+  WHOAWHOA: 'slowmo',
+  IRONSKIN: 'heal',
 };
 
 export function initCheats(actions) {
