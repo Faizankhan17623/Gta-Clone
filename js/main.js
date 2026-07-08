@@ -47,6 +47,7 @@ import { initLottery, updateLottery } from './lottery.js';
 import { initFightClub, updateFightClub, endFightClub } from './fightclub.js';
 import { initPoker, openPoker } from './poker.js';
 import { initLegend, openLegend } from './legend.js';
+import { initCheats } from './cheats.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
@@ -248,7 +249,21 @@ initHoops(scene, world, save);
 initUfo(scene, world);
 initLottery(scene, world, save);
 initFightClub(scene, world);
-initLegend({ onClose: leaveCards }, world, save);
+initLegend({ onClose: leaveCards, saveKey: SAVE_KEY }, world, save);
+initCheats({
+  cash: () => { world.money += 10000; },
+  clear: () => { world.wanted = 0; world.wantedTimer = 0; clearCops(world); },
+  boom: () => {
+    for (const group of [world.traffic, world.parked]) {
+      for (const v of group) {
+        if (v.dead || v === player.inCar) continue;
+        if (Math.hypot(v.pos.x - player.pos.x, v.pos.z - player.pos.z) < 40) explodeVehicle(v);
+      }
+    }
+  },
+  heli: () => { world.helis.push(makeHeli(scene, player.pos.x + 6, 0.5, player.pos.z + 6, 0, false)); },
+  dog: () => { world.dog?.owned && world.dog.pos.set(player.pos.x + 2, 0, player.pos.z + 2); },
+});
 let prevMissionDone = mission.done;
 let prevTokens = world.tokensGot.length;
 let prevClock = world.clock;

@@ -40,7 +40,39 @@ export function legendPct(world) {
 export function initLegend(h, world, save) {
   hooks = h;
   world.crowned = !!save.crowned;
-  if (world.crowned) placeCrown(world);
+  if (world.crowned) crownRegalia(world);
+}
+
+// crown + gold suit + a statue on the plaza: the works, for the King
+function crownRegalia(world) {
+  placeCrown(world);
+  // gold suit: clone materials so the peds sharing them stay normal
+  world.player.mesh.traverse((o) => {
+    if (o.isMesh && o.material?.color) {
+      o.material = o.material.clone();
+      o.material.color.setHex(0xffd24a);
+      if ('metalness' in o.material) { o.material.metalness = 0.75; o.material.roughness = 0.35; }
+    }
+  });
+  // the statue: a gold likeness on a plinth near spawn
+  const spot = world.city.spawn.clone().add(new THREE.Vector3(0, 0, 28));
+  const gold = new THREE.MeshStandardMaterial({ color: 0xd0a020, emissive: 0x604808, metalness: 0.9, roughness: 0.3 });
+  const plinth = new THREE.Mesh(new THREE.BoxGeometry(2.6, 1.4, 2.6), new THREE.MeshStandardMaterial({ color: 0x8a8f99, roughness: 0.8 }));
+  plinth.position.copy(spot).setY(0.7);
+  plinth.castShadow = true;
+  world.scene.add(plinth);
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.9, 2.4, 0.7), gold);
+  body.position.copy(spot).setY(2.6);
+  body.castShadow = true;
+  world.scene.add(body);
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.55, 0.55), gold);
+  head.position.copy(spot).setY(4.1);
+  world.scene.add(head);
+  const arm = new THREE.Mesh(new THREE.BoxGeometry(0.28, 1.5, 0.28), gold);
+  arm.position.copy(spot).add(new THREE.Vector3(0.62, 0, 0)).setY(3.5);
+  arm.rotation.z = -0.5; // raised to the skyline
+  world.scene.add(arm);
+  world.city.colliders.push({ x0: spot.x - 1.3, z0: spot.z - 1.3, x1: spot.x + 1.3, z1: spot.z + 1.3, h: 1.4 });
 }
 
 function placeCrown(world) {
@@ -56,7 +88,7 @@ function placeCrown(world) {
 
 function coronation(world) {
   world.crowned = true;
-  placeCrown(world);
+  crownRegalia(world);
   world.money += 50000;
   sfxMissionPass();
   showMissionMsg('👑 KING OF THE CITY', '100% — take the crown and the $50,000', '#ffd24a');
@@ -100,10 +132,52 @@ function build() {
     '<div id="lg-crown" style="display:none;font:800 15px Arial;color:#ffd24a;margin-bottom:8px">👑 KING OF THE CITY</div>' +
     '<div id="lg-list" style="max-height:55vh;overflow-y:auto;min-width:320px;text-align:left;' +
     'background:rgba(20,26,36,0.6);border-radius:12px;padding:14px 20px"></div>' +
-    '<button id="lg-close" style="margin-top:14px;font:800 15px Arial;color:#111;border:none;border-radius:8px;' +
-    'padding:12px 22px;cursor:pointer;background:linear-gradient(180deg,#ffd24a,#f0a32a);letter-spacing:1px">✕ CLOSE</button>';
+    '<div style="margin-top:14px;display:flex;gap:10px">' +
+    '<button id="lg-export"></button><button id="lg-import"></button><button id="lg-close"></button></div>' +
+    '<div style="font:700 11px Arial;color:#9fb2c8;margin-top:8px">back up your save as a file — restore it on any device</div>';
   document.body.appendChild(ui);
-  ui.querySelector('#lg-close').onclick = () => {
+  const style = (b, bg) => {
+    b.style.cssText = `font:800 14px Arial;color:#111;border:none;border-radius:8px;padding:12px 18px;cursor:pointer;background:${bg};letter-spacing:1px;`;
+  };
+  const exp = ui.querySelector('#lg-export');
+  exp.textContent = '💾 EXPORT SAVE';
+  style(exp, 'linear-gradient(180deg,#7ecbff,#3d8fd0)');
+  exp.onclick = () => {
+    const data = localStorage.getItem(hooks.saveKey) || '{}';
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([data], { type: 'application/json' }));
+    a.download = 'open-city-save.json';
+    a.click();
+    URL.revokeObjectURL(a.href);
+    showToast('Save exported');
+  };
+  const imp = ui.querySelector('#lg-import');
+  imp.textContent = '📂 IMPORT SAVE';
+  style(imp, 'linear-gradient(180deg,#b6f5c0,#3dcf6a)');
+  imp.onclick = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json,application/json';
+    input.onchange = () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      file.text().then((text) => {
+        try {
+          JSON.parse(text); // sanity: must at least be JSON
+          localStorage.setItem(hooks.saveKey, text);
+          showToast('Save imported — reloading');
+          setTimeout(() => location.reload(), 600);
+        } catch {
+          showToast('That file is not a valid save');
+        }
+      });
+    };
+    input.click();
+  };
+  const close = ui.querySelector('#lg-close');
+  close.textContent = '✕ CLOSE';
+  style(close, 'linear-gradient(180deg,#ffd24a,#f0a32a)');
+  close.onclick = () => {
     ui.style.display = 'none';
     hooks?.onClose?.();
   };
