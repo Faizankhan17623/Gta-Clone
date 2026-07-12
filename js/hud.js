@@ -295,6 +295,32 @@ function drawMinimap(world) {
     g.fillRect(mx - 1.5, mz - 4, 3, 8);
   }
 
+  // the nemesis, mid-ambush
+  if (world.nemesisBlip) {
+    const [mx, mz] = toMap(world.nemesisBlip.x, world.nemesisBlip.z);
+    g.fillStyle = '#a01020';
+    g.beginPath();
+    g.arc(mx, mz, 4.5 + Math.sin(performance.now() * 0.014) * 1.6, 0, Math.PI * 2);
+    g.fill();
+  }
+
+  // train heist cargo wagon
+  if (world.trainBlip) {
+    const [mx, mz] = toMap(world.trainBlip.x, world.trainBlip.z);
+    g.fillStyle = '#d0a020';
+    g.fillRect(mx - 3, mz - 4.5, 6, 9);
+  }
+
+  // tornado on the ground
+  if (world.disasterBlip) {
+    const [mx, mz] = toMap(world.disasterBlip.x, world.disasterBlip.z);
+    g.strokeStyle = '#8fd0ff';
+    g.lineWidth = 2;
+    g.beginPath();
+    g.arc(mx, mz, 5 + Math.sin(performance.now() * 0.01) * 2, 0, Math.PI * 2);
+    g.stroke();
+  }
+
   // bounty mark
   if (world.bountyBlip) {
     const [mx, mz] = toMap(world.bountyBlip.x, world.bountyBlip.z);

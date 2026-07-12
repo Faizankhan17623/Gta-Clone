@@ -17,6 +17,9 @@ const CODES = {
   CROWNY: 'crown',
   CASHRAIN: 'cashrain',
   SUNDOWN: 'night',
+  SHOWDOWN: 'nemesis',   // the rival finds you RIGHT NOW
+  BRAINS: 'outbreak',    // zombie night, on demand
+  QUAKY: 'disaster',     // shake the city
 };
 
 export function initCheats(actions) {

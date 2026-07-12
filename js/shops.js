@@ -99,7 +99,7 @@ export function initShops(scene, world, savedUpgrades, savedMods) {
   scene.add(padRing);
 
   world.upgrades = { range: false, winch: false, armor: false, ...(savedUpgrades || {}) };
-  world.garageMods = { paint: null, engine: false, armor: false, nitro: false, ...(savedMods || {}) };
+  world.garageMods = { paint: null, engine: false, armor: false, nitro: false, spikes: false, neon: false, ...(savedMods || {}) };
   world.shops = shops;
   world.shopHint = null;
   world.nearDen = false;
@@ -130,6 +130,28 @@ export function applyGarageMods(world, v) {
     v.health = Math.max(v.health, 200);
   }
   if (m.nitro) v.bigNitro = true;
+  if (m.spikes && !v.spikeMod) {
+    v.spikeMod = true;
+    v.spikes = true; // ram damage bonus, applied in the driving impact code
+    const mat = new THREE.MeshStandardMaterial({ color: 0xb8bec8, metalness: 0.85, roughness: 0.3 });
+    for (let i = 0; i < 4; i++) {
+      const spike = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.5, 6), mat);
+      spike.rotation.x = Math.PI / 2;
+      spike.position.set(-0.6 + i * 0.4, 0.55, (v.bike ? 1.1 : 2.15));
+      v.mesh.add(spike);
+      if (v.bike) break; // one nasty prong is enough for a bike
+    }
+  }
+  if (m.neon && !v.neonMod) {
+    v.neonMod = true;
+    const glow = new THREE.Mesh(
+      new THREE.PlaneGeometry(v.bike ? 1.4 : 2.6, v.bike ? 2.4 : 4.6),
+      new THREE.MeshBasicMaterial({ color: 0x4ad2ff, transparent: true, opacity: 0.4, side: THREE.DoubleSide, depthWrite: false })
+    );
+    glow.rotation.x = -Math.PI / 2;
+    glow.position.y = 0.12;
+    v.mesh.add(glow);
+  }
   if (m.paint != null) resprayVehicle(v, GARAGE_PAINTS[m.paint % GARAGE_PAINTS.length]);
 }
 
@@ -295,11 +317,15 @@ export function updateShops(state, world, dt, keys, pressed) {
       world.shopHint = 'GARAGE — <b>1</b> Respray $200 · ' +
         `<b>2</b> Engine tune ${m.engine ? '✔' : '$800'} · ` +
         `<b>3</b> Armor plate ${m.armor ? '✔' : '$600'} · ` +
-        `<b>4</b> Big nitro ${m.nitro ? '✔' : '$500'}`;
+        `<b>4</b> Big nitro ${m.nitro ? '✔' : '$500'} · ` +
+        `<b>5</b> Ram spikes ${m.spikes ? '✔' : '$700'} · ` +
+        `<b>6</b> Neon glow ${m.neon ? '✔' : '$300'}`;
       const mods = [
         { key: 'engine', cost: 800, name: 'ENGINE TUNE (+speed)' },
         { key: 'armor', cost: 600, name: 'ARMOR PLATING (200 HP)' },
         { key: 'nitro', cost: 500, name: 'BIG NITRO TANK' },
+        { key: 'spikes', cost: 700, name: 'RAM SPIKES (2.5x crash damage dealt)' },
+        { key: 'neon', cost: 300, name: 'NEON UNDERGLOW' },
       ];
       if (pressed['Digit1']) {
         if (world.money < 200) showToast('Not enough cash');

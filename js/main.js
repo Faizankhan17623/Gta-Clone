@@ -49,6 +49,13 @@ import { initPoker, openPoker } from './poker.js';
 import { initLegend, openLegend, updateLegend, forceCrown, initFable } from './legend.js';
 import { initCheats } from './cheats.js';
 import { initFinale, updateFinale, endFinale } from './finale.js';
+import { initNemesis, updateNemesis, forceNemesis, endNemesisFight } from './nemesis.js';
+import { initZombies, updateZombies, startOutbreak, endOutbreak } from './zombies.js';
+import { initTrain, updateTrain, endTrainHeist } from './train.js';
+import { initDisasters, updateDisasters, forceDisaster } from './disasters.js';
+import { initPrison, updatePrison, prisonIntake } from './prison.js';
+import { initMyths, updateMyths } from './myths.js';
+import { initStranger, updateStranger } from './stranger.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
@@ -256,6 +263,13 @@ initFinale({
   freeze: () => { gameState = 'cards'; showTouchUI(false); document.exitPointerLock?.(); },
   unfreeze: leaveCards,
 }, scene, world, save);
+initNemesis(scene, world, save);
+initZombies(scene, world);
+initTrain(scene, world);
+initDisasters(scene, world);
+initPrison(scene, world);
+initMyths(scene, world, save);
+initStranger(scene, world, save);
 initCheats({
   cash: () => { world.money += 10000; },
   clear: () => { world.wanted = 0; world.wantedTimer = 0; clearCops(world); },
@@ -282,6 +296,9 @@ initCheats({
       n++;
     }
   },
+  nemesis: () => forceNemesis(world),
+  outbreak: () => { if (world.clock > 6 && world.clock < 21) world.clock = 22.2; startOutbreak(world); },
+  disaster: () => forceDisaster(world),
 });
 let prevMissionDone = mission.done;
 let prevTokens = world.tokensGot.length;
@@ -446,6 +463,9 @@ function saveGame() {
       jet: world.jetpack?.owned, hoops: [...(world.hoops?.got || [])], crowned: world.crowned,
       lastStand: world.finale?.won, fable: world.fable?.found,
       lottoDay: world.lottery?.ticketDay, expDay: world.exportJob?.day, expIdx: world.exportJob?.idx,
+      nemLvl: world.nemesis?.lvl, nemBeaten: world.nemesis?.beaten,
+      mythsGraf: [...(world.myths?.graf || [])], mythsDone: [...(world.myths?.done || [])],
+      strangerStage: world.stranger?.stage,
     }));
   } catch {}
 }
@@ -710,7 +730,8 @@ function updateSwim(dt) {
     return;
   }
 
-  // lazy crawl stroke
+  // lazy crawl stroke (bob anchored at the swim line, not the street)
+  player.mesh.userData.baseY = player.pos.y;
   player.animT += dt * 4;
   animateWalk(player.ch, player.animT, 0.45);
   player.mesh.rotation.y = player.heading;
@@ -850,6 +871,9 @@ function updateOnFoot(dt) {
   } else if (player.vy < 0 && player.pos.y > groundY + 0.05) {
     player.onGround = false; // walked off a roof edge
   }
+  // anchor the walk/idle bob to the surface underfoot — without this the
+  // pose animations slam a rooftop (or train-roof) player back to street level
+  player.mesh.userData.baseY = player.onGround ? groundY : 0;
 
   // parapet grind: hold Shift along a rooftop edge to skate it
   if (player.onGround && player.pos.y > 5 && (keys['ShiftLeft'] || keys['ShiftRight'])) {
@@ -949,7 +973,11 @@ function updateOnFoot(dt) {
   else if (nearVeh) setHint('Press <b>E</b> to enter vehicle');
   else if (nearBoat) setHint('Press <b>E</b> to take the ' + (nearBoat.kind === 'jet' ? 'jet-ski' : 'boat'));
   else if (world.finaleHint) setHint(world.finaleHint);
+  else if (world.nemesisHint) setHint(world.nemesisHint);
+  else if (world.zombieHint) setHint(world.zombieHint);
+  else if (world.prisonHint) setHint(world.prisonHint);
   else if (world.heistHint) setHint(world.heistHint);
+  else if (world.trainHint) setHint(world.trainHint);
   else if (world.cardsHint) setHint(world.cardsHint);
   else if (world.shopHint) setHint(world.shopHint);
   else if (world.arenaHint) setHint(world.arenaHint);
@@ -964,6 +992,8 @@ function updateOnFoot(dt) {
   else if (world.jetHint) setHint(world.jetHint);
   else if (world.lottoHint) setHint(world.lottoHint);
   else if (world.medHint) setHint(world.medHint);
+  else if (world.mythHint) setHint(world.mythHint);
+  else if (world.strangerHint) setHint(world.strangerHint);
   else setHint(null);
   if (pressed['KeyE']) {
     if (nearHeli) enterHeli(nearHeli);
@@ -1645,8 +1675,10 @@ function updateDriving(dt) {
     if (t.dead) continue;
     const imp = separateCars(car, t, false);
     if (imp > 5) {
-      car.health -= (imp - 5) * 1.4;
-      t.health -= imp * 2.5;
+      // garage ram spikes: hit harder, hurt less
+      car.health -= (imp - 5) * (car.spikes ? 0.7 : 1.4);
+      t.health -= imp * (car.spikes ? 6 : 2.5);
+      if (car.spikes) addSparks(t.pos.clone().setY(0.8), 8);
       sfxCrash(imp);
       world.shake = Math.min(0.5, imp * 0.025);
       if (t.health <= 0 && !t.dead) explodeVehicle(t);
@@ -1656,8 +1688,9 @@ function updateDriving(dt) {
   for (const p of world.parked) {
     const imp = separateCars(car, p, false);
     if (imp > 5) {
-      car.health -= (imp - 5) * 1.2;
-      p.health -= imp * 2;
+      car.health -= (imp - 5) * (car.spikes ? 0.6 : 1.2);
+      p.health -= imp * (car.spikes ? 5 : 2);
+      if (car.spikes) addSparks(p.pos.clone().setY(0.8), 8);
       sfxCrash(imp);
       world.shake = Math.min(0.5, imp * 0.025);
       if (p.health <= 0 && !p.dead) explodeVehicle(p);
@@ -2107,6 +2140,11 @@ function triggerOver(text, color) {
   endVigilante(world, text === 'WASTED' ? 'You got wasted' : 'You got busted');
   endFightClub(world, 'knocked out cold');
   endFinale(world);
+  endNemesisFight(world);
+  endOutbreak(world, false);
+  endTrainHeist(world);
+  // three stars or worse when the cuffs close = a night on Harbor Island
+  if (text === 'BUSTED' && world.wanted >= 3 && world.prison) world.prison.pending = true;
   if (world.jetpack) world.jetpack.on = false;
   resetChaos(world);
   engine.stop();
@@ -2159,6 +2197,7 @@ function respawn() {
   world.policeHelis.length = 0;
   camYaw = 0;
   ensureGarageVehicle(shopsState, world); // your garaged ride comes back
+  prisonIntake(world); // a 3-star bust wakes up on Harbor Island instead
   gameState = 'play';
 }
 
@@ -2246,6 +2285,7 @@ function updateSiren() {
 
 const heliHooks = { onShot: () => sfxShot('mg') };
 const armyHooks = { boom: (pos) => explodeRocket(pos) };
+const disasterHooks = { boom: (pos) => explodeRocket(pos), explode: (v) => explodeVehicle(v) };
 
 let prevHealth = 100;
 let saveT = 0;
@@ -2274,6 +2314,14 @@ function update(dt) {
   if (wx.flash > 0.01) {
     hemi.intensity += wx.flash * 1.8;
     sun.intensity += wx.flash * 0.8;
+  }
+  world.rainI = wx.intensity; // myths check the weather too
+
+  // outbreak nights close in: thicker fog, dimmer sky
+  if (world.zombies?.active) {
+    scene.fog.near *= 0.55;
+    scene.fog.far *= 0.6;
+    hemi.intensity *= 0.85;
   }
 
   // bloom breathes with the night: stronger glow when the city lights are on
@@ -2361,11 +2409,19 @@ function update(dt) {
   updateFightClub(world, dt, pressed);
   updateLegend(world, dt);
   updateFinale(world, dt, pressed);
+  updateNemesis(world, dt);
+  updateZombies(world, dt);
+  updateTrain(world, dt, keys, pressed);
+  updateDisasters(world, dt, disasterHooks);
+  updatePrison(world, dt);
+  updateMyths(world, dt, keys, pressed);
+  updateStranger(world, dt, pressed);
   updateEffects(dt);
 
   // job status stays on screen even from inside a vehicle
   if (player.inCar || player.inBoat || player.inHeli) {
-    const drivingHint = world.heistHint || world.turfHint || world.raidHint ||
+    const drivingHint = world.nemesisHint || world.zombieHint || world.prisonHint ||
+      world.heistHint || world.trainHint || world.turfHint || world.raidHint ||
       world.medHint || world.expHint || world.bountyHint;
     if (drivingHint) setHint(drivingHint);
   }
@@ -2555,4 +2611,15 @@ window.__debug = {
   boardBoat: (i = 0) => enterBoat(world.boats[i]),
   exitBoat,
   teleport: (x, y, z) => { player.pos.set(x, y, z); },
+  nemesis: () => world.nemesis,
+  forceNemesis: () => forceNemesis(world),
+  zombies: () => world.zombies,
+  startOutbreak: () => startOutbreak(world),
+  train: () => world.train,
+  disasters: () => world.disasters,
+  forceDisaster: (k) => forceDisaster(world, k),
+  prison: () => world.prison,
+  imprison: () => { world.prison.pending = true; prisonIntake(world); },
+  myths: () => world.myths,
+  stranger: () => world.stranger,
 };
