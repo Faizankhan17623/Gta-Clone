@@ -98,7 +98,7 @@ export function initShops(scene, world, savedUpgrades, savedMods) {
   padRing.position.copy(garagePos).setY(0.5);
   scene.add(padRing);
 
-  world.upgrades = { range: false, winch: false, armor: false, ...(savedUpgrades || {}) };
+  world.upgrades = { range: false, winch: false, armor: false, electro: false, magnet: false, ...(savedUpgrades || {}) };
   world.garageMods = { paint: null, engine: false, armor: false, nitro: false, spikes: false, neon: false, ...(savedMods || {}) };
   world.shops = shops;
   world.shopHint = null;
@@ -204,6 +204,8 @@ const UPG = [
   { key: 'range', cost: 800, name: 'LONG WEBS (150m range)' },
   { key: 'winch', cost: 600, name: 'FAST WINCH' },
   { key: 'armor', cost: 1000, name: 'BODY ARMOR (150 HP)' },
+  { key: 'electro', cost: 1500, name: 'ELECTRO-WEB (Q stuns the whole crowd)' },
+  { key: 'magnet', cost: 1000, name: 'MAGNET WEBS (loot flies to you mid-swing)' },
 ];
 
 export function updateShops(state, world, dt, keys, pressed) {

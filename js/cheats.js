@@ -20,6 +20,7 @@ const CODES = {
   SHOWDOWN: 'nemesis',   // the rival finds you RIGHT NOW
   BRAINS: 'outbreak',    // zombie night, on demand
   QUAKY: 'disaster',     // shake the city
+  BURNBURN: 'fire',      // somebody call Station 7
 };
 
 export function initCheats(actions) {

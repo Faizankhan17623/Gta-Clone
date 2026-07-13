@@ -64,6 +64,13 @@ import { initDiving, updateDivingShack, updateDive } from './diving.js';
 import { initPaparazzi, updatePaparazzi } from './paparazzi.js';
 import { initMayor, updateMayor } from './mayor.js';
 import { initPrestige, updatePrestige } from './prestige.js';
+import { initGauntlet, updateGauntlet, endGauntlet } from './gauntlet.js';
+import { initSwingRaces, updateSwingRaces, endSwingRace } from './swingrace.js';
+import { initFirefight, updateFirefight, forceFireEvent } from './firefight.js';
+import { initMuseum, updateMuseum, endMuseum } from './museum.js';
+import { initFishing, updateFishing } from './fishing.js';
+import { initNightclub, updateNightclub } from './nightclub.js';
+import { initSkateboard, updateSkateboard } from './skateboard.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
@@ -287,6 +294,13 @@ initEmpire(scene, world, save);
 initDiving(scene, world, save);
 initPaparazzi(scene, world);
 initMayor(scene, world, save);
+initGauntlet(scene, world);
+initSwingRaces(scene, world, save);
+initFirefight(scene, world);
+initMuseum(scene, world, save);
+initFishing(scene, world);
+initNightclub(scene, world, save);
+initSkateboard(scene, world, save);
 initCheats({
   cash: () => { world.money += 10000; },
   clear: () => { world.wanted = 0; world.wantedTimer = 0; clearCops(world); },
@@ -316,6 +330,7 @@ initCheats({
   nemesis: () => forceNemesis(world),
   outbreak: () => { if (world.clock > 6 && world.clock < 21) world.clock = 22.2; startOutbreak(world); },
   disaster: () => forceDisaster(world),
+  fire: () => forceFireEvent(world),
 });
 let prevMissionDone = mission.done;
 let prevTokens = world.tokensGot.length;
@@ -490,6 +505,8 @@ function saveGame() {
       chests: world.diving ? world.diving.wrecks.filter((w) => w.looted).map((w) => w.key) : [],
       mayor: world.mayor?.elected, policy: world.policy, salaryDay: world.mayor?.salaryDay,
       prestige: world.prestige,
+      swingBest: world.swing ? Object.fromEntries(world.swing.courses.map((c) => [c.key, c.best])) : {},
+      museumDay: world.museum?.doneDay, club: world.club?.owned, deck: world.skate?.owned,
     }));
   } catch {}
 }
@@ -556,10 +573,18 @@ function updatePickups(dt) {
   if (player.inBoat) return; // nothing to scoop up out on the water
   const focus = player.inHeli ? player.inHeli.pos : player.inCar ? player.inCar.pos : player.pos;
   if (player.inHeli && player.inHeli.pos.y > 3) return; // can't grab them from the sky
-  if (!player.inHeli && !player.inCar && player.pos.y > 3) return; // nor while web-swinging overhead
+  const magnetized = world.upgrades?.magnet && web.attached; // magnet webs: loot chases the swinger
+  if (!player.inHeli && !player.inCar && player.pos.y > 3 && !magnetized) return;
   for (const pk of world.pickups) {
     pk.mesh.rotation.y += dt * 2.5;
     pk.mesh.position.y = 1.0 + Math.sin(world.time * 3 + pk.pos.x) * 0.15;
+    if (magnetized && pk.type === 'money') {
+      const md = Math.hypot(pk.pos.x - player.pos.x, pk.pos.z - player.pos.z);
+      if (md < 18 && md > 1) {
+        pk.mesh.position.x += ((player.pos.x - pk.pos.x) / md) * 14 * dt;
+        pk.mesh.position.z += ((player.pos.z - pk.pos.z) / md) * 14 * dt;
+      }
+    }
     const dx = pk.pos.x - focus.x;
     const dz = pk.pos.z - focus.z;
     if (dx * dx + dz * dz < (player.inCar || player.inHeli ? 7 : 3.2)) {
@@ -804,7 +829,7 @@ function updateOnFoot(dt) {
 
   const moving = _move.lengthSq() > 0;
   const sprintSpeed = world.level >= 8 ? 12 : 10; // parkour sprint skill
-  const cs = player.charDef.speed;
+  const cs = player.charDef.speed * (world.skateOn ? 1.55 : 1); // deck beats sneakers
   const speed = (keys['ShiftLeft'] || keys['ShiftRight'] ? sprintSpeed : 5.5) * cs;
 
   if (moving) {
@@ -1044,6 +1069,13 @@ function updateOnFoot(dt) {
   else if (world.papHint) setHint(world.papHint);
   else if (world.mayorHint) setHint(world.mayorHint);
   else if (world.prestigeHint) setHint(world.prestigeHint);
+  else if (world.gauntletHint) setHint(world.gauntletHint);
+  else if (world.swingHint) setHint(world.swingHint);
+  else if (world.fireHint) setHint(world.fireHint);
+  else if (world.museumHint) setHint(world.museumHint);
+  else if (world.clubHint) setHint(world.clubHint);
+  else if (world.fishHint) setHint(world.fishHint);
+  else if (world.skateHint) setHint(world.skateHint);
   else if (world.mythHint) setHint(world.mythHint);
   else if (world.strangerHint) setHint(world.strangerHint);
   else setHint(null);
@@ -1416,6 +1448,28 @@ function webAttack() {
     if (t < bestT) { bestT = t; hitTgt = tg; hitPed = null; hitVeh = null; }
   }
 
+  // electro-web den upgrade: the hit arcs to everything standing nearby
+  const zapAround = (cx, cz) => {
+    if (!world.upgrades?.electro) return;
+    let arcs = 0;
+    for (const group of [world.peds, world.gangPeds]) {
+      for (const p of group) {
+        if (p.dead || Math.hypot(p.pos.x - cx, p.pos.z - cz) > 6) continue;
+        p.webT = Math.max(p.webT || 0, 4);
+        arcs++;
+      }
+    }
+    for (const tg of world.targets) {
+      if (tg.dead || !tg.webbable) continue;
+      if (Math.hypot(tg.pos.x - cx, tg.pos.z - cz) <= 6) { tg.web?.(); arcs++; }
+    }
+    if (arcs > 1) {
+      addFlash(_sphere.set(cx, 1.4, cz).clone(), 0x8fd0ff, 0.8);
+      showToast(`⚡ ELECTRO-WEB ×${arcs}`);
+      addStyle(arcs * 6);
+    }
+  };
+
   sfxWeb();
   if (hitTgt) {
     hitTgt.web();
@@ -1423,6 +1477,7 @@ function webAttack() {
     showToast('WEBBED OUT OF THE SKY!');
     addStyle(20);
     trackDaily(world, 'webbed');
+    zapAround(hitTgt.pos.x, hitTgt.pos.z);
     return;
   }
   const tgt = hitPed || hitVeh;
@@ -1441,6 +1496,7 @@ function webAttack() {
     showToast('WEB-YANK!');
     return;
   }
+  zapAround(tgt.pos.x, tgt.pos.z);
   if (hitPed) {
     hitPed.webT = world.perks?.webDur ?? 6;
     if (!hitPed.webWrap) {
@@ -2198,6 +2254,9 @@ function triggerOver(text, color) {
   endCasinoHeist(world);
   endEmpireFights(world);
   abortDerby(world);
+  endGauntlet(world);
+  endSwingRace(world);
+  endMuseum(world);
   // three stars or worse when the cuffs close = a night on Harbor Island
   if (text === 'BUSTED' && world.wanted >= 3 && world.prison) world.prison.pending = true;
   if (world.jetpack) world.jetpack.on = false;
@@ -2500,13 +2559,22 @@ function update(dt) {
   updatePaparazzi(world, dt, pressed, camera);
   updateMayor(world, dt, pressed);
   updatePrestige(world, dt, keys);
+  updateGauntlet(world, dt, pressed);
+  updateSwingRaces(world, dt, pressed);
+  world._hose = !!(player.inCar?.fireTruck && (keys['KeyF'] || mouse.down));
+  updateFirefight(world, dt);
+  updateMuseum(world, dt, keys);
+  updateFishing(world, dt, pressed);
+  updateNightclub(world, dt, pressed);
+  updateSkateboard(world, dt, pressed);
   updateEffects(dt);
 
   // job status stays on screen even from inside a vehicle
   if (player.inCar || player.inBoat || player.inHeli) {
     const drivingHint = world.nemesisHint || world.zombieHint || world.prisonHint ||
       world.heistHint || world.trainHint || world.cheistHint || world.derbyHint ||
-      world.empireHint || world.papHint || world.turfHint || world.raidHint ||
+      world.empireHint || world.papHint || world.fireHint || world.museumHint ||
+      world.turfHint || world.raidHint ||
       world.medHint || world.expHint || world.bountyHint;
     if (drivingHint) setHint(drivingHint);
   }
@@ -2712,6 +2780,14 @@ window.__debug = {
   myths: () => world.myths,
   stranger: () => world.stranger,
   cheist: () => world.cheist,
+  gauntlet: () => world.gauntlet,
+  swingrace: () => world.swing,
+  firefight: () => world.firefight,
+  forceFire: () => forceFireEvent(world),
+  museum: () => world.museum,
+  fishing: () => world.fishing,
+  club: () => world.club,
+  skate: () => world.skate,
   derby: () => world.derby,
   plane: () => world.plane,
   smuggle: () => world.smuggle,

@@ -308,6 +308,44 @@ function drawMinimap(world) {
     g.fillRect(mx - 1.5, mz - 4, 3, 8);
   }
 
+  // spire gauntlet ring / warden
+  if (world.gauntletBlip) {
+    const [mx, mz] = toMap(world.gauntletBlip.x, world.gauntletBlip.z);
+    g.strokeStyle = '#4ad2ff';
+    g.lineWidth = 2;
+    g.beginPath();
+    g.arc(mx, mz, 4 + Math.sin(performance.now() * 0.012) * 1.4, 0, Math.PI * 2);
+    g.stroke();
+  }
+
+  // swing race ring
+  if (world.swingBlip) {
+    const [mx, mz] = toMap(world.swingBlip.x, world.swingBlip.z);
+    g.strokeStyle = '#ff9a3d';
+    g.lineWidth = 2;
+    g.beginPath();
+    g.arc(mx, mz, 4 + Math.sin(performance.now() * 0.014) * 1.2, 0, Math.PI * 2);
+    g.stroke();
+  }
+
+  // nearest fire
+  if (world.fireBlip) {
+    const [mx, mz] = toMap(world.fireBlip.x, world.fireBlip.z);
+    g.fillStyle = Math.floor(performance.now() * 0.005) % 2 === 0 ? '#ff6a20' : '#ffb020';
+    g.fillRect(mx - 3, mz - 3, 6, 6);
+  }
+
+  // museum fence, while carrying the canvas
+  if (world.museumBlip) {
+    const [mx, mz] = toMap(world.museumBlip.x, world.museumBlip.z);
+    g.fillStyle = '#c95aff';
+    g.save();
+    g.translate(mx, mz);
+    g.rotate(Math.PI / 4);
+    g.fillRect(-3, -3, 6, 6);
+    g.restore();
+  }
+
   // empire flashpoint (takeover or raid)
   if (world.empireBlip) {
     const [mx, mz] = toMap(world.empireBlip.x, world.empireBlip.z);
