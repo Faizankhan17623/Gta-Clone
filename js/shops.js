@@ -261,14 +261,18 @@ export function updateShops(state, world, dt, keys, pressed) {
       const bet = bets[i];
       if (world.money < bet) { showToast('Not enough cash'); continue; }
       world.money -= bet;
+      // mayoral casino regulation: HOUSE RULES / NORMAL / LOOSE SLOTS
+      const odds = [0, 1, 2][world.policy?.casino ?? 1];
+      const jackpotAt = 0.02 + odds * 0.03; // 2% / 5% / 8%
+      const winAt = 0.4 + odds * 0.1;       // 40% / 50% / 60%
       const roll = Math.random();
-      if (roll < 0.05) {
+      if (roll < jackpotAt) {
         world.money += bet * 5;
         if (world.stats) world.stats.jackpots++;
         sfxMissionPass();
         showToast(`JACKPOT!!! +$${bet * 5}`);
         showNews('massive jackpot hit at the Lucky 7');
-      } else if (roll < 0.5) {
+      } else if (roll < winAt) {
         world.money += bet * 2;
         sfxPickup();
         showToast(`WINNER +$${bet * 2}`);

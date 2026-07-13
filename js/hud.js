@@ -176,7 +176,9 @@ export function updateHUD(world) {
   }
 
   // level + rep + style readout, with the daily challenge underneath
-  let line = `LVL ${world.level || 1}`;
+  let line = (world.prestige > 0 ? `<span style="color:#ffe27a">★${world.prestige}</span> · ` : '') +
+    `LVL ${world.level || 1}`;
+  if (world.mayor?.elected) line += ' · 🏛';
   if (world.repTier && world.repTier !== 'NOBODY') line += ` · ${world.repTier}`;
   if (world.style > 5) line += ` · STYLE ${Math.round(world.style)}`;
   if (world.chaos > 10) line += ` · CHAOS ${Math.round(world.chaos)}`;
@@ -222,6 +224,17 @@ function drawMinimap(world) {
     g.moveTo(0, mz);
     g.lineTo(size, mz);
     g.stroke();
+  }
+
+  // empire district tints: green = yours, red = rival, flashing = under attack
+  if (world.empire) {
+    for (const z of world.empire.zones) {
+      const [x0, z0] = toMap(z.rect.x0, z.rect.z0);
+      const [x1, z1] = toMap(z.rect.x1, z.rect.z1);
+      const raided = world.empire.raid?.zone === z && Math.floor(performance.now() * 0.004) % 2 === 0;
+      g.fillStyle = raided ? 'rgba(255,90,74,0.5)' : z.owned ? 'rgba(47,175,78,0.22)' : 'rgba(160,32,32,0.18)';
+      g.fillRect(x0, z0, x1 - x0, z1 - z0);
+    }
   }
 
   // gang turf tint
@@ -293,6 +306,33 @@ function drawMinimap(world) {
     g.fillStyle = '#ffffff';
     g.fillRect(mx - 4, mz - 1.5, 8, 3);
     g.fillRect(mx - 1.5, mz - 4, 3, 8);
+  }
+
+  // empire flashpoint (takeover or raid)
+  if (world.empireBlip) {
+    const [mx, mz] = toMap(world.empireBlip.x, world.empireBlip.z);
+    g.fillStyle = world.empireBlip.raid ? '#ff5a4a' : '#2fd06a';
+    g.beginPath();
+    g.arc(mx, mz, 4 + Math.sin(performance.now() * 0.012) * 1.4, 0, Math.PI * 2);
+    g.fill();
+  }
+
+  // paparazzi subject
+  if (world.papBlip) {
+    const [mx, mz] = toMap(world.papBlip.x, world.papBlip.z);
+    g.fillStyle = '#ff4ad2';
+    g.fillRect(mx - 3, mz - 2, 6, 4);
+    g.fillStyle = '#17202b';
+    g.fillRect(mx - 1, mz - 1, 2, 2);
+  }
+
+  // smuggle drop point
+  if (world.smuggleBlip) {
+    const [mx, mz] = toMap(world.smuggleBlip.x, world.smuggleBlip.z);
+    g.fillStyle = '#c9b458';
+    g.beginPath();
+    g.arc(mx, mz, 4 + Math.sin(performance.now() * 0.01) * 1.2, 0, Math.PI * 2);
+    g.fill();
   }
 
   // the nemesis, mid-ambush

@@ -85,14 +85,26 @@ export function initWater(scene, world) {
   scene.add(water);
   const base = geo.attributes.position.array.slice(); // rest pose for the wave loop
 
-  // seabed tint so the shallows don't show scrubland green
+  // seabed — dropped deep so there's a real harbor floor to dive to
   const bed = new THREE.Mesh(
     new THREE.PlaneGeometry(WATER_X1 - WATER_X0, WATER_Z * 2),
-    new THREE.MeshLambertMaterial({ color: 0x11202c })
+    new THREE.MeshLambertMaterial({ color: 0x0a141c })
   );
   bed.rotation.x = -Math.PI / 2;
-  bed.position.set((WATER_X0 + WATER_X1) / 2, -0.02, 0);
+  bed.position.set((WATER_X0 + WATER_X1) / 2, -11, 0);
   scene.add(bed);
+  // skirt walls so the deep floor doesn't show daylight at the map edges
+  const skirtMat = new THREE.MeshLambertMaterial({ color: 0x0c1822, side: THREE.DoubleSide });
+  const mkSkirt = (w, x, z, ry) => {
+    const s = new THREE.Mesh(new THREE.PlaneGeometry(w, 11.2), skirtMat);
+    s.position.set(x, -5.5, z);
+    s.rotation.y = ry;
+    scene.add(s);
+  };
+  mkSkirt(WATER_Z * 2, WATER_X0 + 0.1, 0, Math.PI / 2);
+  mkSkirt(WATER_Z * 2, WATER_X1 - 0.1, 0, -Math.PI / 2);
+  mkSkirt(WATER_X1 - WATER_X0, (WATER_X0 + WATER_X1) / 2, -WATER_Z + 0.1, 0);
+  mkSkirt(WATER_X1 - WATER_X0, (WATER_X0 + WATER_X1) / 2, WATER_Z - 0.1, Math.PI);
 
   // seawall along the shoreline hides the water sheet's edge
   const wall = new THREE.Mesh(

@@ -213,10 +213,12 @@ export function updateTraffic(world, dt) {
     }
   }
 
-  // rush hours crawl, late night flows fast
+  // rush hours crawl, late night flows fast — and the mayor's traffic policy
+  // throttles the whole grid
   const hour = world.clock ?? 12;
-  const flow = (hour >= 8 && hour < 10) || (hour >= 17 && hour < 19) ? 0.65
-    : hour >= 22 || hour < 5 ? 1.35 : 1;
+  const policy = [0.6, 1, 1.5][world.policy?.traffic ?? 1];
+  const flow = ((hour >= 8 && hour < 10) || (hour >= 17 && hour < 19) ? 0.65
+    : hour >= 22 || hour < 5 ? 1.35 : 1) / policy;
 
   for (const t of traffic) {
     if (t.dead || !t.ai) continue;

@@ -143,10 +143,11 @@ export function updateZombies(world, dt) {
 
   world.zombieHint = `☣ OUTBREAK — survive until <b>06:00</b> · horde: ${zs.list.filter((z) => !z.dead).length} · down: ${zs.killed}`;
 
-  // the horde grows as the night deepens
+  // the horde grows as the night deepens (prestige cities rot faster)
   zs.spawnT -= dt;
+  const cap = MAX_HORDE + (world.prestige | 0) * 4;
   const alive = zs.list.filter((z) => !z.dead).length;
-  if (zs.spawnT <= 0 && alive < MAX_HORDE) {
+  if (zs.spawnT <= 0 && alive < cap) {
     zs.spawnT = 3.2;
     spawnAroundPlayer(world);
   }

@@ -265,17 +265,22 @@ function updateDrones(world, dt) {
 export function updatePolice(world, dt) {
   const player = world.player;
 
-  // wanted level decay
+  // wanted level decay — the mayor's police stance stretches or shrinks it,
+  // and MARTIAL adds bodies; prestige stars make the whole force meaner
+  const stance = [
+    { heat: 0.5, extra: 0 }, { heat: 1, extra: 0 }, { heat: 1.8, extra: 1 },
+  ][world.policy?.police ?? 1];
   if (world.wanted > 0) {
     world.wantedTimer += dt;
-    if (world.wantedTimer > (world.perks?.decay ?? 24)) { // stealth suit cools heat faster
+    if (world.wantedTimer > (world.perks?.decay ?? 24) * stance.heat) {
       world.wanted--;
       world.wantedTimer = 0;
     }
   }
 
   // spawn / despawn
-  const desired = world.wanted === 0 ? 0 : Math.min(6, world.wanted + 1);
+  const desired = world.wanted === 0 ? 0
+    : Math.min(8, world.wanted + 1 + stance.extra + (world.prestige | 0));
   const alive = world.cops.filter((c) => !c.dead && !c.van).length;
   if (alive < desired) spawnCop(world);
 
@@ -291,7 +296,7 @@ export function updatePolice(world, dt) {
   }
 
   const targetPos = focusPos(world);
-  const onFoot = !player.inCar && !player.inHeli;
+  const onFoot = !player.inCar && !player.inHeli && !player.inPlane;
   let copNearOnFoot = false;
 
   for (let i = world.cops.length - 1; i >= 0; i--) {

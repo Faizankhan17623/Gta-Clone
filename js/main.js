@@ -56,6 +56,14 @@ import { initDisasters, updateDisasters, forceDisaster } from './disasters.js';
 import { initPrison, updatePrison, prisonIntake } from './prison.js';
 import { initMyths, updateMyths } from './myths.js';
 import { initStranger, updateStranger } from './stranger.js';
+import { initCasinoHeist, updateCasinoHeist, endCasinoHeist } from './casinoheist.js';
+import { initDerby, updateDerby, tryStartDerby, abortDerby } from './derby.js';
+import { initPlane, updatePlaneFlight, updatePlaneDock } from './plane.js';
+import { initEmpire, updateEmpire, tryEmpireTakeover, endEmpireFights } from './empire.js';
+import { initDiving, updateDivingShack, updateDive } from './diving.js';
+import { initPaparazzi, updatePaparazzi } from './paparazzi.js';
+import { initMayor, updateMayor } from './mayor.js';
+import { initPrestige, updatePrestige } from './prestige.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
@@ -154,6 +162,7 @@ const player = {
   inCar: null,
   inHeli: null,
   inBoat: null,
+  inPlane: null,
   swim: false,
   animT: 0,
   vy: 0,
@@ -263,6 +272,7 @@ initFinale({
   freeze: () => { gameState = 'cards'; showTouchUI(false); document.exitPointerLock?.(); },
   unfreeze: leaveCards,
 }, scene, world, save);
+initPrestige(scene, world, save, { saveKey: SAVE_KEY }); // first: NG+ difficulty feeds the rest
 initNemesis(scene, world, save);
 initZombies(scene, world);
 initTrain(scene, world);
@@ -270,6 +280,13 @@ initDisasters(scene, world);
 initPrison(scene, world);
 initMyths(scene, world, save);
 initStranger(scene, world, save);
+initCasinoHeist(scene, world, save);
+initDerby(scene, world);
+initPlane(scene, world);
+initEmpire(scene, world, save);
+initDiving(scene, world, save);
+initPaparazzi(scene, world);
+initMayor(scene, world, save);
 initCheats({
   cash: () => { world.money += 10000; },
   clear: () => { world.wanted = 0; world.wantedTimer = 0; clearCops(world); },
@@ -466,6 +483,13 @@ function saveGame() {
       nemLvl: world.nemesis?.lvl, nemBeaten: world.nemesis?.beaten,
       mythsGraf: [...(world.myths?.graf || [])], mythsDone: [...(world.myths?.done || [])],
       strangerStage: world.stranger?.stage,
+      cheistDay: world.cheist?.doneDay,
+      empire: world.empire ? world.empire.zones.filter((z) => z.owned).map((z) => z.key) : [],
+      scuba: world.diving?.scuba,
+      pearls: world.diving ? world.diving.pearls.filter((p) => p.got).map((p) => p.idx) : [],
+      chests: world.diving ? world.diving.wrecks.filter((w) => w.looted).map((w) => w.key) : [],
+      mayor: world.mayor?.elected, policy: world.policy, salaryDay: world.mayor?.salaryDay,
+      prestige: world.prestige,
     }));
   } catch {}
 }
@@ -579,7 +603,24 @@ function updateCamera(dt) {
 
   let focusSpeed = 0;
 
-  if (player.inHeli) {
+  if (player.inPlane) {
+    const p = player.inPlane;
+    focusSpeed = p.vel.length();
+    let diff = p.heading - camYaw;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    camYaw += diff * Math.min(1, 2.4 * dt);
+
+    _camDesired.set(
+      p.pos.x - Math.sin(camYaw) * 19,
+      p.pos.y + 6 + camPitch * 9,
+      p.pos.z - Math.cos(camYaw) * 19
+    );
+    camPos.lerp(_camDesired, Math.min(1, 4.5 * dt));
+    camera.position.copy(camPos);
+    _camTarget.set(p.pos.x, p.pos.y + 1.5, p.pos.z);
+    camera.lookAt(_camTarget);
+  } else if (player.inHeli) {
     const h = player.inHeli;
     focusSpeed = h.vel.length();
     let diff = h.heading - camYaw;
@@ -738,7 +779,10 @@ function updateSwim(dt) {
   player.mesh.rotation.x += (0.9 - player.mesh.rotation.x) * Math.min(1, 6 * dt);
 
   const nearBoat = findNearestBoat(4.5);
-  setHint(nearBoat ? 'Press <b>E</b> to board the boat' : null);
+  if (nearBoat) setHint('Press <b>E</b> to board the boat');
+  else if (world.planeHint) setHint(world.planeHint); // the seaplane bobs at swim level
+  else if (world.diveHint) setHint(world.diveHint);
+  else setHint(null);
   if (pressed['KeyE'] && nearBoat) enterBoat(nearBoat);
 }
 
@@ -964,7 +1008,7 @@ function updateOnFoot(dt) {
   // the Lucky 7 blackjack table sits at the casino property spot
   world.cardsHint = null;
   const casino = world.propMarks?.find((m) => m.def.key === 'casino');
-  if (casino && !nearVeh && !nearHeli && !nearBoat &&
+  if (casino && !nearVeh && !nearHeli && !nearBoat && !(world.cheist?.stage > 0) &&
       Math.hypot(player.pos.x - casino.pos.x, player.pos.z - casino.pos.z) < 5) {
     world.cardsHint = 'Press <b>E</b> to play BLACKJACK at the Lucky 7';
   }
@@ -978,6 +1022,7 @@ function updateOnFoot(dt) {
   else if (world.prisonHint) setHint(world.prisonHint);
   else if (world.heistHint) setHint(world.heistHint);
   else if (world.trainHint) setHint(world.trainHint);
+  else if (world.cheistHint) setHint(world.cheistHint);
   else if (world.cardsHint) setHint(world.cardsHint);
   else if (world.shopHint) setHint(world.shopHint);
   else if (world.arenaHint) setHint(world.arenaHint);
@@ -992,6 +1037,13 @@ function updateOnFoot(dt) {
   else if (world.jetHint) setHint(world.jetHint);
   else if (world.lottoHint) setHint(world.lottoHint);
   else if (world.medHint) setHint(world.medHint);
+  else if (world.empireHint) setHint(world.empireHint);
+  else if (world.derbyHint) setHint(world.derbyHint);
+  else if (world.planeHint) setHint(world.planeHint);
+  else if (world.diveHint) setHint(world.diveHint);
+  else if (world.papHint) setHint(world.papHint);
+  else if (world.mayorHint) setHint(world.mayorHint);
+  else if (world.prestigeHint) setHint(world.prestigeHint);
   else if (world.mythHint) setHint(world.mythHint);
   else if (world.strangerHint) setHint(world.strangerHint);
   else setHint(null);
@@ -2143,9 +2195,14 @@ function triggerOver(text, color) {
   endNemesisFight(world);
   endOutbreak(world, false);
   endTrainHeist(world);
+  endCasinoHeist(world);
+  endEmpireFights(world);
+  abortDerby(world);
   // three stars or worse when the cuffs close = a night on Harbor Island
   if (text === 'BUSTED' && world.wanted >= 3 && world.prison) world.prison.pending = true;
   if (world.jetpack) world.jetpack.on = false;
+  if (world.diving) world.diving.on = false;
+  if (player.inPlane) { player.inPlane = null; player.mesh.visible = true; }
   resetChaos(world);
   engine.stop();
   rotor.stop();
@@ -2176,6 +2233,12 @@ function respawn() {
     player.inBoat.vel.set(0, 0, 0);
     player.inBoat = null;
   }
+  if (player.inPlane) {
+    player.inPlane.speed = 0;
+    player.inPlane.vel.set(0, 0, 0);
+    player.inPlane = null;
+  }
+  if (world.diving) world.diving.on = false;
   player.swim = false;
   releaseWeb(web);
   player.glide = false;
@@ -2324,6 +2387,15 @@ function update(dt) {
     hemi.intensity *= 0.85;
   }
 
+  // under the harbor: green-black murk, short sightlines
+  if (world.diving?.on) {
+    scene.fog.color.set(0x07222e);
+    scene.fog.near = 2;
+    scene.fog.far = 55;
+    hemi.intensity *= 0.5;
+    sun.intensity *= 0.4;
+  }
+
   // bloom breathes with the night: stronger glow when the city lights are on
   bloom.strength = world.settings.lowGfx ? 0 : 0.22 + dn.glow * 0.33;
 
@@ -2365,9 +2437,11 @@ function update(dt) {
   }
 
   if (player.inBoat) updateBoating(dt);
+  else if (player.inPlane) updatePlaneFlight(world, dt, keys, pressed);
   else if (player.inHeli) updateFlying(dt);
   else if (player.inCar) updateDriving(dt);
   else if (world.jetpack?.on) updateJetpack(world, dt, keys, pressed, camYaw);
+  else if (world.diving?.on) updateDive(world, dt, keys, () => camera.getWorldDirection(_rayDir));
   else if (web.zip) updateZip(dt);
   else if (web.attached) updateSwinging(dt);
   else updateOnFoot(dt);
@@ -2416,15 +2490,29 @@ function update(dt) {
   updatePrison(world, dt);
   updateMyths(world, dt, keys, pressed);
   updateStranger(world, dt, pressed);
+  updateCasinoHeist(world, dt, keys);
+  updateDerby(world, dt);
+  tryStartDerby(world, pressed);
+  updateEmpire(world, dt);
+  tryEmpireTakeover(world, pressed);
+  updatePlaneDock(world, dt, pressed);
+  updateDivingShack(world, dt, pressed);
+  updatePaparazzi(world, dt, pressed, camera);
+  updateMayor(world, dt, pressed);
+  updatePrestige(world, dt, keys);
   updateEffects(dt);
 
   // job status stays on screen even from inside a vehicle
   if (player.inCar || player.inBoat || player.inHeli) {
     const drivingHint = world.nemesisHint || world.zombieHint || world.prisonHint ||
-      world.heistHint || world.trainHint || world.turfHint || world.raidHint ||
+      world.heistHint || world.trainHint || world.cheistHint || world.derbyHint ||
+      world.empireHint || world.papHint || world.turfHint || world.raidHint ||
       world.medHint || world.expHint || world.bountyHint;
     if (drivingHint) setHint(drivingHint);
   }
+  // ...and from the cockpit or the deep
+  if (player.inPlane) setHint(world.planeHint || null);
+  else if (world.diving?.on) setHint(world.diveHint || null);
 
   // H starts the stadium arena when you're standing in the ring
   if (pressed['KeyH']) world._startArena = true;
@@ -2604,6 +2692,7 @@ window.__debug = {
   races: racesState,
   water: waterState,
   enterCards,
+  leaveCards,
   vig: () => world.vig,
   armored: () => world.armored,
   propRaid: () => world.propRaid,
@@ -2622,4 +2711,22 @@ window.__debug = {
   imprison: () => { world.prison.pending = true; prisonIntake(world); },
   myths: () => world.myths,
   stranger: () => world.stranger,
+  cheist: () => world.cheist,
+  derby: () => world.derby,
+  plane: () => world.plane,
+  smuggle: () => world.smuggle,
+  empire: () => world.empire,
+  diving: () => world.diving,
+  pap: () => world.pap,
+  mayor: () => world.mayor,
+  prestige: () => world.prestigeState,
+  boardPlane: () => {
+    const p = world.plane;
+    player.pos.set(p.pos.x + 2, p.pos.y, p.pos.z);
+    player.inPlane = p;
+    player.swim = false;
+    player.mesh.visible = false;
+    engine.start();
+  },
+  enterCarDirect: (v) => enterCar(v || world.parked.find((c) => !c.dead && !c.bike)),
 };

@@ -105,7 +105,8 @@ function clearFight(world) {
 
 export function initNemesis(scene, world, save) {
   world.nemesis = {
-    lvl: Math.min(5, save?.nemLvl || 1),
+    // prestige stars mean he never comes back soft
+    lvl: Math.min(5, Math.max(save?.nemLvl || 1, 1 + (world.prestige | 0))),
     beaten: save?.nemBeaten | 0,
     active: false,
     foe: null,
