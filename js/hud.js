@@ -373,6 +373,25 @@ function drawMinimap(world) {
     g.fill();
   }
 
+  // tournament: the checkpoint gate you're chasing
+  if (world.tourneyBlip) {
+    const [mx, mz] = toMap(world.tourneyBlip.x, world.tourneyBlip.z);
+    g.fillStyle = '#ffa030';
+    g.beginPath();
+    g.moveTo(mx, mz - 4); g.lineTo(mx + 4, mz + 3); g.lineTo(mx - 4, mz + 3);
+    g.closePath();
+    g.fill();
+  }
+
+  // contracts: the current mark
+  if (world.contractBlip) {
+    const [mx, mz] = toMap(world.contractBlip.x, world.contractBlip.z);
+    g.fillStyle = '#c9445a';
+    g.beginPath();
+    g.arc(mx, mz, 4, 0, Math.PI * 2);
+    g.fill();
+  }
+
   // the syndicate: burner phone / chapter objective
   if (world.syndBlip) {
     const [mx, mz] = toMap(world.syndBlip.x, world.syndBlip.z);

@@ -70,6 +70,10 @@ import { initFirefight, updateFirefight, forceFireEvent } from './firefight.js';
 import { initMuseum, updateMuseum, endMuseum } from './museum.js';
 import { initKaiju, updateKaiju, forceKaiju } from './kaiju.js';
 import { initSyndicate, updateSyndicate, endSyndicate } from './syndicate.js';
+import { initSkydive, updateSkydivePad, updateSkydive, bailFromPlane } from './skydive.js';
+import { initTournament, updateTournament, abortTournament } from './tournament.js';
+import { initCrew, updateCrew } from './crew.js';
+import { initContracts, updateContracts, endContract } from './contracts.js';
 import { initFishing, updateFishing } from './fishing.js';
 import { initNightclub, updateNightclub } from './nightclub.js';
 import { initSkateboard, updateSkateboard } from './skateboard.js';
@@ -305,6 +309,10 @@ initNightclub(scene, world, save);
 initSkateboard(scene, world, save);
 initKaiju(scene, world);
 initSyndicate(scene, world, save);
+initSkydive(scene, world);
+initTournament(scene, world, save);
+initCrew(scene, world, save);
+initContracts(scene, world, save);
 initCheats({
   cash: () => { world.money += 10000; },
   clear: () => { world.wanted = 0; world.wantedTimer = 0; clearCops(world); },
@@ -513,6 +521,9 @@ function saveGame() {
       swingBest: world.swing ? Object.fromEntries(world.swing.courses.map((c) => [c.key, c.best])) : {},
       museumDay: world.museum?.doneDay, club: world.club?.owned, deck: world.skate?.owned,
       synd: world.synd?.chapter,
+      tourneyRung: world.tourney?.rung, tourneyChamp: world.tourney?.champCar,
+      crew: world.crew?.members.filter((m) => m.hired).map((m) => m.role.key),
+      contractRank: world.contracts?.rank,
     }));
   } catch {}
 }
@@ -1085,6 +1096,10 @@ function updateOnFoot(dt) {
   else if (world.mythHint) setHint(world.mythHint);
   else if (world.syndHint) setHint(world.syndHint);
   else if (world.kaijuHint) setHint(world.kaijuHint);
+  else if (world.skydiveHint) setHint(world.skydiveHint);
+  else if (world.tourneyHint) setHint(world.tourneyHint);
+  else if (world.crewHint) setHint(world.crewHint);
+  else if (world.contractHint) setHint(world.contractHint);
   else if (world.strangerHint) setHint(world.strangerHint);
   else setHint(null);
   if (pressed['KeyE']) {
@@ -2266,6 +2281,9 @@ function triggerOver(text, color) {
   endSwingRace(world);
   endMuseum(world);
   endSyndicate(world);
+  abortTournament(world);
+  endContract(world);
+  if (world.skydive) world.skydive.on = false;
   // three stars or worse when the cuffs close = a night on Harbor Island
   if (text === 'BUSTED' && world.wanted >= 3 && world.prison) world.prison.pending = true;
   if (world.jetpack) world.jetpack.on = false;
@@ -2504,11 +2522,13 @@ function update(dt) {
     return;
   }
 
+  if (player.inPlane && pressed['KeyB']) bailFromPlane(world);
   if (player.inBoat) updateBoating(dt);
   else if (player.inPlane) updatePlaneFlight(world, dt, keys, pressed);
   else if (player.inHeli) updateFlying(dt);
   else if (player.inCar) updateDriving(dt);
   else if (world.jetpack?.on) updateJetpack(world, dt, keys, pressed, camYaw);
+  else if (world.skydive?.on) updateSkydive(world, dt, keys, pressed, camYaw);
   else if (world.diving?.on) updateDive(world, dt, keys, () => camera.getWorldDirection(_rayDir));
   else if (web.zip) updateZip(dt);
   else if (web.attached) updateSwinging(dt);
@@ -2578,6 +2598,10 @@ function update(dt) {
   updateSkateboard(world, dt, pressed);
   updateKaiju(world, dt);
   updateSyndicate(world, dt, keys, pressed);
+  updateSkydivePad(world, dt, pressed);
+  updateTournament(world, dt, pressed);
+  updateCrew(world, dt, pressed);
+  updateContracts(world, dt, pressed);
   updateEffects(dt);
 
   // job status stays on screen even from inside a vehicle
@@ -2586,7 +2610,8 @@ function update(dt) {
       world.heistHint || world.trainHint || world.cheistHint || world.derbyHint ||
       world.empireHint || world.papHint || world.fireHint || world.museumHint ||
       world.turfHint || world.raidHint || world.syndHint || world.kaijuHint ||
-      world.medHint || world.expHint || world.bountyHint;
+      world.medHint || world.expHint || world.bountyHint ||
+      world.tourneyHint || world.contractHint;
     if (drivingHint) setHint(drivingHint);
   }
   // ...and from the cockpit or the deep
@@ -2819,4 +2844,9 @@ window.__debug = {
   kaiju: () => world.kaiju,
   forceKaiju: () => forceKaiju(world),
   synd: () => world.synd,
+  skydive: () => world.skydive,
+  startSkydive: () => { player.pos.copy(world.skydive.padPos); },
+  tourney: () => world.tourney,
+  crew: () => world.crew,
+  contracts: () => world.contracts,
 };

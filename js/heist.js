@@ -11,6 +11,12 @@ import { addCrime } from './police.js';
 const DRILL_TIME = 20;
 const REWARD = 3000;
 
+// crew.js sets world.crew.hacker/muscle/driver once those specialists are
+// hired; the bank job reads them directly rather than crew.js reaching in.
+function drillTime(world) { return world.crew?.hacker ? DRILL_TIME * 0.65 : DRILL_TIME; }
+function guardCount(world, n) { return world.crew?.muscle ? Math.max(2, n - 2) : n; }
+function escapeStars(world) { return world.crew?.driver ? 3 : 4; }
+
 function makeGuard(world, x, z) {
   const mesh = new THREE.Mesh(
     new THREE.BoxGeometry(0.7, 1.8, 0.5),
@@ -136,9 +142,10 @@ export function updateHeist(world, dt, keys, pressed) {
       if (h.holdT >= 1.5) {
         h.holdT = 0;
         h.state = 'drill';
-        h.t = DRILL_TIME;
+        h.t = drillTime(world);
+        h.drillTotal = h.t;
         h.wave2 = false;
-        spawnGuards(world, 4);
+        spawnGuards(world, guardCount(world, 4));
         addCrime(world, 3);
         sfxMissionPass();
         showMissionMsg('THE BANK JOB', 'Hold the lobby while the drill runs!', '#ffd24a');
@@ -158,9 +165,9 @@ export function updateHeist(world, dt, keys, pressed) {
     } else {
       world.heistHint = 'GET BACK TO THE BANK — the drill stalled!';
     }
-    if (!h.wave2 && h.t < DRILL_TIME / 2) {
+    if (!h.wave2 && h.t < h.drillTotal / 2) {
       h.wave2 = true;
-      spawnGuards(world, 4);
+      spawnGuards(world, guardCount(world, 4));
       showToast('MORE GUARDS INBOUND!');
     }
     // guards close in and swing
@@ -181,7 +188,7 @@ export function updateHeist(world, dt, keys, pressed) {
       h.state = 'escape';
       clearGuards(world);
       h.beam.visible = true;
-      world.wanted = Math.max(world.wanted, 4);
+      world.wanted = Math.max(world.wanted, escapeStars(world));
       world.wantedTimer = 0;
       addChaos(world, 40);
       sfxMissionPass();
@@ -198,11 +205,13 @@ export function updateHeist(world, dt, keys, pressed) {
     h.state = 'idle';
     h.doneDay = world.dailyDay;
     h.beam.visible = false;
-    world.money += REWARD;
+    const fullCrew = world.crew?.driver && world.crew?.hacker && world.crew?.muscle;
+    const pay = fullCrew ? Math.round(REWARD * 1.5) : REWARD;
+    world.money += pay;
     addRep(world, 800);
     world.addXP?.(400);
     sfxMissionPass();
-    showMissionMsg('HEIST COMPLETE!', `+$${REWARD} — the city will remember this`, '#ffd24a');
+    showMissionMsg('HEIST COMPLETE!', `+$${pay}${fullCrew ? ' (full crew cut)' : ''} — the city will remember this`, '#ffd24a');
     showNews('bank robbers vanish without a trace');
     world.onSave?.();
   }
