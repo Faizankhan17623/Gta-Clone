@@ -373,6 +373,32 @@ function drawMinimap(world) {
     g.fill();
   }
 
+  // taxi fare / drop-off pin
+  if (world.taxiBlip) {
+    const [mx, mz] = toMap(world.taxiBlip.x, world.taxiBlip.z);
+    g.fillStyle = '#d0a020';
+    g.fillRect(mx - 3, mz - 3, 6, 6);
+  }
+
+  // valet parking slot
+  if (world.valetBlip) {
+    const [mx, mz] = toMap(world.valetBlip.x, world.valetBlip.z);
+    g.strokeStyle = '#7cf78c';
+    g.lineWidth = 2;
+    g.beginPath();
+    g.arc(mx, mz, 4, 0, Math.PI * 2);
+    g.stroke();
+  }
+
+  // drone delivery target
+  if (world.droneBlip) {
+    const [mx, mz] = toMap(world.droneBlip.x, world.droneBlip.z);
+    g.fillStyle = '#4ad2ff';
+    g.beginPath();
+    g.arc(mx, mz, 3.5, 0, Math.PI * 2);
+    g.fill();
+  }
+
   // tournament: the checkpoint gate you're chasing
   if (world.tourneyBlip) {
     const [mx, mz] = toMap(world.tourneyBlip.x, world.tourneyBlip.z);

@@ -78,6 +78,14 @@ import { initSubway, updateSubway } from './subway.js';
 import { initBusking, updateBusking, abortBusking } from './busking.js';
 import { initWorkbench, updateWorkbench } from './workbench.js';
 import { initStormChaser, updateStormChaser } from './stormchaser.js';
+import { initFerry, updateFerry } from './ferry.js';
+import { initZipline, updateZipline } from './zipline.js';
+import { initBalloon, updateBalloonPad, updateBalloon } from './balloon.js';
+import { initDrone, updateDronePad, updateDrone } from './drone.js';
+import { initTaxi, updateTaxi } from './taxi.js';
+import { initValet, updateValet } from './valet.js';
+import { initCarwash, updateCarwash } from './carwash.js';
+import { initBarber, updateBarber } from './barber.js';
 import { initFishing, updateFishing } from './fishing.js';
 import { initNightclub, updateNightclub } from './nightclub.js';
 import { initSkateboard, updateSkateboard } from './skateboard.js';
@@ -321,6 +329,14 @@ initSubway(scene, world);
 initBusking(scene, world, save);
 initWorkbench(scene, world, save);
 initStormChaser(scene, world, save);
+initFerry(scene, world);
+initZipline(scene, world);
+initBalloon(scene, world);
+initDrone(scene, world);
+initTaxi(world);
+initValet(scene, world);
+initCarwash(scene, world);
+initBarber(scene, world, save);
 initCheats({
   cash: () => { world.money += 10000; },
   clear: () => { world.wanted = 0; world.wantedTimer = 0; clearCops(world); },
@@ -535,6 +551,7 @@ function saveGame() {
       fame: world.busking?.fame,
       gunMods: world.gunMods,
       stormRank: world.storm?.rank,
+      hair: world.barber?.hair,
     }));
   } catch {}
 }
@@ -1121,6 +1138,14 @@ function updateOnFoot(dt) {
   else if (world.buskHint) setHint(world.buskHint);
   else if (world.workbenchHint) setHint(world.workbenchHint);
   else if (world.stormHint) setHint(world.stormHint);
+  else if (world.ferryHint) setHint(world.ferryHint);
+  else if (world.ziplineHint) setHint(world.ziplineHint);
+  else if (world.balloonHint) setHint(world.balloonHint);
+  else if (world.droneHint) setHint(world.droneHint);
+  else if (world.taxiHint) setHint(world.taxiHint);
+  else if (world.valetHint) setHint(world.valetHint);
+  else if (world.carwashHint) setHint(world.carwashHint);
+  else if (world.barberHint) setHint(world.barberHint);
   else if (world.strangerHint) setHint(world.strangerHint);
   else setHint(null);
   if (pressed['KeyE']) {
@@ -2309,6 +2334,17 @@ function triggerOver(text, color) {
   if (world.subway) world.subway.menu = null;
   if (world.workbench) world.workbench.open = false;
   abortBusking(world);
+  if (world.ferry) { world.ferry.riding = 0; world.ferryLocked = false; }
+  if (world.ziplines) world.ziplines.riding = null;
+  if (world.balloon) world.balloon.riding = false;
+  if (world.drone?.flying) { world.drone.flying = false; world.drone.mesh.visible = false; world.drone.mesh.position.copy(world.drone.padPos); }
+  if (world.taxi?.active) { if (world.taxi.fare?.ch?.group?.parent) world.scene.remove(world.taxi.fare.ch.group); world.taxi.active = false; }
+  if (world.valet?.active) {
+    const pi = world.parked.indexOf(world.valet.car);
+    if (pi >= 0) world.parked.splice(pi, 1);
+    if (world.valet.car) world.scene.remove(world.valet.car.mesh);
+    world.valet.active = false;
+  }
   // three stars or worse when the cuffs close = a night on Harbor Island
   if (text === 'BUSTED' && world.wanted >= 3 && world.prison) world.prison.pending = true;
   if (world.jetpack) world.jetpack.on = false;
@@ -2555,6 +2591,8 @@ function update(dt) {
   else if (player.inCar) updateDriving(dt);
   else if (world.jetpack?.on) updateJetpack(world, dt, keys, pressed, camYaw);
   else if (world.skydive?.on) updateSkydive(world, dt, keys, pressed, camYaw);
+  else if (world.balloon?.riding) updateBalloon(world, dt, keys, camYaw);
+  else if (world.ferryLocked) {} // scripted crossing — updateFerry already moved the player this frame
   else if (world.diving?.on) updateDive(world, dt, keys, () => camera.getWorldDirection(_rayDir));
   else if (web.zip) updateZip(dt);
   else if (web.attached) updateSwinging(dt);
@@ -2632,6 +2670,15 @@ function update(dt) {
   updateBusking(world, dt, pressed);
   updateWorkbench(world, dt, pressed);
   updateStormChaser(world, dt, pressed, camera);
+  updateFerry(world, dt, pressed, camera);
+  updateZipline(world, dt, pressed);
+  updateBalloonPad(world, dt, pressed);
+  updateDronePad(world, dt, pressed);
+  updateDrone(world, dt, keys, camYaw);
+  updateTaxi(world, dt, pressed);
+  updateValet(world, dt, pressed);
+  updateCarwash(world, dt, keys);
+  updateBarber(world, dt, pressed);
   updateEffects(dt);
 
   // job status stays on screen even from inside a vehicle
@@ -2641,7 +2688,8 @@ function update(dt) {
       world.empireHint || world.papHint || world.fireHint || world.museumHint ||
       world.turfHint || world.raidHint || world.syndHint || world.kaijuHint ||
       world.medHint || world.expHint || world.bountyHint ||
-      world.tourneyHint || world.contractHint || world.stormHint;
+      world.tourneyHint || world.contractHint || world.stormHint ||
+      world.taxiHint || world.valetHint || world.carwashHint;
     if (drivingHint) setHint(drivingHint);
   }
   // ...and from the cockpit or the deep
