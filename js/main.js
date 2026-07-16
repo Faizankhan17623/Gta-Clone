@@ -74,6 +74,10 @@ import { initSkydive, updateSkydivePad, updateSkydive, bailFromPlane } from './s
 import { initTournament, updateTournament, abortTournament } from './tournament.js';
 import { initCrew, updateCrew } from './crew.js';
 import { initContracts, updateContracts, endContract } from './contracts.js';
+import { initSubway, updateSubway } from './subway.js';
+import { initBusking, updateBusking, abortBusking } from './busking.js';
+import { initWorkbench, updateWorkbench } from './workbench.js';
+import { initStormChaser, updateStormChaser } from './stormchaser.js';
 import { initFishing, updateFishing } from './fishing.js';
 import { initNightclub, updateNightclub } from './nightclub.js';
 import { initSkateboard, updateSkateboard } from './skateboard.js';
@@ -313,6 +317,10 @@ initSkydive(scene, world);
 initTournament(scene, world, save);
 initCrew(scene, world, save);
 initContracts(scene, world, save);
+initSubway(scene, world);
+initBusking(scene, world, save);
+initWorkbench(scene, world, save);
+initStormChaser(scene, world, save);
 initCheats({
   cash: () => { world.money += 10000; },
   clear: () => { world.wanted = 0; world.wantedTimer = 0; clearCops(world); },
@@ -524,6 +532,9 @@ function saveGame() {
       tourneyRung: world.tourney?.rung, tourneyChamp: world.tourney?.champCar,
       crew: world.crew?.members.filter((m) => m.hired).map((m) => m.role.key),
       contractRank: world.contracts?.rank,
+      fame: world.busking?.fame,
+      gunMods: world.gunMods,
+      stormRank: world.storm?.rank,
     }));
   } catch {}
 }
@@ -549,6 +560,12 @@ const ammo = { mg: save.mg ?? 60, rpg: save.rpg ?? 3, sg: save.sg ?? 24, sn: sav
 let weaponIdx = 0;
 let shootT = 0;
 const rockets = [];
+
+// the extended-mag mod (workbench.js) tightens the cooldown between shots
+function weaponRate() {
+  const w = WEAPONS[weaponIdx];
+  return world.gunMods?.mag ? w.rate * 0.72 : w.rate;
+}
 
 function switchWeapon(i) {
   weaponIdx = i;
@@ -1100,6 +1117,10 @@ function updateOnFoot(dt) {
   else if (world.tourneyHint) setHint(world.tourneyHint);
   else if (world.crewHint) setHint(world.crewHint);
   else if (world.contractHint) setHint(world.contractHint);
+  else if (world.subwayHint) setHint(world.subwayHint);
+  else if (world.buskHint) setHint(world.buskHint);
+  else if (world.workbenchHint) setHint(world.workbenchHint);
+  else if (world.stormHint) setHint(world.stormHint);
   else if (world.strangerHint) setHint(world.strangerHint);
   else setHint(null);
   if (pressed['KeyE']) {
@@ -1112,7 +1133,7 @@ function updateOnFoot(dt) {
   // shooting
   shootT -= dt;
   if (mouse.down && shootT <= 0 && (document.pointerLockElement || isTouch)) {
-    shootT = WEAPONS[weaponIdx].rate;
+    shootT = weaponRate();
     shoot();
   }
 
@@ -1674,7 +1695,7 @@ function updateSwinging(dt) {
   // one hand stays free for the pistol
   shootT -= dt;
   if (mouse.down && shootT <= 0 && (document.pointerLockElement || isTouch)) {
-    shootT = WEAPONS[weaponIdx].rate;
+    shootT = weaponRate();
     shoot();
   }
 }
@@ -2021,7 +2042,7 @@ function shoot() {
   camera.getWorldDirection(_rayDir);
   sfxShot(w.sfx);
   world.lastShot = { pos: player.pos.clone(), t: world.time };
-  if (world.wanted === 0) addCrime(world, 1);
+  if (world.wanted === 0 && !world.gunMods?.silencer) addCrime(world, 1);
 
   if (w.rocket) {
     fireRocket();
@@ -2038,9 +2059,10 @@ function shoot() {
 
 function fireBullet(w) {
   camera.getWorldDirection(_rayDir);
-  _rayDir.x += (Math.random() - 0.5) * w.spread * 2;
-  _rayDir.y += (Math.random() - 0.5) * w.spread * 2;
-  _rayDir.z += (Math.random() - 0.5) * w.spread * 2;
+  const spread = world.gunMods?.scope ? w.spread * 0.55 : w.spread;
+  _rayDir.x += (Math.random() - 0.5) * spread * 2;
+  _rayDir.y += (Math.random() - 0.5) * spread * 2;
+  _rayDir.z += (Math.random() - 0.5) * spread * 2;
   _rayDir.normalize();
   _rayOrigin.copy(camera.position);
 
@@ -2284,6 +2306,9 @@ function triggerOver(text, color) {
   abortTournament(world);
   endContract(world);
   if (world.skydive) world.skydive.on = false;
+  if (world.subway) world.subway.menu = null;
+  if (world.workbench) world.workbench.open = false;
+  abortBusking(world);
   // three stars or worse when the cuffs close = a night on Harbor Island
   if (text === 'BUSTED' && world.wanted >= 3 && world.prison) world.prison.pending = true;
   if (world.jetpack) world.jetpack.on = false;
@@ -2465,6 +2490,7 @@ function update(dt) {
     sun.intensity += wx.flash * 0.8;
   }
   world.rainI = wx.intensity; // myths check the weather too
+  world.lightningFlash = wx.flash; // storm chaser watches for the strike window
 
   // outbreak nights close in: thicker fog, dimmer sky
   if (world.zombies?.active) {
@@ -2602,6 +2628,10 @@ function update(dt) {
   updateTournament(world, dt, pressed);
   updateCrew(world, dt, pressed);
   updateContracts(world, dt, pressed);
+  updateSubway(world, dt, pressed);
+  updateBusking(world, dt, pressed);
+  updateWorkbench(world, dt, pressed);
+  updateStormChaser(world, dt, pressed, camera);
   updateEffects(dt);
 
   // job status stays on screen even from inside a vehicle
@@ -2611,7 +2641,7 @@ function update(dt) {
       world.empireHint || world.papHint || world.fireHint || world.museumHint ||
       world.turfHint || world.raidHint || world.syndHint || world.kaijuHint ||
       world.medHint || world.expHint || world.bountyHint ||
-      world.tourneyHint || world.contractHint;
+      world.tourneyHint || world.contractHint || world.stormHint;
     if (drivingHint) setHint(drivingHint);
   }
   // ...and from the cockpit or the deep
@@ -2849,4 +2879,8 @@ window.__debug = {
   tourney: () => world.tourney,
   crew: () => world.crew,
   contracts: () => world.contracts,
+  subway: () => world.subway,
+  busking: () => world.busking,
+  gunMods: () => world.gunMods,
+  storm: () => world.storm,
 };
