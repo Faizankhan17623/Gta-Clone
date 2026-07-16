@@ -373,6 +373,24 @@ function drawMinimap(world) {
     g.fill();
   }
 
+  // the syndicate: burner phone / chapter objective
+  if (world.syndBlip) {
+    const [mx, mz] = toMap(world.syndBlip.x, world.syndBlip.z);
+    g.fillStyle = '#d0a020';
+    g.beginPath();
+    g.arc(mx, mz, 4, 0, Math.PI * 2);
+    g.fill();
+  }
+
+  // the harbor thing, wading through the city
+  if (world.kaijuBlip) {
+    const [mx, mz] = toMap(world.kaijuBlip.x, world.kaijuBlip.z);
+    g.fillStyle = Math.floor(performance.now() * 0.006) % 2 === 0 ? '#5ef2a0' : '#0e1f1c';
+    g.beginPath();
+    g.arc(mx, mz, 5 + Math.sin(performance.now() * 0.012) * 1.8, 0, Math.PI * 2);
+    g.fill();
+  }
+
   // the nemesis, mid-ambush
   if (world.nemesisBlip) {
     const [mx, mz] = toMap(world.nemesisBlip.x, world.nemesisBlip.z);

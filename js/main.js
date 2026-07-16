@@ -68,6 +68,8 @@ import { initGauntlet, updateGauntlet, endGauntlet } from './gauntlet.js';
 import { initSwingRaces, updateSwingRaces, endSwingRace } from './swingrace.js';
 import { initFirefight, updateFirefight, forceFireEvent } from './firefight.js';
 import { initMuseum, updateMuseum, endMuseum } from './museum.js';
+import { initKaiju, updateKaiju, forceKaiju } from './kaiju.js';
+import { initSyndicate, updateSyndicate, endSyndicate } from './syndicate.js';
 import { initFishing, updateFishing } from './fishing.js';
 import { initNightclub, updateNightclub } from './nightclub.js';
 import { initSkateboard, updateSkateboard } from './skateboard.js';
@@ -301,6 +303,8 @@ initMuseum(scene, world, save);
 initFishing(scene, world);
 initNightclub(scene, world, save);
 initSkateboard(scene, world, save);
+initKaiju(scene, world);
+initSyndicate(scene, world, save);
 initCheats({
   cash: () => { world.money += 10000; },
   clear: () => { world.wanted = 0; world.wantedTimer = 0; clearCops(world); },
@@ -331,6 +335,7 @@ initCheats({
   outbreak: () => { if (world.clock > 6 && world.clock < 21) world.clock = 22.2; startOutbreak(world); },
   disaster: () => forceDisaster(world),
   fire: () => forceFireEvent(world),
+  kaiju: () => forceKaiju(world),
 });
 let prevMissionDone = mission.done;
 let prevTokens = world.tokensGot.length;
@@ -507,6 +512,7 @@ function saveGame() {
       prestige: world.prestige,
       swingBest: world.swing ? Object.fromEntries(world.swing.courses.map((c) => [c.key, c.best])) : {},
       museumDay: world.museum?.doneDay, club: world.club?.owned, deck: world.skate?.owned,
+      synd: world.synd?.chapter,
     }));
   } catch {}
 }
@@ -1077,6 +1083,8 @@ function updateOnFoot(dt) {
   else if (world.fishHint) setHint(world.fishHint);
   else if (world.skateHint) setHint(world.skateHint);
   else if (world.mythHint) setHint(world.mythHint);
+  else if (world.syndHint) setHint(world.syndHint);
+  else if (world.kaijuHint) setHint(world.kaijuHint);
   else if (world.strangerHint) setHint(world.strangerHint);
   else setHint(null);
   if (pressed['KeyE']) {
@@ -2257,6 +2265,7 @@ function triggerOver(text, color) {
   endGauntlet(world);
   endSwingRace(world);
   endMuseum(world);
+  endSyndicate(world);
   // three stars or worse when the cuffs close = a night on Harbor Island
   if (text === 'BUSTED' && world.wanted >= 3 && world.prison) world.prison.pending = true;
   if (world.jetpack) world.jetpack.on = false;
@@ -2567,6 +2576,8 @@ function update(dt) {
   updateFishing(world, dt, pressed);
   updateNightclub(world, dt, pressed);
   updateSkateboard(world, dt, pressed);
+  updateKaiju(world, dt);
+  updateSyndicate(world, dt, keys, pressed);
   updateEffects(dt);
 
   // job status stays on screen even from inside a vehicle
@@ -2574,7 +2585,7 @@ function update(dt) {
     const drivingHint = world.nemesisHint || world.zombieHint || world.prisonHint ||
       world.heistHint || world.trainHint || world.cheistHint || world.derbyHint ||
       world.empireHint || world.papHint || world.fireHint || world.museumHint ||
-      world.turfHint || world.raidHint ||
+      world.turfHint || world.raidHint || world.syndHint || world.kaijuHint ||
       world.medHint || world.expHint || world.bountyHint;
     if (drivingHint) setHint(drivingHint);
   }
@@ -2805,4 +2816,7 @@ window.__debug = {
     engine.start();
   },
   enterCarDirect: (v) => enterCar(v || world.parked.find((c) => !c.dead && !c.bike)),
+  kaiju: () => world.kaiju,
+  forceKaiju: () => forceKaiju(world),
+  synd: () => world.synd,
 };

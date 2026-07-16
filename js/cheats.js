@@ -21,6 +21,7 @@ const CODES = {
   BRAINS: 'outbreak',    // zombie night, on demand
   QUAKY: 'disaster',     // shake the city
   BURNBURN: 'fire',      // somebody call Station 7
+  DEEPDARK: 'kaiju',     // the harbor thing rises on demand
 };
 
 export function initCheats(actions) {
