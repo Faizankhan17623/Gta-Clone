@@ -86,6 +86,8 @@ import { initTaxi, updateTaxi } from './taxi.js';
 import { initValet, updateValet } from './valet.js';
 import { initCarwash, updateCarwash } from './carwash.js';
 import { initBarber, updateBarber } from './barber.js';
+import { initArmsdealer, updateArmsdealer } from './armsdealer.js';
+import { initDruglab, updateDruglab, endDruglab } from './druglab.js';
 import { initFishing, updateFishing } from './fishing.js';
 import { initNightclub, updateNightclub } from './nightclub.js';
 import { initSkateboard, updateSkateboard } from './skateboard.js';
@@ -337,6 +339,8 @@ initTaxi(world);
 initValet(scene, world);
 initCarwash(scene, world);
 initBarber(scene, world, save);
+initArmsdealer(scene, world);
+initDruglab(scene, world, save);
 initCheats({
   cash: () => { world.money += 10000; },
   clear: () => { world.wanted = 0; world.wantedTimer = 0; clearCops(world); },
@@ -552,6 +556,7 @@ function saveGame() {
       gunMods: world.gunMods,
       stormRank: world.storm?.rank,
       hair: world.barber?.hair,
+      druglabDay: world.druglab?.doneDay,
     }));
   } catch {}
 }
@@ -1146,6 +1151,8 @@ function updateOnFoot(dt) {
   else if (world.valetHint) setHint(world.valetHint);
   else if (world.carwashHint) setHint(world.carwashHint);
   else if (world.barberHint) setHint(world.barberHint);
+  else if (world.armsHint) setHint(world.armsHint);
+  else if (world.druglabHint) setHint(world.druglabHint);
   else if (world.strangerHint) setHint(world.strangerHint);
   else setHint(null);
   if (pressed['KeyE']) {
@@ -2330,6 +2337,7 @@ function triggerOver(text, color) {
   endSyndicate(world);
   abortTournament(world);
   endContract(world);
+  endDruglab(world);
   if (world.skydive) world.skydive.on = false;
   if (world.subway) world.subway.menu = null;
   if (world.workbench) world.workbench.open = false;
@@ -2679,6 +2687,8 @@ function update(dt) {
   updateValet(world, dt, pressed);
   updateCarwash(world, dt, keys);
   updateBarber(world, dt, pressed);
+  updateArmsdealer(world, dt, pressed, ammo);
+  updateDruglab(world, dt);
   updateEffects(dt);
 
   // job status stays on screen even from inside a vehicle
@@ -2689,7 +2699,7 @@ function update(dt) {
       world.turfHint || world.raidHint || world.syndHint || world.kaijuHint ||
       world.medHint || world.expHint || world.bountyHint ||
       world.tourneyHint || world.contractHint || world.stormHint ||
-      world.taxiHint || world.valetHint || world.carwashHint;
+      world.taxiHint || world.valetHint || world.carwashHint || world.druglabHint;
     if (drivingHint) setHint(drivingHint);
   }
   // ...and from the cockpit or the deep

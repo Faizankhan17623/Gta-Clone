@@ -390,6 +390,15 @@ function drawMinimap(world) {
     g.stroke();
   }
 
+  // drug lab raid site
+  if (world.druglabBlip) {
+    const [mx, mz] = toMap(world.druglabBlip.x, world.druglabBlip.z);
+    g.fillStyle = '#c9a020';
+    g.beginPath();
+    g.arc(mx, mz, 4 + Math.sin(performance.now() * 0.01) * 1.2, 0, Math.PI * 2);
+    g.fill();
+  }
+
   // drone delivery target
   if (world.droneBlip) {
     const [mx, mz] = toMap(world.droneBlip.x, world.droneBlip.z);
