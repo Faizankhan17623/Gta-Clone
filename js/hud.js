@@ -390,6 +390,16 @@ function drawMinimap(world) {
     g.stroke();
   }
 
+  // ringing payphone / courier drop
+  if (world.phoneBlip) {
+    const [mx, mz] = toMap(world.phoneBlip.x, world.phoneBlip.z);
+    g.strokeStyle = '#7cd0f7';
+    g.lineWidth = 2;
+    g.beginPath();
+    g.arc(mx, mz, 3.5 + Math.sin(performance.now() * 0.012) * 1.2, 0, Math.PI * 2);
+    g.stroke();
+  }
+
   // drug lab raid site
   if (world.druglabBlip) {
     const [mx, mz] = toMap(world.druglabBlip.x, world.druglabBlip.z);

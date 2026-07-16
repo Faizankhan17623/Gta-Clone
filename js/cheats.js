@@ -22,6 +22,16 @@ const CODES = {
   QUAKY: 'disaster',     // shake the city
   BURNBURN: 'fire',      // somebody call Station 7
   DEEPDARK: 'kaiju',     // the harbor thing rises on demand
+  BRASSRAIN: 'maxammo',  // every pocket rattles: all ammo maxed
+  IRONWORKS: 'gunmods',  // the gunsmith's whole catalog, free
+  INVINCO: 'god',        // untouchable for a minute
+  SONICRUN: 'zoom',      // coffee has nothing on this (90s sprint)
+  BOUNCY: 'bouncy',      // moon-grade legs for two minutes
+  HUSHFUND: 'hush',      // the precinct looks away for two minutes
+  CHAOS: 'fivestars',    // instant five stars, good luck
+  SKYWARD: 'skyward',    // the jetpack is suddenly yours
+  DRUNKY: 'drunk',       // the camera has had a few
+  NOONDAY: 'noon',       // high noon on demand
 };
 
 export function initCheats(actions) {

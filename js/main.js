@@ -88,6 +88,22 @@ import { initCarwash, updateCarwash } from './carwash.js';
 import { initBarber, updateBarber } from './barber.js';
 import { initArmsdealer, updateArmsdealer } from './armsdealer.js';
 import { initDruglab, updateDruglab, endDruglab } from './druglab.js';
+import { initVendors, updateVendors } from './vendors.js';
+import { initAtms, updateAtms } from './atm.js';
+import { initPayphones, updatePayphones, endPhoneJob } from './payphone.js';
+import { initPigeons, updatePigeons } from './pigeons.js';
+import { initGraffiti, updateGraffiti } from './graffiti.js';
+import { initHydrants, updateHydrants } from './hydrants.js';
+import { initSpeedcams, updateSpeedcams } from './speedcams.js';
+import { initMeters, updateMeters } from './meters.js';
+import { initEmotes, updateEmotes, poseEmote } from './emotes.js';
+import { initVehicleFx, updateVehicleFx } from './vehiclefx.js';
+import { initBodyguard, updateBodyguard } from './bodyguard.js';
+import { initWildlife, updateWildlife } from './wildlife.js';
+import { initGym, updateGym } from './gym.js';
+import { initFortune, updateFortune } from './fortune.js';
+import { initDice, updateDice } from './dice.js';
+import { initHobo, updateHobo } from './hobo.js';
 import { initFishing, updateFishing } from './fishing.js';
 import { initNightclub, updateNightclub } from './nightclub.js';
 import { initSkateboard, updateSkateboard } from './skateboard.js';
@@ -341,6 +357,22 @@ initCarwash(scene, world);
 initBarber(scene, world, save);
 initArmsdealer(scene, world);
 initDruglab(scene, world, save);
+initVendors(scene, world);
+initAtms(scene, world, save);
+initPayphones(scene, world, save);
+initPigeons(scene, world, save);
+initGraffiti(scene, world, save);
+initHydrants(scene, world);
+initSpeedcams(scene, world);
+initMeters(scene, world);
+initEmotes(world);
+initVehicleFx(world);
+initBodyguard(scene, world, save);
+initWildlife(scene, world);
+initGym(scene, world, save);
+initFortune(scene, world);
+initDice(scene, world);
+initHobo(scene, world, save);
 initCheats({
   cash: () => { world.money += 10000; },
   clear: () => { world.wanted = 0; world.wantedTimer = 0; clearCops(world); },
@@ -372,6 +404,16 @@ initCheats({
   disaster: () => forceDisaster(world),
   fire: () => forceFireEvent(world),
   kaiju: () => forceKaiju(world),
+  maxammo: () => { for (const k of Object.keys(ammo)) ammo[k] = 999; },
+  gunmods: () => { world.gunMods.mag = world.gunMods.scope = world.gunMods.silencer = true; },
+  god: () => { world.godT = 60; },
+  zoom: () => { world.buffs.speedT = 90; },
+  bouncy: () => { world.buffs.jumpT = 120; },
+  hush: () => { world.noCopsT = 120; clearCops(world); },
+  fivestars: () => { world.wanted = 5; world.wantedTimer = 40; },
+  skyward: () => { if (world.jetpack) world.jetpack.owned = true; },
+  drunk: () => { world.drunkT = 45; },
+  noon: () => { world.clock = 12; },
 });
 let prevMissionDone = mission.done;
 let prevTokens = world.tokensGot.length;
@@ -557,6 +599,10 @@ function saveGame() {
       stormRank: world.storm?.rank,
       hair: world.barber?.hair,
       druglabDay: world.druglab?.doneDay,
+      bank: world.bank?.balance, karma: world.hobo?.karma,
+      pigeons: world.pigeonNet ? world.pigeonNet.birds.filter((b) => b.dead).map((b) => b.id) : [],
+      graffiti: world.graffiti ? world.graffiti.spots.filter((s) => s.done).map((s) => s.id) : [],
+      guard: world.guard?.hired, phoneStreak: world.payphone?.streak,
     }));
   } catch {}
 }
@@ -886,7 +932,8 @@ function updateOnFoot(dt) {
   const moving = _move.lengthSq() > 0;
   const sprintSpeed = world.level >= 8 ? 12 : 10; // parkour sprint skill
   const cs = player.charDef.speed * (world.skateOn ? 1.55 : 1); // deck beats sneakers
-  const speed = (keys['ShiftLeft'] || keys['ShiftRight'] ? sprintSpeed : 5.5) * cs;
+  const speed = (keys['ShiftLeft'] || keys['ShiftRight'] ? sprintSpeed : 5.5) * cs *
+    (world.buffs.speedT > 0 ? 1.35 : 1); // coffee (or the SONICRUN cheat)
 
   if (moving) {
     _move.normalize();
@@ -909,7 +956,7 @@ function updateOnFoot(dt) {
   }
 
   if (pressed['Space'] && player.onGround) {
-    player.vy = 7.5 * player.charDef.jump;
+    player.vy = 7.5 * player.charDef.jump * (world.buffs.jumpT > 0 ? 1.55 : 1); // BOUNCY legs
     player.onGround = false;
     player.dblJump = false;
   } else if (pressed['Space'] && !player.onGround && world.level >= 2 && !player.dblJump && player.vy < 5 && !keys['KeyW']) {
@@ -1068,6 +1115,8 @@ function updateOnFoot(dt) {
   } else if (sp > 0.5) {
     player.animT += sp * dt * 2.0;
     animateWalk(player.ch, player.animT, sp > 7 ? 0.95 : 0.6);
+  } else if (world.emote && world.emote.t > 0) {
+    poseEmote(player.ch, world.emote);
   } else {
     animateIdle(player.ch);
   }
@@ -1153,6 +1202,16 @@ function updateOnFoot(dt) {
   else if (world.barberHint) setHint(world.barberHint);
   else if (world.armsHint) setHint(world.armsHint);
   else if (world.druglabHint) setHint(world.druglabHint);
+  else if (world.gymHint) setHint(world.gymHint);
+  else if (world.phoneHint) setHint(world.phoneHint);
+  else if (world.atmHint) setHint(world.atmHint);
+  else if (world.vendorHint) setHint(world.vendorHint);
+  else if (world.graffitiHint) setHint(world.graffitiHint);
+  else if (world.diceHint) setHint(world.diceHint);
+  else if (world.fortuneHint) setHint(world.fortuneHint);
+  else if (world.hoboHint) setHint(world.hoboHint);
+  else if (world.guardHint) setHint(world.guardHint);
+  else if (world.emoteHint) setHint(world.emoteHint);
   else if (world.strangerHint) setHint(world.strangerHint);
   else setHint(null);
   if (pressed['KeyE']) {
@@ -1792,6 +1851,11 @@ function updateDriving(dt) {
     steer: (keys['KeyA'] ? 1 : 0) + (keys['KeyD'] ? -1 : 0),
     handbrake: !!keys['Space'],
   };
+  // cruise control (vehiclefx.js): holds speed until you touch the pedals
+  if (world.cruise) {
+    if (ctl.throttle !== 0 || ctl.handbrake) world.cruise = 0;
+    else ctl.throttle = car.vel.length() < world.cruise ? 0.55 : 0;
+  }
   // nitro: hold Shift for a burning speed burst (tank excluded, it's heavy enough)
   const nitroMax = car.bigNitro ? 170 : 100; // garage nitro-tank upgrade
   player.nitro = Math.min(nitroMax, player.nitro ?? nitroMax);
@@ -2338,6 +2402,11 @@ function triggerOver(text, color) {
   abortTournament(world);
   endContract(world);
   endDruglab(world);
+  endPhoneJob(world);
+  if (world.dice) { world.dice.open = false; world.dice.pot = 0; }
+  if (world.emote) world.emote.t = 0;
+  if (world.gym) world.gym.working = 0;
+  world.cruise = 0;
   if (world.skydive) world.skydive.on = false;
   if (world.subway) world.subway.menu = null;
   if (world.workbench) world.workbench.open = false;
@@ -2689,6 +2758,32 @@ function update(dt) {
   updateBarber(world, dt, pressed);
   updateArmsdealer(world, dt, pressed, ammo);
   updateDruglab(world, dt);
+  updateVendors(world, dt, pressed);
+  updateAtms(world, dt, pressed);
+  updatePayphones(world, dt, pressed);
+  updatePigeons(world, dt);
+  updateGraffiti(world, dt, keys);
+  updateHydrants(world, dt);
+  updateSpeedcams(world, dt);
+  updateMeters(world, dt);
+  updateEmotes(world, dt, pressed, keys);
+  updateVehicleFx(world, dt, pressed);
+  updateBodyguard(world, dt, pressed);
+  updateWildlife(world, dt);
+  updateGym(world, dt, pressed);
+  updateFortune(world, dt, pressed);
+  updateDice(world, dt, pressed);
+  updateHobo(world, dt, pressed);
+
+  // season-9 buff & cheat clocks
+  world.buffs.speedT = Math.max(0, world.buffs.speedT - dt);
+  world.buffs.jumpT = Math.max(0, world.buffs.jumpT - dt);
+  world.godT = Math.max(0, (world.godT || 0) - dt);
+  if (world.godT > 0) player.health = world.maxHealth;
+  world.noCopsT = Math.max(0, (world.noCopsT || 0) - dt);
+  if (world.noCopsT > 0) { world.wanted = 0; world.wantedTimer = 0; }
+  world.drunkT = Math.max(0, (world.drunkT || 0) - dt);
+
   updateEffects(dt);
 
   // job status stays on screen even from inside a vehicle
@@ -2699,7 +2794,8 @@ function update(dt) {
       world.turfHint || world.raidHint || world.syndHint || world.kaijuHint ||
       world.medHint || world.expHint || world.bountyHint ||
       world.tourneyHint || world.contractHint || world.stormHint ||
-      world.taxiHint || world.valetHint || world.carwashHint || world.druglabHint;
+      world.taxiHint || world.valetHint || world.carwashHint || world.druglabHint ||
+      world.phoneHint;
     if (drivingHint) setHint(drivingHint);
   }
   // ...and from the cockpit or the deep
@@ -2840,6 +2936,12 @@ function animate() {
     // frozen — the menu / card table overlay handles everything
   } else {
     update(dt);
+  }
+  // the DRUNKY cheat: the camera has had a few
+  if (world.drunkT > 0) {
+    const t = performance.now();
+    camera.rotation.z += Math.sin(t * 0.0021) * 0.09;
+    camera.rotation.x += Math.sin(t * 0.0013) * 0.04;
   }
   composer.render();
   if (world.captureNext) {

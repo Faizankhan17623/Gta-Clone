@@ -49,7 +49,7 @@ export function initDruglab(scene, world, save) {
     scene.add(crate);
     const c = { mesh: crate, pos: crate.position, hp: 40, dead: false };
     c.target = {
-      pos: c.pos, aimY: 0.5, r: 0.85,
+      pos: c.pos, aimY: 0.5, r: 0.85, passive: true,
       get dead() { return c.dead; },
       hit() { c.hp -= 30; if (c.hp <= 0 && !c.dead) { c.dead = true; c.mesh.visible = false; addExplosion(c.pos); } },
     };

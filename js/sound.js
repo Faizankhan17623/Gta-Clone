@@ -83,6 +83,23 @@ export function sfxPickup() {
   o.stop(ctx.currentTime + 0.2);
 }
 
+// two-tone car horn (vehiclefx.js)
+export function sfxHorn() {
+  if (!ctx) return;
+  for (const [freq, delay] of [[440, 0], [554, 0]]) {
+    const o = ctx.createOscillator();
+    o.type = 'sawtooth';
+    o.frequency.value = freq;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.12, ctx.currentTime + delay);
+    g.gain.setValueAtTime(0.12, ctx.currentTime + delay + 0.28);
+    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delay + 0.4);
+    o.connect(g).connect(master);
+    o.start(ctx.currentTime + delay);
+    o.stop(ctx.currentTime + delay + 0.45);
+  }
+}
+
 // quick "thwip" for the web shooter
 export function sfxWeb() {
   if (!ctx) return;
