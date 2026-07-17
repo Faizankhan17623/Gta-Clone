@@ -164,7 +164,7 @@ export function updateTrain(world, dt, keys, pressed) {
   world.trainBlip = null;
 
   // roll the line, wrap at the ends
-  const dz = SPEED * dt;
+  const dz = SPEED * (tr.speedMult || 1) * dt; // trainjack.js sets the throttle
   tr.t += dz;
   let wrapped = 0;
   if (tr.t > TRACK_END + WAGON_LEN) {

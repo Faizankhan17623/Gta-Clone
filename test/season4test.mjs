@@ -159,7 +159,9 @@ async function resetPlayer() {
   });
   await page.waitForTimeout(250);
   await page.keyboard.down('KeyF');
-  await page.waitForTimeout(4200); // fires take ~3s of hose each
+  // fires take ~3s of hose GAME time — headless runs sub-realtime, so wait on the outcome
+  await page.waitForFunction((m0) => window.__debug.world.stats.firesOut >= 1 || window.__debug.world.money >= m0 + 400,
+    money0, { timeout: 25000 }).catch(() => {});
   await page.keyboard.up('KeyF');
   const r2 = await ev(() => ({ money: window.__debug.world.money, out: window.__debug.world.stats.firesOut }));
   check('Hose douses a blaze (+$400)', r2.money >= money0 + 400 && r2.out >= 1, `+$${r2.money - money0}`);

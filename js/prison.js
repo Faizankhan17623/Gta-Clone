@@ -81,6 +81,15 @@ export function prisonIntake(world) {
     return false;
   }
   pr.pending = false;
+  // Saul Bettercall meets you at the precinct door (lawyer.js) —
+  // one retainer, one walk
+  if (world.lawyerRetained) {
+    world.lawyerRetained = false;
+    showMissionMsg('CASE DISMISSED', '"Chain of custody. Don\'t ask. You owe me nothing — you PAID me."', '#b08af0');
+    showNews('charges evaporate; a lawyer in a loud suit bills by the miracle');
+    world.onSave?.();
+    return false;
+  }
   pr.inside = true;
   pr.jailT = 0;
   pr.crewArrived = false;

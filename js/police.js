@@ -6,6 +6,23 @@ import { createCharacter, animateWalk } from './characters.js';
 import { showNews } from './hud.js';
 
 export function addCrime(world, n) {
+  // an undercover shift carries a badge (copcareer.js)
+  if (world.onDuty) return;
+  // witness system: a petty crime from zero heat can go unreported if
+  // nobody's around to see it — half the time, luck holds
+  if (world.wanted === 0 && n <= 2 && world.peds) {
+    let seen = false;
+    const p = world.player.pos;
+    for (const ped of world.peds) {
+      if (!ped.pos) continue;
+      if (Math.hypot(ped.pos.x - p.x, ped.pos.z - p.z) < 25) { seen = true; break; }
+    }
+    if (!seen && Math.random() < 0.5) {
+      world.crimeDodged = (world.crimeDodged || 0) + 1;
+      showNews('a crime technically occurs; the city collectively didn\'t see it');
+      return;
+    }
+  }
   world.wanted = Math.min(5, world.wanted + n);
   world.wantedTimer = 0;
 }

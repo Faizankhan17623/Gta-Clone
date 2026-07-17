@@ -103,7 +103,7 @@ export function updateBusking(world, dt, pressed) {
         if (dn.idx2 >= dn.seq.length) {
           const base = 120;
           const fameBonus = Math.min(400, bk.fame * 0.5);
-          const pay = Math.round((base + fameBonus) * (world.payMult || 1));
+          const pay = Math.round((base + fameBonus) * (world.payMult || 1) * (world.festivalMult || 1));
           world.money += pay;
           bk.fame += 25;
           addRep(world, 15);

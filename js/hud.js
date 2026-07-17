@@ -390,6 +390,39 @@ function drawMinimap(world) {
     g.stroke();
   }
 
+  // season-10 objectives: pizza (yellow square), repo (purple), news scene
+  // (blue tv), cop suspect (badge dot), most-wanted (red skull-dot),
+  // pink-slip finish (pink), boat gates (teal), boss shade (violet)
+  const S10 = [
+    [world.pizzaBlip, '#f7d04a', 'rect'],
+    [world.repoBlip, '#b08af0', 'rect'],
+    [world.newsBlip, '#4a8af0', 'rect'],
+    [world.copBlip, '#4a8af0', 'dot'],
+    [world.mwBlip, '#f04a4a', 'dot'],
+    [world.slipBlip, '#f05a9a', 'dot'],
+    [world.boatraceBlip, '#4af0c8', 'ring'],
+    [world.bossrushBlip, '#b08af0', 'ring'],
+  ];
+  for (const [blip, color, kind] of S10) {
+    if (!blip) continue;
+    const [mx, mz] = toMap(blip.x, blip.z);
+    if (kind === 'rect') {
+      g.fillStyle = color;
+      g.fillRect(mx - 3, mz - 3, 6, 6);
+    } else if (kind === 'dot') {
+      g.fillStyle = color;
+      g.beginPath();
+      g.arc(mx, mz, 3.5 + Math.sin(performance.now() * 0.01) * 1, 0, Math.PI * 2);
+      g.fill();
+    } else {
+      g.strokeStyle = color;
+      g.lineWidth = 2;
+      g.beginPath();
+      g.arc(mx, mz, 4 + Math.sin(performance.now() * 0.012) * 1.2, 0, Math.PI * 2);
+      g.stroke();
+    }
+  }
+
   // ringing payphone / courier drop
   if (world.phoneBlip) {
     const [mx, mz] = toMap(world.phoneBlip.x, world.phoneBlip.z);

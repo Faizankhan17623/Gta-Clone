@@ -104,6 +104,37 @@ import { initGym, updateGym } from './gym.js';
 import { initFortune, updateFortune } from './fortune.js';
 import { initDice, updateDice } from './dice.js';
 import { initHobo, updateHobo } from './hobo.js';
+import { initWingsuit, updateWingsuit } from './wingsuit.js';
+import { initWebpull, updateWebpull } from './webpull.js';
+import { initTrainjack, updateTrainjack } from './trainjack.js';
+import { initBoatrace, updateBoatrace, endBoatrace } from './boatrace.js';
+import { initTrickpark, updateTrickpark } from './trickpark.js';
+import { initElevators, updateElevators } from './elevators.js';
+import { initPizza, updatePizza, endPizza } from './pizza.js';
+import { initRepo, updateRepo } from './repo.js';
+import { initIcetruck, updateIcetruck } from './icetruck.js';
+import { initNewschopper, updateNewschopper, endNewsjob } from './newschopper.js';
+import { initCopcareer, updateCopcareer, endShift } from './copcareer.js';
+import { initStorerob, updateStorerob } from './storerob.js';
+import { initJewelry, updateJewelry } from './jewelry.js';
+import { initPinkslip, updatePinkslip, endPinkslip } from './pinkslip.js';
+import { initMostwanted, updateMostwanted } from './mostwanted.js';
+import { initBribe, updateBribe } from './bribe.js';
+import { initLawyer, updateLawyer } from './lawyer.js';
+import { initStocks, updateStocks } from './stocks.js';
+import { initCasinoboss, updateCasinoboss, endCasinoRaid } from './casinoboss.js';
+import { initCalendar, updateCalendar } from './calendar.js';
+import { initMall, updateMall } from './mall.js';
+import { initSewer, updateSewer } from './sewer.js';
+import { initArcade, updateArcade } from './arcade.js';
+import { initGolf, updateGolf } from './golf.js';
+import { initPokertourney, updatePokertourney } from './pokertourney.js';
+import { initChess, updateChess } from './chess.js';
+import { initGhosts, updateGhosts } from './ghosts.js';
+import { initBossrush, updateBossrush, endBossrush } from './bossrush.js';
+import { initPerks, updatePerks } from './perks.js';
+import { initExplorer, updateExplorer } from './explorer.js';
+import { initArmor, updateArmor } from './armor.js';
 import { initFishing, updateFishing } from './fishing.js';
 import { initNightclub, updateNightclub } from './nightclub.js';
 import { initSkateboard, updateSkateboard } from './skateboard.js';
@@ -373,6 +404,37 @@ initGym(scene, world, save);
 initFortune(scene, world);
 initDice(scene, world);
 initHobo(scene, world, save);
+initWingsuit(world);
+initWebpull(world);
+initTrainjack(world);
+initBoatrace(scene, world, save);
+initTrickpark(scene, world, save);
+initElevators(scene, world);
+initPizza(scene, world, save);
+initRepo(scene, world, save);
+initIcetruck(scene, world, save);
+initNewschopper(scene, world, save);
+initCopcareer(scene, world, save);
+initStorerob(scene, world);
+initJewelry(scene, world, save);
+initPinkslip(scene, world, save);
+initMostwanted(scene, world, save);
+initBribe(world);
+initLawyer(scene, world, save);
+initStocks(scene, world, save);
+initCasinoboss(scene, world, save);
+initCalendar(world);
+initMall(scene, world, save);
+initSewer(scene, world, save);
+initArcade(scene, world, save);
+initGolf(scene, world, save);
+initPokertourney(scene, world);
+initChess(scene, world, save);
+initGhosts(scene, world);
+initBossrush(scene, world, save);
+initPerks(scene, world, save);
+initExplorer(world, save);
+initArmor(scene, world, save);
 initCheats({
   cash: () => { world.money += 10000; },
   clear: () => { world.wanted = 0; world.wantedTimer = 0; clearCops(world); },
@@ -603,6 +665,22 @@ function saveGame() {
       pigeons: world.pigeonNet ? world.pigeonNet.birds.filter((b) => b.dead).map((b) => b.id) : [],
       graffiti: world.graffiti ? world.graffiti.spots.filter((s) => s.done).map((s) => s.id) : [],
       guard: world.guard?.hired, phoneStreak: world.payphone?.streak,
+      boatBest: world.boatrace?.best, trickBest: world.trickpark?.bestToday,
+      pizzaRuns: world.pizza?.runs, repoDone: world.repo?.done,
+      icetruck: world.icetruck?.owned, conesSold: world.icetruck?.sold,
+      newsShots: world.newsjob?.shots,
+      copRank: world.copjob?.rank, copArrests: world.copjob?.arrests,
+      jewelryDay: world.jewelry?.doneDay,
+      slipRank: world.pinkslip?.rank, slipCars: world.pinkslip?.cars,
+      mwIdx: world.mostwanted?.idx, lawyer: world.lawyerRetained,
+      stocks: world.stocks?.held, stockPrices: world.stocks?.prices,
+      casinoTakeDay: world.casinoboss?.takeDay, mallGiftDay: world.mall?.giftDay,
+      albert: world.sewer?.albert?.dead, sewerChest: world.sewer?.looted,
+      tickets: world.arcade?.tickets, golfBest: world.golf?.best,
+      chessWins: world.chess?.record, bossrushDay: world.bossrush?.doneDay,
+      perks: world.perkShop?.bought,
+      blocksSeen: [...(world.explorer?.seen || [])], exploreRank: world.explorer?.rewarded,
+      armor: world.armor?.plate,
     }));
   } catch {}
 }
@@ -1212,6 +1290,32 @@ function updateOnFoot(dt) {
   else if (world.hoboHint) setHint(world.hoboHint);
   else if (world.guardHint) setHint(world.guardHint);
   else if (world.emoteHint) setHint(world.emoteHint);
+  else if (world.copHint) setHint(world.copHint);
+  else if (world.mwHint) setHint(world.mwHint);
+  else if (world.bossrushHint) setHint(world.bossrushHint);
+  else if (world.pizzaHint) setHint(world.pizzaHint);
+  else if (world.repoHint) setHint(world.repoHint);
+  else if (world.newsHint) setHint(world.newsHint);
+  else if (world.storeHint) setHint(world.storeHint);
+  else if (world.jewelryHint) setHint(world.jewelryHint);
+  else if (world.trainjackHint) setHint(world.trainjackHint);
+  else if (world.boatraceHint) setHint(world.boatraceHint);
+  else if (world.slipHint) setHint(world.slipHint);
+  else if (world.trickHint) setHint(world.trickHint);
+  else if (world.liftHint) setHint(world.liftHint);
+  else if (world.bribeHint) setHint(world.bribeHint);
+  else if (world.lawyerHint) setHint(world.lawyerHint);
+  else if (world.stockHint) setHint(world.stockHint);
+  else if (world.casinoHint2) setHint(world.casinoHint2);
+  else if (world.mallHint) setHint(world.mallHint);
+  else if (world.sewerHint) setHint(world.sewerHint);
+  else if (world.arcadeHint) setHint(world.arcadeHint);
+  else if (world.golfHint) setHint(world.golfHint);
+  else if (world.pokerTHint) setHint(world.pokerTHint);
+  else if (world.chessHint) setHint(world.chessHint);
+  else if (world.perkHint) setHint(world.perkHint);
+  else if (world.armorHint) setHint(world.armorHint);
+  else if (world.icetruckHint) setHint(world.icetruckHint);
   else if (world.strangerHint) setHint(world.strangerHint);
   else setHint(null);
   if (pressed['KeyE']) {
@@ -2407,6 +2511,19 @@ function triggerOver(text, color) {
   if (world.emote) world.emote.t = 0;
   if (world.gym) world.gym.working = 0;
   world.cruise = 0;
+  endBoatrace(world);
+  endPizza(world, true);
+  endNewsjob(world, true);
+  endShift(world, true);
+  endPinkslip(world, true);
+  endCasinoRaid(world);
+  endBossrush(world, true);
+  if (world.wingsuit) world.wingsuit.on = false;
+  if (world.trainjack?.driving) { world.trainjack.driving = false; if (world.train) world.train.speedMult = 1; }
+  if (world.golf) { world.golf.state = 'idle'; world.golf.flight = null; world.golf.ball.visible = false; }
+  if (world.arcade) world.arcade.game = null;
+  if (world.chess) world.chess.on = false;
+  if (world.pokerT) world.pokerT.on = false;
   if (world.skydive) world.skydive.on = false;
   if (world.subway) world.subway.menu = null;
   if (world.workbench) world.workbench.open = false;
@@ -2774,6 +2891,37 @@ function update(dt) {
   updateFortune(world, dt, pressed);
   updateDice(world, dt, pressed);
   updateHobo(world, dt, pressed);
+  updateWingsuit(world, dt, pressed, keys);
+  updateWebpull(world, dt, pressed, camera);
+  updateTrainjack(world, dt, pressed, keys);
+  updateBoatrace(world, dt);
+  updateTrickpark(world, dt, pressed);
+  updateElevators(world, dt, pressed);
+  updatePizza(world, dt, pressed);
+  updateRepo(world, dt, pressed);
+  updateIcetruck(world, dt, pressed);
+  updateNewschopper(world, dt, pressed);
+  updateCopcareer(world, dt, pressed);
+  updateStorerob(world, dt, keys);
+  updateJewelry(world, dt);
+  updatePinkslip(world, dt, pressed);
+  updateMostwanted(world, dt);
+  updateBribe(world, dt, pressed);
+  updateLawyer(world, dt, pressed);
+  updateStocks(world, dt, pressed, keys);
+  updateCasinoboss(world, dt, pressed);
+  updateCalendar(world, dt, scene);
+  updateMall(world, dt, pressed);
+  updateSewer(world, dt, pressed);
+  updateArcade(world, dt, pressed);
+  updateGolf(world, dt, pressed);
+  updatePokertourney(world, dt, pressed);
+  updateChess(world, dt, pressed);
+  updateGhosts(world, dt);
+  updateBossrush(world, dt, pressed);
+  updatePerks(world, dt, pressed);
+  updateExplorer(world, dt);
+  updateArmor(world, dt, pressed);
 
   // season-9 buff & cheat clocks
   world.buffs.speedT = Math.max(0, world.buffs.speedT - dt);
@@ -2795,7 +2943,9 @@ function update(dt) {
       world.medHint || world.expHint || world.bountyHint ||
       world.tourneyHint || world.contractHint || world.stormHint ||
       world.taxiHint || world.valetHint || world.carwashHint || world.druglabHint ||
-      world.phoneHint;
+      world.phoneHint || world.pizzaHint || world.repoHint || world.newsHint ||
+      world.copHint || world.slipHint || world.boatraceHint || world.icetruckHint ||
+      world.bribeHint || world.mwHint || world.jewelryHint || world.casinoHint2;
     if (drivingHint) setHint(drivingHint);
   }
   // ...and from the cockpit or the deep
