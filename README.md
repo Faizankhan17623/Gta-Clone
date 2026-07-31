@@ -6,6 +6,13 @@ plain JavaScript ES modules. Steal cars, fly helicopters, rob stores, fight a
 gang for territory, outrun tanks at five stars... or ignore all of it and
 web-swing between the towers at 200 km/h.
 
+Ten "seasons" of updates have piled onto the original open world: zombie
+outbreaks, a kaiju that rises from the harbor, train heists, a mayor's
+office, an empire of owned properties, a casino heist, a subway, a
+nightclub, a chess hustler, ghosts, a boss-rush gauntlet, and dozens more
+side systems described below. The code is plain ES modules — one file per
+system, ~140 of them, all wired into `js/main.js`.
+
 ## Run it
 
 Any static file server works. The easiest:
@@ -137,6 +144,44 @@ a **rival web-slinger** duel. Rewards scale as you complete more — plus
 free-roam races, the stadium arena, the bank heist, vigilante chases and
 turf wars outside the mission beam.
 
+### Beyond the basics (Seasons 2–10)
+Ten waves of updates layered a second game's worth of systems on top of the
+core loop above. A sample of what's actually in `js/`, all reachable in a
+normal playthrough:
+- **Boss fights & events**: a rival **nemesis** web-slinger, a **kaiju** that
+  wades out of the harbor on stormy nights, a **zombie outbreak** after dark,
+  a **war-mech boss rush**, and city-wide **disasters** (forced via cheat or
+  random).
+- **Heists & crime careers**: a **train heist**, a **casino heist**, a
+  **jewelry store job**, a **drug lab raid**, a **black-market arms dealer**,
+  a **repo man** side gig, and an undercover **cop career** you can take
+  instead of a life of crime (complete with **prison** intake if you get
+  caught).
+- **City institutions**: a **mayor's office** and city **empire** (buy up
+  properties for passive income), a **stock market**, a **museum** heist, a
+  **nightclub**, a **subway/metro**, a **crew** you can recruit, a
+  **syndicate** campaign, and a rotating **calendar** of city events.
+- **Odd jobs**: **taxi driving**, **pizza delivery**, **valet parking**,
+  **car wash**, **barber shop**, **ferry** routes, **ice cream truck**,
+  **news helicopter** ride-alongs, **storm chasing**, **busking** for tips,
+  a gun **workbench**, **fishing**, a **gym**, a **fortune teller**, **dice**
+  games, and a **hobo** you can hand money to.
+- **Traversal toys**: **wingsuit**, **skydiving**, **base jumping**,
+  **ziplines**, a hot-air **balloon**, a **drone**, a **skateboard** and
+  **trick park**, a **derby** (demolition-style), and street **elevators**.
+- **World detail**: **ATMs**, **payphones** (with side jobs), **graffiti**
+  tagging, **fire hydrants**, **speed cameras**, parking **meters**, **NPC
+  emotes**, **wildlife**, **ghosts** at night, and vehicle **damage/tuning
+  effects**.
+- **Meta systems**: **prestige** (reset for permanent perks), **perks**,
+  **bribes** and a **lawyer** to clear your wanted level, a **pink slip**
+  (car-ownership) racing mode, a **most wanted** board, a **bounty** system,
+  a **bodyguard** you can hire, **tournament** and **poker tournament**
+  brackets, an **explorer** log, and **cheat codes** (see the pause menu).
+
+This list still isn't exhaustive — check `js/` for the full set of ~140
+feature modules, each one self-contained and imported into `js/main.js`.
+
 ### Progression
 - **XP levels** unlock skills: double-jump (2), web-dash (4), slow-motion
   airborne aim (6), parkour sprint (8).
@@ -157,39 +202,31 @@ turf wars outside the mission beam.
 - WASTED / BUSTED screens, HUD with minimap (cops, choppers, stores, gang
   turf, tanks), live WASD key indicator.
 
-<!-- Project layout (hidden from the rendered page, kept for reference)
+## Tech stack
+- **[Three.js](https://threejs.org/)** r170, loaded straight from a CDN via
+  an `importmap` in `index.html` — no bundler, no `node_modules` for the
+  game itself.
+- Plain **JavaScript ES modules**, one file per system, imported directly by
+  the browser.
+- **Procedural WebAudio** for every sound effect and the car radio — no
+  audio files ship with the game.
+- **[Playwright](https://playwright.dev/)** (`playwright-core`) is the one
+  `devDependency`, used only by the scripts in `test/` to drive the game
+  headlessly and assert features work; it isn't needed to play.
 
-index.html        HUD, start screen, styles, Three.js import map
-js/main.js        Game loop, player, camera, swinging/zipping, shooting, style
-js/web.js         Web physics: anchor raycasts, pendulum, zip, poses
-js/city.js        Procedural city generation + collision helpers
-js/car.js         Car & motorbike meshes + arcade vehicle physics
-js/characters.js  Blocky character builder + walk animation
-js/npc.js         Pedestrians, traffic AI, parked vehicles, webbed states
-js/police.js      Wanted system + police chase AI
-js/heli.js        Helicopters: flight physics, police/boss chopper AI
-js/army.js        The 5-star tank: AI, cannon, stealing
-js/gangs.js       Viper territory: patrols, firefights, takeover
-js/shops.js       Robbable stores + the WEB DEN upgrade shop
-js/missions.js    Six mission types, markers, rewards
-js/daynight.js    Sun, sky dome, window/lamp glow over 24 game hours
-js/weather.js     Rain storms + lightning
-js/ambient.js     Pigeon flocks
-js/sound.js       Procedural WebAudio (guns, loops, radio stations)
-js/effects.js     Tracers, explosions, smoke, sparks, debris, skid marks
-js/hud.js         HUD + minimap rendering
-js/input.js       Keyboard / mouse / pointer-lock / gamepad input
-js/economy.js     Properties, reputation, daily challenges, chaos meter
-js/races.js       Free-roam street / swing / boat races
-js/water.js       The harbor: water, boats, jet-ski, swimming
-js/arena.js       Stadium wave-survival arena
-js/heist.js       The City Bank job
-js/vigilante.js   Cop-car criminal chase streaks
-js/armored.js     The roaming armored cash truck
-js/turfwar.js     Jackal raids on your district
-js/blackjack.js   Lucky 7 blackjack table (DOM overlay)
-js/slots.js       Lucky 7 slot machine (DOM overlay)
-js/dog.js         REX the companion dog
-js/stunts.js      Ramps, rampage skulls, web trampolines
--->
+## Project structure
+```
+index.html   HUD, start screen, styles, Three.js import map
+manifest.json / sw.js   PWA manifest + offline service worker
+js/main.js   Game loop, player, camera, swinging/zipping, shooting, style
+js/          ~140 self-contained feature modules (one per system — cars,
+             police, heists, missions, side jobs, etc.), all imported by
+             js/main.js. See "Beyond the basics" above for what's in here.
+test/        Playwright smoke tests that drive the game in a real browser
+             and assert individual features work (run against a local
+             server, e.g. `node test/featurecheck.mjs`).
+PLAYSTORE.md How to package the PWA as an Android app (Trusted Web Activity)
+             for the Google Play Store.
+privacy.html Privacy policy page (required for Play Store / PWA install).
+```
 
