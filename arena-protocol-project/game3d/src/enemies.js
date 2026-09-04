@@ -20,6 +20,8 @@ export function createEnemies(scene, collider) {
     body.castShadow = true;
     body.receiveShadow = true;
     group.add(body);
+    const limbMat=body.material.clone();
+    for(const side of[-1,1]){const arm=new THREE.Mesh(new THREE.BoxGeometry(.18,.72,.18),limbMat);arm.position.set(side*.48,.15,0);arm.userData.arm=side;group.add(arm);}
 
     const scale = type === 'boss' ? 2.2 : type === 'tank' ? 1.45 : type === 'runner' ? .78 : 1;
     group.scale.setScalar(scale);
@@ -30,6 +32,7 @@ export function createEnemies(scene, collider) {
       speed,
       damage,
       attackCooldown: 0, type, ranged,
+      anim: Math.random()*Math.PI*2,
     };
     scene.add(group);
     enemies.push(group);
@@ -42,6 +45,7 @@ export function createEnemies(scene, collider) {
     const localY = hitPoint ? hitPoint.y - group.position.y : 0;
     const headshot = localY > (e.type === 'boss' ? 1.15 : .45);
     e.health -= amount * (headshot ? 1.75 : 1);
+    group.scale.multiplyScalar(.94);setTimeout(()=>{if(group.parent)group.scale.multiplyScalar(1/.94);},70);
     // Flash brighter on hit.
     group.children[0].material.emissive = new THREE.Color(0x550000);
     setTimeout(() => {
@@ -49,7 +53,7 @@ export function createEnemies(scene, collider) {
     }, 80);
 
     if (e.health <= 0) {
-      remove(group);
+      const deathPos=group.position.clone(),deathColor=group.children[0].material.color.clone();remove(group);const ring=new THREE.Mesh(new THREE.RingGeometry(.2,1.5,20),new THREE.MeshBasicMaterial({color:deathColor,transparent:true,opacity:.8,side:THREE.DoubleSide}));ring.rotation.x=-Math.PI/2;ring.position.copy(deathPos);ring.position.y=.04;scene.add(ring);setTimeout(()=>{scene.remove(ring);ring.geometry.dispose();ring.material.dispose();},350);
       return { killed: true, headshot };
     }
     return { killed: false, headshot };
@@ -71,6 +75,7 @@ export function createEnemies(scene, collider) {
     for (const group of enemies) {
       const e = group.userData.enemy;
       if ((e.stunnedUntil ?? 0) > performance.now()) continue;
+      e.anim+=delta*(e.speed*2.2);group.children.forEach(o=>{if(o.userData.arm)o.rotation.x=Math.sin(e.anim)*.75*o.userData.arm;});
       e.attackCooldown = Math.max(0, e.attackCooldown - delta);
 
       dir.set(playerPos.x - group.position.x, 0, playerPos.z - group.position.z);
@@ -96,6 +101,7 @@ export function createEnemies(scene, collider) {
         // In range: attack on a cooldown.
         e.attackCooldown = 1.0;
         onAttack(e.damage);
+        group.rotation.z=.12;setTimeout(()=>{if(group.parent)group.rotation.z=0;},120);
       }
     }
   }
