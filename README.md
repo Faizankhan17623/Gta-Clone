@@ -36,6 +36,7 @@ The repository also includes the newer Three.js arena shooter at
 - Multiplayer networking through the Socket.IO server in `arena-protocol-project/server/`.
 - Responsive touch controls for mobile devices: virtual joystick, fire, reload, grenade, and medkit buttons.
 - Callsign and color customization, a browser save slot, daily login streak rewards, and a local top-10 leaderboard.
+- Optional multiplayer room-code joining, Red/Blue team play, spectator feedback, server leaderboard endpoint, replay export/playback, mission and boss replay buttons, reduced-motion mode, high contrast, and performance controls.
 
 ### Arena development
 
