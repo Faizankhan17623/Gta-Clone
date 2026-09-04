@@ -1,0 +1,2 @@
+import test from'node:test';import assert from'node:assert/strict';import{createDaily}from'../game3d/src/daily.js';
+test('daily reward is granted once',()=>{const m=new Map(),s={getItem:k=>m.get(k),setItem:(k,v)=>m.set(k,v)},hud={setDaily(){},toast(){}},date=new Date('2026-09-04T00:00:00Z');let reward=0;const d=createDaily(hud,v=>reward+=v,s,date);for(let i=0;i<20;i++)d.record(d.challenge.type);assert.equal(reward,d.challenge.reward);assert.equal(d.state.claimed,true);});
