@@ -37,6 +37,7 @@ export function createShooting({ camera, scene, weapon, effects, enemies, hud, o
   document.addEventListener('keydown',e=>{if(e.code==='KeyR')reload();if(/^Digit[1-4]$/.test(e.code))select(['pistol','rifle','shotgun','sniper'][+e.code.slice(-1)-1]);});
   refresh();
   return {update(d){fireTimer=Math.max(0,fireTimer-d);if(firing)tryFire();},reload,select,unlock,addAmmo,
+    isUnlocked(id){return !!loadout[id]?.unlocked;},
     setDamageMultiplier(v,seconds=0){damageMultiplier=v;if(seconds)setTimeout(()=>damageMultiplier=1,seconds*1000);},setInfiniteAmmo(seconds){infiniteAmmoUntil=performance.now()+seconds*1000;},
     upgrade(kind){const w=spec();if(kind==='damage')w.damage*=1.15;if(kind==='magazine'){w.magazine+=4;loadout[selected].ammo+=4;}if(kind==='reload')w.reload*=.85;refresh();},reset(){loadout=freshLoadout();selected='pistol';reloading=false;refresh();}};
 }

@@ -14,6 +14,7 @@ export function createGame({ hud, enemies, player, shooting, pickups }) {
   function die(){state.alive=false;waveToken++;enemies.clear();if(document.pointerLockElement)document.exitPointerLock();saveBest();hud.showGameOver(state.score,state.wave,restart);}
   function saveBest(){const best=Math.max(state.score,Number(localStorage.getItem('arenaBest')||0));localStorage.setItem('arenaBest',best);localStorage.setItem('arenaWave',Math.max(state.wave,Number(localStorage.getItem('arenaWave')||0)));hud.setBest(best);}
   function addScore(points){state.score+=points;hud.setScore(state.score);}
+  function spendScore(points){if(state.score<points)return false;state.score-=points;hud.setScore(state.score);return true;}
   function onKill(headshot,type){addScore((type==='boss'?1000:100)+(headshot?50:0));missions?.record('kills');if(headshot)missions?.record('headshots');if(type==='boss'){hud.setBoss(0,1,false);missions?.record('bosses');}if(Math.random()<.16)grantPowerup();}
   function grantPowerup(){const p=['damage','speed','ammo','shield'][Math.floor(Math.random()*4)];if(p==='damage')shooting.setDamageMultiplier(2,10);if(p==='speed')player.setSpeedMultiplier(1.5,10);if(p==='ammo')shooting.setInfiniteAmmo(10);if(p==='shield')state.shieldUntil=performance.now()+10000;hud.toast(`${p.toUpperCase()} POWER-UP: 10 seconds`,'good');}
   function collect(type){if(type==='health'){if(state.health>=state.maxHealth)return false;state.health=Math.min(state.maxHealth,state.health+35);hud.setHealth(state.health,state.maxHealth);hud.toast('+35 health','good');return true;}if(type==='ammo')return shooting.addAmmo(35);return shooting.unlock(type);}
@@ -23,5 +24,5 @@ export function createGame({ hud, enemies, player, shooting, pickups }) {
   function togglePause(){if(!state.alive)return;state.paused=!state.paused;hud.showPause(state.paused,()=>togglePause(),restart);if(state.paused&&document.pointerLockElement)document.exitPointerLock();else if(!state.paused)player.controls.lock();}
   function update(delta){if(!state.alive||state.paused||!player.controls.isLocked)return;enemies.update(delta,player.object.position,takeDamage);pickups.update(delta,player.object.position,collect);waveClear();const boss=enemies.list.find(e=>e.userData.enemy.type==='boss');if(boss)hud.setBoss(boss.userData.enemy.health,boss.userData.enemy.maxHealth,true);}
   function start(){hud.setBest(Number(localStorage.getItem('arenaBest')||0));pickups.spawnAll();startWave(1);}
-  return {state,start,update,restart,onKill,takeDamage,togglePause,collect,addScore,setMissions(v){missions=v;},setDifficulty(v){state.difficulty=v;}};
+  return {state,start,update,restart,onKill,takeDamage,togglePause,collect,addScore,spendScore,setMissions(v){missions=v;},setDifficulty(v){state.difficulty=v;}};
 }
