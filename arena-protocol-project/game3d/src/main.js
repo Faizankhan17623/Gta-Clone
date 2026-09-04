@@ -26,6 +26,7 @@ import { createAchievements } from './achievements.js';
 import { createDaily } from './daily.js';
 import { createCharacters } from './characters.js';
 import { createSkills } from './skills.js';
+import { createAttachments } from './attachments.js';
 
 // --- Core setup (Phase 1) ---
 const renderer = createRenderer();
@@ -94,6 +95,7 @@ const achievements=createAchievements(hud);game.setAchievements(achievements);
 const daily=createDaily(hud,points=>game.addScore(points));game.setDaily(daily);
 const characters=createCharacters({hud,player,shooting,game});
 const skills=createSkills({hud,game,shooting,player,controls:player.controls});
+const attachments=createAttachments({hud,game,shooting,controls:player.controls});
 const inventory=createInventory({hud,game});
 game.setInventory(inventory);
 const shop=createShop({hud,game,shooting,controls:player.controls,inventory});
