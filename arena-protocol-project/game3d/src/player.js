@@ -22,6 +22,7 @@ export function createPlayer(camera, scene, collider, domElement, { sendInput } 
   let onGround = true;
   let bobTime = 0;
   let speedMultiplier = 1;
+  let mobileActive = false;
 
   // Step 63/64: prediction state.
   let seq = 0;                 // input sequence counter
@@ -149,5 +150,7 @@ export function createPlayer(camera, scene, collider, domElement, { sendInput } 
     if (seconds) setTimeout(() => { speedMultiplier = 1; }, seconds * 1000);
   }
   function setSensitivity(value) { controls.pointerSpeed = value; }
-  return { controls, update, reconcile, resetTo, setSpeedMultiplier, setSensitivity, object: controls.getObject() };
+  function setAction(action, value) { if (action in keys) keys[action] = !!value; }
+  function setMobileActive(value) { mobileActive = !!value; }
+  return { controls, update, reconcile, resetTo, setSpeedMultiplier, setSensitivity, setAction, setMobileActive, get isActive() { return mobileActive || controls.isLocked; }, object: controls.getObject() };
 }

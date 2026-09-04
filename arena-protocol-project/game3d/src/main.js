@@ -29,6 +29,7 @@ import { createSkills } from './skills.js';
 import { createAttachments } from './attachments.js';
 import { createEnvironment } from './environment.js';
 import { createProfile } from './profile.js';
+import { createMobileControls } from './mobileControls.js';
 
 // --- Core setup (Phase 1) ---
 const renderer = createRenderer();
@@ -106,6 +107,7 @@ game.setInventory(inventory);
 const shop=createShop({hud,game,shooting,controls:player.controls,inventory});
 const grenades=createGrenades({scene,camera,enemies,inventory,hud,onKill:(headshot,type)=>game.onKill(headshot,type)});
 const minimap=createMinimap({player,enemies});
+const mobileControls=createMobileControls({player,shooting,grenades,inventory,hud});
 hud.onSettings((id, value) => {
   profile.set(id,value);
   if (id === 'difficulty') game.setDifficulty(value);
@@ -144,7 +146,7 @@ const loop = createLoop(renderer, scene, camera, {
   stats,
   onUpdate(delta) {
     // player.update predicts movement and sends inputs to the server itself.
-    player.update(delta);
+    mobileControls.update(delta); player.update(delta);
     weapon.update(delta);
     shooting.update(delta);
     grenades.update(delta);

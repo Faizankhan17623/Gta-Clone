@@ -36,7 +36,7 @@ export function createShooting({ camera, scene, weapon, effects, enemies, hud, o
   document.addEventListener('mouseup',e=>{if(e.button===0)firing=false;});
   document.addEventListener('keydown',e=>{if(e.code==='KeyR')reload();if(/^Digit[1-4]$/.test(e.code))select(['pistol','rifle','shotgun','sniper'][+e.code.slice(-1)-1]);});
   refresh();
-  return {update(d){fireTimer=Math.max(0,fireTimer-d);if(firing)tryFire();},reload,select,unlock,addAmmo,
+  return {update(d){fireTimer=Math.max(0,fireTimer-d);if(firing)tryFire();},fire:tryFire,reload,select,unlock,addAmmo,
     isUnlocked(id){return !!loadout[id]?.unlocked;},
     attach(id){if(id==='optic')Object.values(WEAPONS).forEach(w=>w.headshot*=1.08);if(id==='mag')Object.values(WEAPONS).forEach(w=>w.magazine+=6);if(id==='grip')Object.values(WEAPONS).forEach(w=>w.spread*=.65);refresh();},
     setDamageMultiplier(v,seconds=0){damageMultiplier=v;if(seconds)setTimeout(()=>damageMultiplier=1,seconds*1000);},setInfiniteAmmo(seconds){infiniteAmmoUntil=performance.now()+seconds*1000;},
