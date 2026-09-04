@@ -35,6 +35,7 @@ The repository also includes the newer Three.js arena shooter at
 - Minimap, destructible cover, explosive barrels, dynamic weather, day/night lighting, and persistent player settings.
 - Multiplayer networking through the Socket.IO server in `arena-protocol-project/server/`.
 - Responsive touch controls for mobile devices: virtual joystick, fire, reload, grenade, and medkit buttons.
+- Callsign and color customization, a browser save slot, daily login streak rewards, and a local top-10 leaderboard.
 
 ### Arena development
 
