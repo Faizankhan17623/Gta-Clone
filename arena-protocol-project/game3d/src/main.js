@@ -84,8 +84,9 @@ const shooting = createShooting({
 });
 game = createGame({ hud, enemies, player, shooting, pickups });
 const missions=createMissions(hud,points=>game.addScore(points));game.setMissions(missions);
-const shop=createShop({hud,game,shooting,controls:player.controls});
 const inventory=createInventory({hud,game});
+game.setInventory(inventory);
+const shop=createShop({hud,game,shooting,controls:player.controls,inventory});
 hud.onSettings((id, value) => {
   if (id === 'difficulty') game.setDifficulty(value);
   if (id === 'sensitivity') player.setSensitivity(value);

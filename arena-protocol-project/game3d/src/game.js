@@ -2,7 +2,7 @@ import { sfx } from './audio.js';
 
 export function createGame({ hud, enemies, player, shooting, pickups }) {
   const state={health:100,maxHealth:100,score:0,wave:0,alive:true,betweenWaves:false,paused:false,shieldUntil:0,difficulty:1};
-  let waveToken=0,missions=null;
+  let waveToken=0,missions=null,inventory=null;
   const spawn=()=>{const e=21,s=Math.floor(Math.random()*4),r=(Math.random()-.5)*2*e;return s===0?[r,-e]:s===1?[r,e]:s===2?[-e,r]:[e,r];};
   function startWave(n){state.wave=n;hud.setWave(n);const boss=n%5===0,count=boss?1:2+n;
     for(let i=0;i<count;i++){const [x,z]=spawn();let type='grunt',ranged=false,health=25+n*6,speed=2+n*.12,damage=8+n*1.5;
@@ -10,7 +10,7 @@ export function createGame({ hud, enemies, player, shooting, pickups }) {
       enemies.spawn(x,z,{health:health*state.difficulty,speed:speed*(.85+state.difficulty*.15),damage:damage*state.difficulty,type,ranged});}
     state.betweenWaves=false;hud.toast(boss?`BOSS WAVE ${n}`:`WAVE ${n}`,boss?'danger':'info');
   }
-  function takeDamage(amount){if(!state.alive||state.paused||performance.now()<state.shieldUntil)return;state.health=Math.max(0,state.health-amount);hud.setHealth(state.health,state.maxHealth);hud.damageFlash();sfx.hurt();if(!state.health)die();}
+  function takeDamage(amount){if(!state.alive||state.paused||performance.now()<state.shieldUntil)return;if(inventory)amount=inventory.absorb(amount);state.health=Math.max(0,state.health-amount);hud.setHealth(state.health,state.maxHealth);hud.damageFlash();sfx.hurt();if(!state.health)die();}
   function heal(amount){state.health=Math.min(state.maxHealth,state.health+amount);hud.setHealth(state.health,state.maxHealth);}
   function die(){state.alive=false;waveToken++;enemies.clear();if(document.pointerLockElement)document.exitPointerLock();saveBest();hud.showGameOver(state.score,state.wave,restart);}
   function saveBest(){const best=Math.max(state.score,Number(localStorage.getItem('arenaBest')||0));localStorage.setItem('arenaBest',best);localStorage.setItem('arenaWave',Math.max(state.wave,Number(localStorage.getItem('arenaWave')||0)));hud.setBest(best);}
@@ -25,5 +25,5 @@ export function createGame({ hud, enemies, player, shooting, pickups }) {
   function togglePause(){if(!state.alive)return;state.paused=!state.paused;hud.showPause(state.paused,()=>togglePause(),restart);if(state.paused&&document.pointerLockElement)document.exitPointerLock();else if(!state.paused)player.controls.lock();}
   function update(delta){if(!state.alive||state.paused||!player.controls.isLocked)return;enemies.update(delta,player.object.position,takeDamage);pickups.update(delta,player.object.position,collect);waveClear();const boss=enemies.list.find(e=>e.userData.enemy.type==='boss');if(boss)hud.setBoss(boss.userData.enemy.health,boss.userData.enemy.maxHealth,true);}
   function start(){hud.setBest(Number(localStorage.getItem('arenaBest')||0));pickups.spawnAll();startWave(1);}
-  return {state,start,update,restart,onKill,takeDamage,heal,togglePause,collect,addScore,spendScore,setMissions(v){missions=v;},setDifficulty(v){state.difficulty=v;}};
+  return {state,start,update,restart,onKill,takeDamage,heal,togglePause,collect,addScore,spendScore,setMissions(v){missions=v;},setInventory(v){inventory=v;},setDifficulty(v){state.difficulty=v;}};
 }
