@@ -37,6 +37,7 @@ The repository also includes the newer Three.js arena shooter at
 - Responsive touch controls for mobile devices: virtual joystick, fire, reload, grenade, and medkit buttons.
 - Callsign and color customization, a browser save slot, daily login streak rewards, and a local top-10 leaderboard.
 - Optional multiplayer room-code joining, Red/Blue team play, spectator feedback, server leaderboard endpoint, replay export/playback, mission and boss replay buttons, reduced-motion mode, high contrast, and performance controls.
+- Optimization tooling: Vite production chunk splitting, minified sourcemap-free builds, bounded server history cleanup, and GitHub Actions test/build/server validation on every `main` push.
 
 ### Arena development
 

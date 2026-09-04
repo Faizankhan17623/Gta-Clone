@@ -5,6 +5,13 @@ import { defineConfig } from 'vite';
 export default defineConfig({
   // Relative asset URLs let the production build run from GitHub Pages subfolders.
   base: './',
+  build: {
+    target: 'es2020',
+    cssMinify: true,
+    sourcemap: false,
+    chunkSizeWarningLimit: 900,
+    rollupOptions: { output: { manualChunks: { three: ['three'], networking: ['socket.io-client'] } } },
+  },
   server: {
     fs: {
       allow: ['..'],

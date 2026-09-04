@@ -203,6 +203,14 @@ io.on('connection', (socket) => {
   });
 });
 
+// Keep abandoned room/player state bounded on long-lived hosted servers.
+setInterval(() => {
+  for (const p of players.values()) {
+    if (!Number.isFinite(p.x) || !Number.isFinite(p.z)) { p.x = 0; p.z = 10; }
+    if (p.history.length > 40) p.history.splice(0, p.history.length - 40);
+  }
+}, 30000);
+
 // --- Helpers ---
 function publicPlayer(p) {
   return { id: p.id, x: p.x, z: p.z, ry: p.ry, color: p.color, team: p.team, name: p.name, health: p.health };
