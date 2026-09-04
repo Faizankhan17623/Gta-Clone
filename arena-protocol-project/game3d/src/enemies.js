@@ -82,9 +82,15 @@ export function createEnemies(scene, collider) {
       const dist = dir.length();
 
       const ATTACK_RANGE = e.ranged ? 11 : (e.type === 'boss' ? 3 : 1.6);
-      if (dist > ATTACK_RANGE) {
-        if (!e.ranged || dist > 8) dir.normalize().multiplyScalar(e.speed * delta);
-        else dir.set(0,0,0);
+      const rangedRetreat=e.ranged&&dist<5.5;
+      if (dist > ATTACK_RANGE || rangedRetreat) {
+        dir.normalize();if(rangedRetreat)dir.multiplyScalar(-1);
+        // Squad spacing prevents enemies stacking in one unreadable clump.
+        for(const other of enemies){if(other===group)continue;const dx=group.position.x-other.position.x,dz=group.position.z-other.position.z,d=Math.hypot(dx,dz);if(d>0&&d<1.8){dir.x+=dx/d*(1.8-d);dir.z+=dz/d*(1.8-d);}}
+        // Healthy light units alternate flanks; wounded units fall back briefly.
+        if(!e.ranged&&e.type!=='tank'&&e.type!=='boss'){const side=Math.sin(e.anim)>0?1:-1,fx=dir.x;dir.x+=dir.z*.35*side;dir.z-=fx*.35*side;}
+        if(e.health/e.maxHealth<.25){dir.multiplyScalar(-.65);}
+        dir.normalize().multiplyScalar(e.speed * delta);
         // Resolve against obstacles so enemies don't walk through cover.
         const corrected = collider.resolveXZ(
           group.position.x + dir.x,
