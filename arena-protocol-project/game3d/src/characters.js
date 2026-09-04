@@ -1,0 +1,2 @@
+const CLASSES={assault:{label:'Assault',damage:1.15,speed:1,health:100},scout:{label:'Scout',damage:1,speed:1.2,health:90},medic:{label:'Medic',damage:1,speed:1,health:130}};
+export function createCharacters({hud,player,shooting,game}){let selected='assault';function apply(id){const c=CLASSES[id]||CLASSES.assault;selected=id;player.setSpeedMultiplier(c.speed);shooting.setDamageMultiplier(c.damage);game.setMaxHealth(c.health);hud.toast(`${c.label} class selected`,'good');}hud.addCharacterSelect(CLASSES,apply);apply(selected);return{apply,get selected(){return selected;}};}
