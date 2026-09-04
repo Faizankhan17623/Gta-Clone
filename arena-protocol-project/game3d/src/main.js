@@ -30,6 +30,7 @@ import { createAttachments } from './attachments.js';
 import { createEnvironment } from './environment.js';
 import { createProfile } from './profile.js';
 import { createMobileControls } from './mobileControls.js';
+import { createMetaFeatures } from './metaFeatures.js';
 
 // --- Core setup (Phase 1) ---
 const renderer = createRenderer();
@@ -80,6 +81,7 @@ player = createPlayer(camera, scene, collider, renderer.domElement, {
 
 // --- HUD (crosshair, overlay, ammo, health, score, game-over) ---
 hud = createHud(player.controls);
+const metaFeatures = createMetaFeatures({ profile, hud, net });
 
 // --- Phase 4: weapon, effects, enemies, shooting ---
 const weapon = createWeapon(camera);
