@@ -31,10 +31,16 @@ export function createPlayer(camera, scene, collider, domElement, { sendInput } 
 
   document.addEventListener('keydown', onKey(true));
   document.addEventListener('keyup', onKey(false));
+  window.addEventListener('blur', clearKeys);
+
+  function clearKeys() {
+    Object.keys(keys).forEach((key) => { keys[key] = false; });
+  }
 
   function onKey(isDown) {
     return (e) => {
-      switch (e.code) {
+      const code = e.code || ({ w: 'KeyW', a: 'KeyA', s: 'KeyS', d: 'KeyD' }[e.key?.toLowerCase()] ?? e.key);
+      switch (code) {
         case 'KeyW': case 'ArrowUp': keys.forward = isDown; break;
         case 'KeyS': case 'ArrowDown': keys.back = isDown; break;
         case 'KeyA': case 'ArrowLeft': keys.left = isDown; break;
@@ -44,6 +50,7 @@ export function createPlayer(camera, scene, collider, domElement, { sendInput } 
           if (isDown && onGround) { verticalVelocity = JUMP_SPEED; onGround = false; }
           break;
       }
+      if (['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(code)) e.preventDefault();
     };
   }
 
