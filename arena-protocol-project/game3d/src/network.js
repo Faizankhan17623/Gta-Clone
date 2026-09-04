@@ -56,6 +56,7 @@ export function createNetwork({ onInit, onPlayerJoined, onPlayerLeft, onSnapshot
   }
   function sendShot(shot) { if (connected) socket.emit('shot', shot); }
   function identify(name) { if (connected) socket.emit('identify', { name }); }
+  function setTeam(team) { if (connected) socket.emit('set-team', { team }); }
 
   // Step 68: ping every second (round-trip via Socket.io ack).
   setInterval(() => {
@@ -68,7 +69,7 @@ export function createNetwork({ onInit, onPlayerJoined, onPlayerLeft, onSnapshot
 
   return {
     socket,
-    sendInput, sendShot, identify,
+    sendInput, sendShot, identify, setTeam,
     get selfId() { return selfId; },
     get connected() { return connected; },
     get ping() { return ping; },

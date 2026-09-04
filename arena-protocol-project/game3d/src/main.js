@@ -30,6 +30,7 @@ import { createAttachments } from './attachments.js';
 import { createEnvironment } from './environment.js';
 import { createProfile } from './profile.js';
 import { createMobileControls } from './mobileControls.js';
+import { createArenaExtras } from './arenaExtras.js';
 import { createMetaFeatures } from './metaFeatures.js';
 
 // --- Core setup (Phase 1) ---
@@ -45,7 +46,7 @@ const collider = createCollider(scene.userData.obstacles, { radius: 0.4 });
 // --- Phase 6/7: networking. Created before the player so the player can send
 //     input commands to the server for prediction/reconciliation. ---
 const remotePlayers = createRemotePlayers(scene);
-let player, game, hud, effects;
+let player, game, hud, effects, extras;
 const net = createNetwork({
   onInit(data) {
     // Step 52/53: we received our unique id and the current roster.
@@ -68,6 +69,7 @@ const net = createNetwork({
     if (event === 'you-hit') game?.takeDamage(Math.max(0, game.state.health - data.health));
     if (event === 'respawn') player?.resetTo(data.x, 1.7, data.z);
     if (event === 'hit-confirmed') hud.toast('PLAYER HIT', 'good');
+    extras?.event(event, data);
   },
 });
 
@@ -81,6 +83,7 @@ player = createPlayer(camera, scene, collider, renderer.domElement, {
 
 // --- HUD (crosshair, overlay, ammo, health, score, game-over) ---
 hud = createHud(player.controls);
+extras = createArenaExtras({ profile, net, hud, player, game });
 const metaFeatures = createMetaFeatures({ profile, hud, net });
 
 // --- Phase 4: weapon, effects, enemies, shooting ---
@@ -148,7 +151,7 @@ const loop = createLoop(renderer, scene, camera, {
   stats,
   onUpdate(delta) {
     // player.update predicts movement and sends inputs to the server itself.
-    mobileControls.update(delta); player.update(delta);
+    mobileControls.update(delta); player.update(delta); extras.update(delta);
     weapon.update(delta);
     shooting.update(delta);
     grenades.update(delta);

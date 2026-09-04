@@ -54,6 +54,7 @@ function newPlayer(id) {
     id,
     x: sx, y: 1.7, z: sz, ry: 0,
     color: COLORS[colorIndex++ % COLORS.length],
+    team: colorIndex % 2 ? 'red' : 'blue',
     name: `Player-${id.slice(0, 4)}`,
     lastSeq: 0,
     health: MAX_HEALTH,
@@ -67,7 +68,7 @@ function newPlayer(id) {
 
 function scoreboard() {
   return Array.from(players.values())
-    .map((p) => ({ id: p.id, name: p.name, kills: p.kills, deaths: p.deaths, alive: p.alive }))
+    .map((p) => ({ id: p.id, name: p.name, team: p.team, kills: p.kills, deaths: p.deaths, alive: p.alive }))
     .sort((a, b) => b.kills - a.kills);
 }
 
@@ -92,6 +93,9 @@ io.on('connection', (socket) => {
     if (typeof userId === 'string') player.userId = userId;
     io.emit('scoreboard', scoreboard());
     io.emit('player-renamed', { id, name: player.name }); // Step 88
+  });
+  socket.on('set-team', ({ team } = {}) => {
+    if (team === 'red' || team === 'blue') { player.team = team; io.emit('scoreboard', scoreboard()); }
   });
 
   // Step 65: authoritative movement from input commands.
@@ -128,7 +132,7 @@ io.on('connection', (socket) => {
     let bestId = null;
     let bestDist = Infinity;
     for (const target of players.values()) {
-      if (target.id === id || !target.alive) continue;
+      if (target.id === id || !target.alive || target.team === shooter.team) continue;
       const pos = positionAt(target, rewindTo);
       const t = rayHitsPlayer(origin, ndir, pos);
       if (t != null && t < bestDist) { bestDist = t; bestId = target.id; }
@@ -183,7 +187,7 @@ io.on('connection', (socket) => {
 
 // --- Helpers ---
 function publicPlayer(p) {
-  return { id: p.id, x: p.x, z: p.z, ry: p.ry, color: p.color, name: p.name, health: p.health };
+  return { id: p.id, x: p.x, z: p.z, ry: p.ry, color: p.color, team: p.team, name: p.name, health: p.health };
 }
 function validVec(v) {
   return v && Number.isFinite(v.x) && Number.isFinite(v.y) && Number.isFinite(v.z);
