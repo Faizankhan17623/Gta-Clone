@@ -19,6 +19,7 @@ import { createPickups } from './pickups.js';
 import { sfx } from './audio.js';
 import { createMissions } from './missions.js';
 import { createShop } from './shop.js';
+import { createInventory } from './inventory.js';
 
 // --- Core setup (Phase 1) ---
 const renderer = createRenderer();
@@ -84,6 +85,7 @@ const shooting = createShooting({
 game = createGame({ hud, enemies, player, shooting, pickups });
 const missions=createMissions(hud,points=>game.addScore(points));game.setMissions(missions);
 const shop=createShop({hud,game,shooting,controls:player.controls});
+const inventory=createInventory({hud,game});
 hud.onSettings((id, value) => {
   if (id === 'difficulty') game.setDifficulty(value);
   if (id === 'sensitivity') player.setSensitivity(value);

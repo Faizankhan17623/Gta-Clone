@@ -11,6 +11,7 @@ export function createGame({ hud, enemies, player, shooting, pickups }) {
     state.betweenWaves=false;hud.toast(boss?`BOSS WAVE ${n}`:`WAVE ${n}`,boss?'danger':'info');
   }
   function takeDamage(amount){if(!state.alive||state.paused||performance.now()<state.shieldUntil)return;state.health=Math.max(0,state.health-amount);hud.setHealth(state.health,state.maxHealth);hud.damageFlash();sfx.hurt();if(!state.health)die();}
+  function heal(amount){state.health=Math.min(state.maxHealth,state.health+amount);hud.setHealth(state.health,state.maxHealth);}
   function die(){state.alive=false;waveToken++;enemies.clear();if(document.pointerLockElement)document.exitPointerLock();saveBest();hud.showGameOver(state.score,state.wave,restart);}
   function saveBest(){const best=Math.max(state.score,Number(localStorage.getItem('arenaBest')||0));localStorage.setItem('arenaBest',best);localStorage.setItem('arenaWave',Math.max(state.wave,Number(localStorage.getItem('arenaWave')||0)));hud.setBest(best);}
   function addScore(points){state.score+=points;hud.setScore(state.score);}
@@ -24,5 +25,5 @@ export function createGame({ hud, enemies, player, shooting, pickups }) {
   function togglePause(){if(!state.alive)return;state.paused=!state.paused;hud.showPause(state.paused,()=>togglePause(),restart);if(state.paused&&document.pointerLockElement)document.exitPointerLock();else if(!state.paused)player.controls.lock();}
   function update(delta){if(!state.alive||state.paused||!player.controls.isLocked)return;enemies.update(delta,player.object.position,takeDamage);pickups.update(delta,player.object.position,collect);waveClear();const boss=enemies.list.find(e=>e.userData.enemy.type==='boss');if(boss)hud.setBoss(boss.userData.enemy.health,boss.userData.enemy.maxHealth,true);}
   function start(){hud.setBest(Number(localStorage.getItem('arenaBest')||0));pickups.spawnAll();startWave(1);}
-  return {state,start,update,restart,onKill,takeDamage,togglePause,collect,addScore,spendScore,setMissions(v){missions=v;},setDifficulty(v){state.difficulty=v;}};
+  return {state,start,update,restart,onKill,takeDamage,heal,togglePause,collect,addScore,spendScore,setMissions(v){missions=v;},setDifficulty(v){state.difficulty=v;}};
 }
