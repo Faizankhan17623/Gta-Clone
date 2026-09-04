@@ -10,7 +10,7 @@ export const mouse = { dx: 0, dy: 0, down: false, rdown: false };
 
 const GAME_KEYS = new Set(['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyW', 'KeyA', 'KeyS', 'KeyD']);
 
-function namesFor(e) {
+export function namesFor(e) {
   const names = [];
   if (e.code) names.push(e.code);
   if (e.key) {
@@ -24,6 +24,12 @@ function namesFor(e) {
       if (e.key === 'Shift') names.push('ShiftLeft');
     }
   }
+  // Some embedded browsers, virtual keyboards, and older automation drivers
+  // omit `code`/`key` and only expose the legacy numeric keyCode/which value.
+  const legacy = e.keyCode || e.which;
+  if (legacy >= 65 && legacy <= 90) names.push('Key' + String.fromCharCode(legacy));
+  else if (legacy === 32) names.push('Space');
+  else if (legacy >= 37 && legacy <= 40) names.push(['ArrowLeft','ArrowUp','ArrowRight','ArrowDown'][legacy - 37]);
   return names;
 }
 
