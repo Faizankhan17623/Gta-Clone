@@ -18,6 +18,35 @@ system, ~140 of them, all wired into `js/main.js`.
 Any static file server works. The easiest:
 
 ```
+
+## Arena Protocol (3D multiplayer arena)
+
+The repository also includes the newer Three.js arena shooter at
+`arena-protocol/`. It is built for static hosting and is playable live at:
+
+**https://faizankhan17623.github.io/Gta-Clone/arena-protocol/**
+
+### Arena features
+
+- WASD/arrow movement with sprint, jump, mouse look, and the D-key right-turn fix.
+- Pistol, rifle, shotgun, and sniper loadouts with ammo, reloads, upgrades, and attachments.
+- Enemy waves with bosses, runners, tanks, ranged attacks, flanking, retreat, hit animation, and death effects.
+- Missions, daily challenges, achievements, XP skills, selectable characters, armor, medkits, and grenades.
+- Minimap, destructible cover, explosive barrels, dynamic weather, day/night lighting, and persistent player settings.
+- Multiplayer networking through the Socket.IO server in `arena-protocol-project/server/`.
+- Responsive touch controls for mobile devices: virtual joystick, fire, reload, grenade, and medkit buttons.
+
+### Arena development
+
+```powershell
+cd arena-protocol-project/game3d
+npm install
+npm test
+npm run build
+```
+
+The source build is copied to `arena-protocol/` for GitHub Pages deployment. The
+server can be run separately with `cd arena-protocol-project/server; npm start`.
 npm start
 ```
 
