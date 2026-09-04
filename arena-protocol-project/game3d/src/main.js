@@ -20,6 +20,7 @@ import { sfx } from './audio.js';
 import { createMissions } from './missions.js';
 import { createShop } from './shop.js';
 import { createInventory } from './inventory.js';
+import { createGrenades } from './grenades.js';
 
 // --- Core setup (Phase 1) ---
 const renderer = createRenderer();
@@ -87,6 +88,7 @@ const missions=createMissions(hud,points=>game.addScore(points));game.setMission
 const inventory=createInventory({hud,game});
 game.setInventory(inventory);
 const shop=createShop({hud,game,shooting,controls:player.controls,inventory});
+const grenades=createGrenades({scene,camera,enemies,inventory,hud,onKill:(headshot,type)=>game.onKill(headshot,type)});
 hud.onSettings((id, value) => {
   if (id === 'difficulty') game.setDifficulty(value);
   if (id === 'sensitivity') player.setSensitivity(value);
@@ -126,6 +128,7 @@ const loop = createLoop(renderer, scene, camera, {
     player.update(delta);
     weapon.update(delta);
     shooting.update(delta);
+    grenades.update(delta);
     effects.update(delta);
     game.update(delta);
 

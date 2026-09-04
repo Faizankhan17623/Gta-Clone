@@ -70,6 +70,7 @@ export function createEnemies(scene, collider) {
   function update(delta, playerPos, onAttack) {
     for (const group of enemies) {
       const e = group.userData.enemy;
+      if ((e.stunnedUntil ?? 0) > performance.now()) continue;
       e.attackCooldown = Math.max(0, e.attackCooldown - delta);
 
       dir.set(playerPos.x - group.position.x, 0, playerPos.z - group.position.z);
