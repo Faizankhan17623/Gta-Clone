@@ -1,0 +1,2 @@
+import test from'node:test';import assert from'node:assert/strict';import{createAchievements}from'../game3d/src/achievements.js';
+test('achievements persist and unlock once',()=>{const data=new Map(),storage={getItem:k=>data.get(k),setItem:(k,v)=>data.set(k,v)},toasts=[];const a=createAchievements({toast:t=>toasts.push(t)},storage);for(let i=0;i<10;i++)a.record('kills');assert.equal(a.profile.stats.kills,10);assert.deepEqual(a.profile.achievements,['kills-10']);assert.equal(toasts.length,1);});

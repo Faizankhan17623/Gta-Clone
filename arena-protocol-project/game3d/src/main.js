@@ -22,6 +22,7 @@ import { createShop } from './shop.js';
 import { createInventory } from './inventory.js';
 import { createGrenades } from './grenades.js';
 import { createMinimap } from './minimap.js';
+import { createAchievements } from './achievements.js';
 
 // --- Core setup (Phase 1) ---
 const renderer = createRenderer();
@@ -86,6 +87,7 @@ const shooting = createShooting({
 });
 game = createGame({ hud, enemies, player, shooting, pickups });
 const missions=createMissions(hud,points=>game.addScore(points));game.setMissions(missions);
+const achievements=createAchievements(hud);game.setAchievements(achievements);
 const inventory=createInventory({hud,game});
 game.setInventory(inventory);
 const shop=createShop({hud,game,shooting,controls:player.controls,inventory});
