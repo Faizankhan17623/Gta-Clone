@@ -108,6 +108,7 @@ function addObstacles(scene) {
     const barrel = new THREE.Mesh(new THREE.CylinderGeometry(.45,.45,1.3,12), new THREE.MeshStandardMaterial({color:0xd94b32,metalness:.45,roughness:.55}));
     barrel.position.set(x,.65,z); barrel.castShadow=true; barrel.userData.isObstacle=true; barrel.userData.explosive=true; scene.add(barrel); obstacles.push(barrel);
   }
+  for(const [x,z] of [[-2,-7],[4,9],[-15,14],[15,6],[9,19]]){const crate=new THREE.Mesh(new THREE.BoxGeometry(1.5,1.5,1.5),new THREE.MeshStandardMaterial({color:0x8b623d,roughness:.9}));crate.position.set(x,.75,z);crate.castShadow=true;crate.userData.isObstacle=true;crate.userData.destructible=true;crate.userData.health=45;scene.add(crate);obstacles.push(crate);}
 
   return obstacles;
 }

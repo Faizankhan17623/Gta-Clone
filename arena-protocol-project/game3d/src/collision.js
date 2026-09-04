@@ -6,12 +6,14 @@ import * as THREE from 'three';
 // This is simpler and more stable than raycasting for box-shaped cover.
 export function createCollider(obstacles, { radius = 0.4 } = {}) {
   // Precompute each obstacle's world AABB once (obstacles are static).
-  const boxes = obstacles.map((mesh) => new THREE.Box3().setFromObject(mesh));
+  const boxes = obstacles.map((mesh) => ({ mesh, box: new THREE.Box3().setFromObject(mesh) }));
 
   // Given a desired new XZ position, push it out of any box it overlaps.
   // Returns a corrected { x, z }. Y (vertical) is handled separately by gravity.
   function resolveXZ(x, z) {
-    for (const box of boxes) {
+    for (const entry of boxes) {
+      if (!entry.mesh.visible || entry.mesh.userData.destroyed) continue;
+      const box = entry.box;
       // Closest point on the box (in XZ) to the player center.
       const closestX = Math.max(box.min.x, Math.min(x, box.max.x));
       const closestZ = Math.max(box.min.z, Math.min(z, box.max.z));
