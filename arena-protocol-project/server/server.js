@@ -7,12 +7,18 @@ import { Server } from 'socket.io';
 import cors from 'cors';
 import { applyInput } from '../shared/movement.js';
 import { rayHitsPlayer } from '../shared/hit.js';
+import fs from 'fs';
+import path from 'path';
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
 app.get('/', (_req, res) => res.send('game3d server running'));
+const LEADERBOARD_FILE = path.join(process.cwd(), 'arena-leaderboard.json');
+let persistentLeaderboard = [];
+try { persistentLeaderboard = JSON.parse(fs.readFileSync(LEADERBOARD_FILE, 'utf8')); } catch { /* first run */ }
+app.get('/leaderboard', (_req, res) => res.json(persistentLeaderboard.slice(0, 100)));
 
 const httpServer = createServer(app);
 const io = new Server(httpServer, { cors: { origin: '*', methods: ['GET', 'POST'] } });
@@ -71,6 +77,12 @@ function scoreboard() {
     .map((p) => ({ id: p.id, name: p.name, team: p.team, kills: p.kills, deaths: p.deaths, alive: p.alive }))
     .sort((a, b) => b.kills - a.kills);
 }
+function saveLeaderboard(p) {
+  persistentLeaderboard.push({ name: p.name, team: p.team, kills: p.kills, deaths: p.deaths, at: Date.now() });
+  persistentLeaderboard.sort((a, b) => b.kills - a.kills);
+  persistentLeaderboard = persistentLeaderboard.slice(0, 100);
+  try { fs.writeFileSync(LEADERBOARD_FILE, JSON.stringify(persistentLeaderboard, null, 2)); } catch { /* read-only hosts keep memory leaderboard */ }
+}
 
 io.on('connection', (socket) => {
   const id = socket.id;
@@ -96,6 +108,11 @@ io.on('connection', (socket) => {
   });
   socket.on('set-team', ({ team } = {}) => {
     if (team === 'red' || team === 'blue') { player.team = team; io.emit('scoreboard', scoreboard()); }
+  });
+  socket.on('join-room', ({ code } = {}) => {
+    if (typeof code !== 'string' || !code.trim()) return;
+    const room = code.trim().toUpperCase().slice(0, 8);
+    socket.join(room); player.room = room; socket.emit('room-joined', { room });
   });
 
   // Step 65: authoritative movement from input commands.
@@ -153,6 +170,7 @@ io.on('connection', (socket) => {
         victim.alive = false;
         victim.deaths++;
         shooter.kills++;
+        saveLeaderboard(shooter);
         victim.health = 0;
         const respawnAt = Date.now() + RESPAWN_DELAY;
         victim.respawnAt = respawnAt;

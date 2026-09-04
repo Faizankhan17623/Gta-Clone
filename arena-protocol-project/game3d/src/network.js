@@ -36,7 +36,7 @@ export function createNetwork({ onInit, onPlayerJoined, onPlayerLeft, onSnapshot
   socket.on('player-left', (id) => onPlayerLeft?.(id));
   // Snapshot shape (Phase 7): { t, p: [{id, x, z, ry, seq}] }
   socket.on('snapshot', (snap) => onSnapshot?.(snap));
-  for (const event of ['scoreboard','kill','victory','respawn','you-hit','hit-confirmed','remote-shot','circle','round-reset','player-health','player-renamed']) {
+  for (const event of ['scoreboard','kill','victory','respawn','you-hit','hit-confirmed','remote-shot','circle','round-reset','player-health','player-renamed','room-joined']) {
     socket.on(event, data => onEvent?.(event, data));
   }
 
@@ -57,6 +57,7 @@ export function createNetwork({ onInit, onPlayerJoined, onPlayerLeft, onSnapshot
   function sendShot(shot) { if (connected) socket.emit('shot', shot); }
   function identify(name) { if (connected) socket.emit('identify', { name }); }
   function setTeam(team) { if (connected) socket.emit('set-team', { team }); }
+  function joinRoom(code) { if (connected && code) socket.emit('join-room', { code: String(code).trim().toUpperCase().slice(0, 8) }); }
 
   // Step 68: ping every second (round-trip via Socket.io ack).
   setInterval(() => {
@@ -69,7 +70,7 @@ export function createNetwork({ onInit, onPlayerJoined, onPlayerLeft, onSnapshot
 
   return {
     socket,
-    sendInput, sendShot, identify, setTeam,
+    sendInput, sendShot, identify, setTeam, joinRoom,
     get selfId() { return selfId; },
     get connected() { return connected; },
     get ping() { return ping; },
