@@ -28,12 +28,14 @@ import { createCharacters } from './characters.js';
 import { createSkills } from './skills.js';
 import { createAttachments } from './attachments.js';
 import { createEnvironment } from './environment.js';
+import { createProfile } from './profile.js';
 
 // --- Core setup (Phase 1) ---
 const renderer = createRenderer();
 const camera = createCamera();
 const scene = createScene();
 const environment=createEnvironment(scene);
+const profile=createProfile();
 
 // --- Phase 3: first-person controls + collision ---
 const collider = createCollider(scene.userData.obstacles, { radius: 0.4 });
@@ -92,6 +94,7 @@ const shooting = createShooting({
   sendShot: shot => net.sendShot(shot),
 });
 game = createGame({ hud, enemies, player, shooting, pickups });
+hud.applySettings(profile.data);
 const missions=createMissions(hud,points=>game.addScore(points));game.setMissions(missions);
 const achievements=createAchievements(hud);game.setAchievements(achievements);
 const daily=createDaily(hud,points=>game.addScore(points));game.setDaily(daily);
@@ -104,11 +107,13 @@ const shop=createShop({hud,game,shooting,controls:player.controls,inventory});
 const grenades=createGrenades({scene,camera,enemies,inventory,hud,onKill:(headshot,type)=>game.onKill(headshot,type)});
 const minimap=createMinimap({player,enemies});
 hud.onSettings((id, value) => {
+  profile.set(id,value);
   if (id === 'difficulty') game.setDifficulty(value);
   if (id === 'sensitivity') player.setSensitivity(value);
   if (id === 'volume') sfx.setVolume(value);
   if (id === 'graphics') renderer.setPixelRatio(Math.min(window.devicePixelRatio, value));
 });
+game.setDifficulty(profile.data.difficulty);player.setSensitivity(profile.data.sensitivity);sfx.setVolume(profile.data.volume);renderer.setPixelRatio(Math.min(window.devicePixelRatio,profile.data.graphics));
 
 // Start the first wave once the player locks in (also start immediately so the
 // HUD shows correct values before the first click).

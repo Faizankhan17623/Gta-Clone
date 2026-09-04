@@ -9,6 +9,7 @@ export function createHud(controls){
   controls.addEventListener('unlock',()=>{if(modal.classList.contains('hidden'))overlay.classList.remove('hidden');hud.classList.add('hidden');});
   const wire=actions=>document.querySelectorAll('[data-action]').forEach(b=>b.onclick=()=>actions[b.dataset.action]?.());
   const api={
+    applySettings(values){for(const id of['difficulty','sensitivity','volume','graphics'])if(values[id]!=null)$(id).value=values[id];},
     addCharacterSelect(classes,cb){const label=document.createElement('label');label.innerHTML=`Class <select id="character">${Object.entries(classes).map(([id,c])=>`<option value="${id}">${c.label}</option>`).join('')}</select>`;document.querySelector('.settings').appendChild(label);label.querySelector('select').onchange=e=>cb(e.target.value);},
     onSettings(cb){['difficulty','sensitivity','volume','graphics'].forEach(id=>$(id).addEventListener('input',()=>cb(id,Number($(id).value))));},
     setWeapon(name,ammo,reserve){$('weaponname').textContent=name.toUpperCase();$('ammo').textContent=ammo;$('reserve').textContent=`/ ${reserve}`;},setReloading(v){if(v)$('ammo').textContent='···';},

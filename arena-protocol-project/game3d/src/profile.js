@@ -1,0 +1,2 @@
+const DEFAULTS={difficulty:1,sensitivity:1,volume:.7,graphics:1.5,name:'Operative',color:'#55e6ff'};
+export function createProfile(storage=localStorage){let data;try{data={...DEFAULTS,...JSON.parse(storage.getItem('arenaPlayerProfile'))};}catch{data={...DEFAULTS};}function set(key,value){if(!(key in DEFAULTS))return;data[key]=value;storage.setItem('arenaPlayerProfile',JSON.stringify(data));}return{data,set};}
