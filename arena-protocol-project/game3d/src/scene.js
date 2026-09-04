@@ -25,9 +25,11 @@ export function createScene() {
 // Step 9: DirectionalLight + AmbientLight. Step 17: directional light casts shadows.
 function addLights(scene) {
   const ambient = new THREE.AmbientLight(0xffffff, 0.5);
+  ambient.name = 'ambient';
   scene.add(ambient);
 
   const sun = new THREE.DirectionalLight(0xffffff, 1.2);
+  sun.name = 'sun';
   sun.position.set(20, 40, 20);
   sun.castShadow = true;
 

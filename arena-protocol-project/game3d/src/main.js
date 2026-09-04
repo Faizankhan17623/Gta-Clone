@@ -27,11 +27,13 @@ import { createDaily } from './daily.js';
 import { createCharacters } from './characters.js';
 import { createSkills } from './skills.js';
 import { createAttachments } from './attachments.js';
+import { createEnvironment } from './environment.js';
 
 // --- Core setup (Phase 1) ---
 const renderer = createRenderer();
 const camera = createCamera();
 const scene = createScene();
+const environment=createEnvironment(scene);
 
 // --- Phase 3: first-person controls + collision ---
 const collider = createCollider(scene.userData.obstacles, { radius: 0.4 });
@@ -142,6 +144,7 @@ const loop = createLoop(renderer, scene, camera, {
     shooting.update(delta);
     grenades.update(delta);
     minimap.update();
+    environment.update(delta);
     effects.update(delta);
     game.update(delta);
 
