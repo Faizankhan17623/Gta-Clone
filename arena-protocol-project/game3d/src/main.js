@@ -17,6 +17,7 @@ import { createRemotePlayers } from './remotePlayers.js';
 import { createNetHud } from './netHud.js';
 import { createPickups } from './pickups.js';
 import { sfx } from './audio.js';
+import { createMissions } from './missions.js';
 
 // --- Core setup (Phase 1) ---
 const renderer = createRenderer();
@@ -80,6 +81,7 @@ const shooting = createShooting({
   sendShot: shot => net.sendShot(shot),
 });
 game = createGame({ hud, enemies, player, shooting, pickups });
+const missions=createMissions(hud,points=>game.addScore(points));game.setMissions(missions);
 hud.onSettings((id, value) => {
   if (id === 'difficulty') game.setDifficulty(value);
   if (id === 'sensitivity') player.setSensitivity(value);

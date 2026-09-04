@@ -1,0 +1,2 @@
+import test from 'node:test';import assert from 'node:assert/strict';import { createMissions } from '../game3d/src/missions.js';
+test('mission rewards only after reaching its target',()=>{let reward=0,last;const hud={setMission:(...v)=>last=v,toast(){}};const m=createMissions(hud,v=>reward+=v);for(let i=0;i<9;i++)m.record('kills');assert.equal(reward,0);m.record('kills');assert.equal(reward,500);assert.deepEqual(last,['Eliminate 10 hostiles',10,10]);});
