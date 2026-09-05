@@ -50,6 +50,24 @@ npm run build
 
 The source build is copied to `arena-protocol/` for GitHub Pages deployment. The
 server can be run separately with `cd arena-protocol-project/server; npm start`.
+
+### Arena deployment on Render
+
+The whole Arena project can run on one Render Web Service. Use this build command:
+
+```powershell
+cd arena-protocol-project/game3d; npm install; npm run build; cd ../server; npm install
+```
+
+Use this start command:
+
+```powershell
+cd arena-protocol-project/server; npm start
+```
+
+Configure `ADMIN_TOKEN`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, and
+`ADMIN_EMAIL` in Render environment settings. Never commit these values. The game is
+served from `/`, and the protected admin panel is at `/admin`.
 npm start
 ```
 

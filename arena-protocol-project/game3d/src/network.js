@@ -6,7 +6,8 @@ import { io } from 'socket.io-client';
 // Step 62: outgoing input rate is capped independently of frame rate.
 // Step 68: round-trip ping measurement for a lag display.
 
-const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001';
+const SERVER_URL = import.meta.env.VITE_SERVER_URL ||
+  (import.meta.env.DEV ? 'http://localhost:3001' : window.location.origin);
 
 export function createNetwork({ onInit, onPlayerJoined, onPlayerLeft, onSnapshot, onEvent }) {
   const socket = io(SERVER_URL, { transports: ['websocket'] });

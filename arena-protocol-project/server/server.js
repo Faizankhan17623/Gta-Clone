@@ -10,6 +10,7 @@ import { rayHitsPlayer } from '../shared/hit.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import crypto from 'crypto';
 
 const app = express();
 app.use(cors());
@@ -28,6 +29,26 @@ const metrics = {
   socketEvents: Object.create(null),
   recentErrors: [],
 };
+const ADMIN_WINDOW_MS = 60 * 60 * 1000;
+let adminTokenHash = process.env.ADMIN_TOKEN ? hashToken(process.env.ADMIN_TOKEN) : null;
+let adminTokenExpiresAt = process.env.ADMIN_TOKEN ? Date.now() + ADMIN_WINDOW_MS : 0;
+let adminTokenSentAt = 0;
+let adminAttempts = 0;
+let adminLockedUntil = 0;
+const adminSessions = new Map();
+function hashToken(value) { return crypto.createHash('sha256').update(String(value)).digest('hex'); }
+function newToken() { return crypto.randomBytes(24).toString('base64url'); }
+function cookieValue(req, name) {
+  const raw = req.get('cookie') || '';
+  const found = raw.split(';').map((v) => v.trim()).find((v) => v.startsWith(`${name}=`));
+  return found ? decodeURIComponent(found.slice(name.length + 1)) : '';
+}
+function validAdminSession(req) {
+  const key = cookieValue(req, 'arena_admin_session');
+  const expires = adminSessions.get(key);
+  if (!key || !expires || expires < Date.now()) { if (key) adminSessions.delete(key); return false; }
+  return true;
+}
 function recordError(error, context = 'server') {
   const entry = { at: new Date().toISOString(), context, message: String(error?.message || error) };
   metrics.recentErrors.unshift(entry);
@@ -46,19 +67,52 @@ app.use((req, res, next) => {
   next();
 });
 
-app.get('/', (_req, res) => res.send('game3d server running'));
+const SERVER_DIR = path.dirname(fileURLToPath(import.meta.url));
+const FRONTEND_DIR = path.resolve(SERVER_DIR, '../game3d/dist');
+if (fs.existsSync(FRONTEND_DIR)) app.use(express.static(FRONTEND_DIR, { index: false }));
+app.get('/', (_req, res) => {
+  const index = path.join(FRONTEND_DIR, 'index.html');
+  if (fs.existsSync(index)) return res.sendFile(index);
+  res.send('game3d server running');
+});
 app.get('/health', (_req, res) => res.json({ ok: true, uptimeSec: Math.round(process.uptime()) }));
 
 function adminAuthorized(req) {
   const configured = process.env.ADMIN_TOKEN;
-  return Boolean(configured && req.get('x-admin-token') === configured);
+  return validAdminSession(req) || Boolean(configured && req.get('x-admin-token') === configured);
 }
 function requireAdmin(req, res, next) {
   if (!adminAuthorized(req)) return res.status(401).json({ error: 'Admin authorization required' });
   next();
 }
-const SERVER_DIR = path.dirname(fileURLToPath(import.meta.url));
 app.get('/admin', (_req, res) => res.sendFile(path.join(SERVER_DIR, 'admin.html')));
+app.post('/admin/send-token', async (_req, res) => {
+  if (Date.now() - adminTokenSentAt < ADMIN_WINDOW_MS) return res.status(429).json({ error: 'A new admin token can be sent once per hour' });
+  const { SMTP_HOST, SMTP_PORT = '587', SMTP_USER, SMTP_PASS, ADMIN_EMAIL } = process.env;
+  if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS || !ADMIN_EMAIL) return res.status(503).json({ error: 'Admin email delivery is not configured' });
+  const token = newToken();
+  try {
+    const { default: nodemailer } = await import('nodemailer');
+    const transporter = nodemailer.createTransport({ host: SMTP_HOST, port: Number(SMTP_PORT), secure: String(SMTP_PORT) === '465', auth: { user: SMTP_USER, pass: SMTP_PASS } });
+    await transporter.sendMail({ from: SMTP_USER, to: ADMIN_EMAIL, subject: 'Arena Protocol admin token', text: `Your admin token is ${token}. It expires in one hour.` });
+    adminTokenHash = hashToken(token); adminTokenExpiresAt = Date.now() + ADMIN_WINDOW_MS; adminTokenSentAt = Date.now(); adminAttempts = 0; adminLockedUntil = 0;
+    res.json({ ok: true, message: 'A new admin token was sent to the configured admin email' });
+  } catch (error) { recordError(error, 'admin-email'); res.status(502).json({ error: 'Admin token email could not be sent' }); }
+});
+app.post('/admin/auth', (req, res) => {
+  if (Date.now() < adminLockedUntil) return res.status(423).json({ error: 'Admin access is locked for one hour', redirect: '/' });
+  const supplied = typeof req.body?.token === 'string' ? req.body.token : '';
+  const matches = adminTokenHash && Date.now() < adminTokenExpiresAt && crypto.timingSafeEqual(Buffer.from(hashToken(supplied)), Buffer.from(adminTokenHash));
+  if (!matches) {
+    adminAttempts++;
+    if (adminAttempts >= 2) { adminLockedUntil = Date.now() + ADMIN_WINDOW_MS; return res.status(423).json({ error: 'Two invalid attempts used. Admin access is locked for one hour.', redirect: '/' }); }
+    return res.status(401).json({ error: 'Invalid token', attemptsRemaining: 2 - adminAttempts });
+  }
+  adminAttempts = 0;
+  const session = crypto.randomBytes(24).toString('base64url'); adminSessions.set(session, Date.now() + ADMIN_WINDOW_MS);
+  res.setHeader('Set-Cookie', `arena_admin_session=${encodeURIComponent(session)}; HttpOnly; SameSite=Strict; Path=/admin; Max-Age=3600`);
+  res.json({ ok: true });
+});
 app.get('/admin/metrics', requireAdmin, (_req, res) => {
   const uptimeSec = Math.round(process.uptime());
   res.json({
