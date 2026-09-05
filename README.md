@@ -65,7 +65,7 @@ Use this start command:
 cd arena-protocol-project/server; npm start
 ```
 
-Configure `ADMIN_TOKEN`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, and
+Configure `CLIENT_ORIGIN`, `ADMIN_TOKEN`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, and
 `ADMIN_EMAIL` in Render environment settings. Never commit these values. The game is
 served from `/`, and the protected admin panel is at `/admin`.
 npm start

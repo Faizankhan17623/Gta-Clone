@@ -13,7 +13,8 @@ import { fileURLToPath } from 'url';
 import crypto from 'crypto';
 
 const app = express();
-app.use(cors());
+const clientOrigin = process.env.CLIENT_ORIGIN || true;
+app.use(cors({ origin: clientOrigin }));
 app.use(express.json());
 
 // Lightweight operational metrics. These stay in memory and are intentionally
@@ -138,7 +139,7 @@ try { persistentLeaderboard = JSON.parse(fs.readFileSync(LEADERBOARD_FILE, 'utf8
 app.get('/leaderboard', (_req, res) => res.json(persistentLeaderboard.slice(0, 100)));
 
 const httpServer = createServer(app);
-const io = new Server(httpServer, { cors: { origin: '*', methods: ['GET', 'POST'] } });
+const io = new Server(httpServer, { cors: { origin: process.env.CLIENT_ORIGIN || '*', methods: ['GET', 'POST'] } });
 
 // --- In-memory state ---
 const players = new Map(); // id -> player
