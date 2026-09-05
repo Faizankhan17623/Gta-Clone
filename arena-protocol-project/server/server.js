@@ -9,12 +9,75 @@ import { applyInput } from '../shared/movement.js';
 import { rayHitsPlayer } from '../shared/hit.js';
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Lightweight operational metrics. These stay in memory and are intentionally
+// exposed only through the token-protected admin endpoints below.
+const metrics = {
+  startedAt: Date.now(),
+  requests: 0,
+  responses4xx: 0,
+  responses5xx: 0,
+  totalLatencyMs: 0,
+  connections: 0,
+  disconnects: 0,
+  socketEvents: Object.create(null),
+  recentErrors: [],
+};
+function recordError(error, context = 'server') {
+  const entry = { at: new Date().toISOString(), context, message: String(error?.message || error) };
+  metrics.recentErrors.unshift(entry);
+  metrics.recentErrors.splice(50);
+  console.error(`[${context}]`, entry.message);
+}
+app.use((req, res, next) => {
+  const started = performance.now();
+  metrics.requests++;
+  res.on('finish', () => {
+    const latency = performance.now() - started;
+    metrics.totalLatencyMs += latency;
+    if (res.statusCode >= 400 && res.statusCode < 500) metrics.responses4xx++;
+    if (res.statusCode >= 500) metrics.responses5xx++;
+  });
+  next();
+});
+
 app.get('/', (_req, res) => res.send('game3d server running'));
+app.get('/health', (_req, res) => res.json({ ok: true, uptimeSec: Math.round(process.uptime()) }));
+
+function adminAuthorized(req) {
+  const configured = process.env.ADMIN_TOKEN;
+  return Boolean(configured && req.get('x-admin-token') === configured);
+}
+function requireAdmin(req, res, next) {
+  if (!adminAuthorized(req)) return res.status(401).json({ error: 'Admin authorization required' });
+  next();
+}
+const SERVER_DIR = path.dirname(fileURLToPath(import.meta.url));
+app.get('/admin', (_req, res) => res.sendFile(path.join(SERVER_DIR, 'admin.html')));
+app.get('/admin/metrics', requireAdmin, (_req, res) => {
+  const uptimeSec = Math.round(process.uptime());
+  res.json({
+    now: new Date().toISOString(),
+    uptimeSec,
+    playersOnline: players.size,
+    connections: metrics.connections,
+    disconnects: metrics.disconnects,
+    requests: metrics.requests,
+    responses4xx: metrics.responses4xx,
+    responses5xx: metrics.responses5xx,
+    averageLatencyMs: metrics.requests ? Math.round(metrics.totalLatencyMs / metrics.requests) : 0,
+    socketEvents: metrics.socketEvents,
+    memoryMb: Math.round(process.memoryUsage().rss / 1024 / 1024),
+    recentErrors: metrics.recentErrors,
+  });
+});
+app.get('/admin/errors', requireAdmin, (_req, res) => res.json(metrics.recentErrors));
+
 const LEADERBOARD_FILE = path.join(process.cwd(), 'arena-leaderboard.json');
 let persistentLeaderboard = [];
 try { persistentLeaderboard = JSON.parse(fs.readFileSync(LEADERBOARD_FILE, 'utf8')); } catch { /* first run */ }
@@ -85,9 +148,11 @@ function saveLeaderboard(p) {
 }
 
 io.on('connection', (socket) => {
+  metrics.connections++;
   const id = socket.id;
   const player = newPlayer(id);
   players.set(id, player);
+  socket.onAny((event) => { metrics.socketEvents[event] = (metrics.socketEvents[event] || 0) + 1; });
   console.log(`[connect] ${id} (${players.size} online)`);
 
   socket.emit('init', {
@@ -196,12 +261,16 @@ io.on('connection', (socket) => {
   socket.on('ping-check', (ack) => { if (typeof ack === 'function') ack(); });
 
   socket.on('disconnect', () => {
+    metrics.disconnects++;
     players.delete(id);
     io.emit('player-left', id);
     io.emit('scoreboard', scoreboard());
     console.log(`[disconnect] ${id} (${players.size} online)`);
   });
 });
+
+process.on('uncaughtException', (error) => recordError(error, 'uncaughtException'));
+process.on('unhandledRejection', (error) => recordError(error, 'unhandledRejection'));
 
 // Keep abandoned room/player state bounded on long-lived hosted servers.
 setInterval(() => {

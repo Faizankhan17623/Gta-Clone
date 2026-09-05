@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Arena Protocol Admin</title>
+  <style>
+    :root{color-scheme:dark;font-family:Inter,Segoe UI,sans-serif;background:#07101c;color:#eef7ff}*{box-sizing:border-box}body{margin:0;padding:24px;max-width:1180px;margin-inline:auto}header{display:flex;justify-content:space-between;align-items:end;gap:16px;margin-bottom:22px}h1{margin:0;font-size:clamp(28px,5vw,48px);letter-spacing:-.04em}p{color:#9eb0bf}.muted{color:#7f94a6;font-size:13px}.controls{display:flex;gap:8px;flex-wrap:wrap}input,button{border:1px solid #345064;border-radius:6px;background:#0d1d2b;color:#eef7ff;padding:10px 12px}button{cursor:pointer;background:#55e6ff;color:#061019;font-weight:800}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}.card{background:linear-gradient(145deg,#0e2030,#08121e);border:1px solid #203b4d;border-radius:10px;padding:16px;min-height:100px}.label{color:#89a2b4;font-size:12px;text-transform:uppercase;letter-spacing:.12em}.value{font-size:30px;font-weight:800;margin-top:12px}.wide{grid-column:span 2}table{width:100%;border-collapse:collapse;font-size:14px}td,th{text-align:left;padding:9px 6px;border-bottom:1px solid #1d3545}th{color:#8fa9bb;font-size:12px;text-transform:uppercase}.ok{color:#63e6a0}.bad{color:#ff7882}.bar{height:9px;background:#132838;border-radius:6px;overflow:hidden;margin-top:12px}.bar i{display:block;height:100%;background:#55e6ff;width:0}.error{color:#ffb3b8;border-left:3px solid #ff5964;padding:8px 10px;background:#2a151d;margin:7px 0;font-size:13px}.hidden{display:none}@media(max-width:760px){.grid{grid-template-columns:repeat(2,1fr)}.wide{grid-column:span 2}}@media(max-width:460px){.grid{grid-template-columns:1fr 1fr}.value{font-size:24px}}
+  </style>
+</head>
+<body>
+  <header><div><div class="muted">ARENA PROTOCOL / OPERATIONS</div><h1>Admin Monitor</h1><p id="status">Enter the server admin token to begin.</p></div><div class="controls"><input id="token" type="password" placeholder="ADMIN_TOKEN" autocomplete="off"><button id="connect">CONNECT</button></div></header>
+  <main id="dashboard" class="hidden">
+    <section class="grid">
+      <div class="card"><div class="label">Players online</div><div id="players" class="value">—</div></div>
+      <div class="card"><div class="label">Total connections</div><div id="connections" class="value">—</div></div>
+      <div class="card"><div class="label">Requests</div><div id="requests" class="value">—</div></div>
+      <div class="card"><div class="label">Memory</div><div id="memory" class="value">—</div></div>
+      <div class="card"><div class="label">Average API latency</div><div id="latency" class="value">—</div></div>
+      <div class="card"><div class="label">4xx responses</div><div id="four" class="value">—</div></div>
+      <div class="card"><div class="label">5xx responses</div><div id="five" class="value">—</div></div>
+      <div class="card"><div class="label">Uptime</div><div id="uptime" class="value">—</div></div>
+      <div class="card wide"><div class="label">Socket events</div><table><tbody id="events"></tbody></table></div>
+      <div class="card wide"><div class="label">Recent failures</div><div id="errors"><span class="muted">No errors recorded.</span></div></div>
+    </section>
+  </main>
+  <script>
+    const $=id=>document.getElementById(id), token=$('token'), dash=$('dashboard');
+    token.value=sessionStorage.getItem('arenaAdminToken')||'';
+    function fmt(sec){const h=Math.floor(sec/3600),m=Math.floor(sec%3600/60),s=sec%60;return `${h}h ${m}m ${s}s`}
+    function set(id,v){$(id).textContent=v}
+    async function refresh(){
+      const res=await fetch('/admin/metrics',{headers:{'x-admin-token':token.value}});
+      if(!res.ok) throw new Error(res.status===401?'Invalid admin token':'Admin endpoint unavailable');
+      const d=await res.json(); set('players',d.playersOnline);set('connections',d.connections);set('requests',d.requests);set('memory',`${d.memoryMb} MB`);set('latency',`${d.averageLatencyMs} ms`);set('four',d.responses4xx);set('five',d.responses5xx);set('uptime',fmt(d.uptimeSec));
+      $('events').innerHTML=Object.entries(d.socketEvents).sort((a,b)=>b[1]-a[1]).slice(0,12).map(([k,v])=>`<tr><td>${k}</td><td>${v}</td></tr>`).join('')||'<tr><td class="muted">No events yet</td></tr>';
+      $('errors').innerHTML=d.recentErrors.length?d.recentErrors.slice(0,12).map(e=>`<div class="error"><b>${e.context}</b> · ${e.message}<br><span class="muted">${e.at}</span></div>`).join(''):'<span class="ok">No errors recorded.</span>';
+      $('status').textContent=`Live · updated ${new Date().toLocaleTimeString()}`;$('status').className='ok';dash.classList.remove('hidden');
+    }
+    $('connect').onclick=async()=>{sessionStorage.setItem('arenaAdminToken',token.value);try{await refresh();clearInterval(window.timer);window.timer=setInterval(refresh,5000)}catch(e){$('status').textContent=e.message;$('status').className='bad';dash.classList.add('hidden')}};
+  </script>
+</body>
+</html>
