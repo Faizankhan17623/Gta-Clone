@@ -67,7 +67,8 @@ cd arena-protocol-project/server; npm start
 
 Configure `CLIENT_ORIGIN`, `ADMIN_TOKEN`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, and
 `ADMIN_EMAIL` in Render environment settings. Never commit these values. The game is
-served from `/`, and the protected admin panel is at `/admin`.
+The GTA/Open City game is served from `/`, Arena Protocol from `/arena-protocol`,
+and the protected admin panel is at `/admin`.
 npm start
 ```
 

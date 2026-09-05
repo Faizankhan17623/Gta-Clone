@@ -69,10 +69,17 @@ app.use((req, res, next) => {
 });
 
 const SERVER_DIR = path.dirname(fileURLToPath(import.meta.url));
+const REPO_DIR = path.resolve(SERVER_DIR, '../..');
 const FRONTEND_DIR = path.resolve(SERVER_DIR, '../game3d/dist');
-if (fs.existsSync(FRONTEND_DIR)) app.use(express.static(FRONTEND_DIR, { index: false }));
-app.get('/', (_req, res) => {
+if (fs.existsSync(FRONTEND_DIR)) app.use('/arena-protocol', express.static(FRONTEND_DIR, { index: false }));
+app.use(express.static(REPO_DIR, { index: false }));
+app.get('/arena-protocol/', (_req, res) => {
   const index = path.join(FRONTEND_DIR, 'index.html');
+  if (fs.existsSync(index)) return res.sendFile(index);
+  res.status(404).send('Arena Protocol build not found');
+});
+app.get('/', (_req, res) => {
+  const index = path.join(REPO_DIR, 'index.html');
   if (fs.existsSync(index)) return res.sendFile(index);
   res.send('game3d server running');
 });
