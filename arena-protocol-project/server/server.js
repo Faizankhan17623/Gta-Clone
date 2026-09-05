@@ -134,11 +134,22 @@ app.get('/admin/metrics', requireAdmin, (_req, res) => {
     responses5xx: metrics.responses5xx,
     averageLatencyMs: metrics.requests ? Math.round(metrics.totalLatencyMs / metrics.requests) : 0,
     socketEvents: metrics.socketEvents,
+    matchmakingQueue: matchmakingQueue.size,
+    suspiciousInputs,
     memoryMb: Math.round(process.memoryUsage().rss / 1024 / 1024),
     recentErrors: metrics.recentErrors,
   });
 });
 app.get('/admin/errors', requireAdmin, (_req, res) => res.json(metrics.recentErrors));
+app.get('/admin/players', requireAdmin, (_req, res) => res.json(Array.from(players.values()).map((p) => ({ id: p.id, name: p.name, team: p.team, room: p.room || null, kills: p.kills, deaths: p.deaths, alive: p.alive, bannedUntil: bannedPlayers.get(p.id) || 0 }))));
+app.post('/admin/players/:id/ban', requireAdmin, (req, res) => {
+  const id = req.params.id; const minutes = Math.max(1, Math.min(1440, Number(req.body?.minutes) || 60));
+  if (!players.has(id)) return res.status(404).json({ error: 'Player not found' });
+  bannedPlayers.set(id, Date.now() + minutes * 60000); io.sockets.sockets.get(id)?.disconnect(true);
+  res.json({ ok: true, bannedUntil: bannedPlayers.get(id) });
+});
+app.post('/admin/players/:id/unban', requireAdmin, (_req, res) => { bannedPlayers.delete(req.params.id); res.json({ ok: true }); });
+app.get('/admin/matchmaking', requireAdmin, (_req, res) => res.json({ queued: matchmakingQueue.size, queuedPlayerIds: [...matchmakingQueue] }));
 
 const LEADERBOARD_FILE = path.join(process.cwd(), 'arena-leaderboard.json');
 let persistentLeaderboard = [];
@@ -150,6 +161,9 @@ const io = new Server(httpServer, { cors: { origin: process.env.CLIENT_ORIGIN ||
 
 // --- In-memory state ---
 const players = new Map(); // id -> player
+const bannedPlayers = new Map();
+const matchmakingQueue = new Set();
+let suspiciousInputs = 0;
 let colorIndex = 0;
 const COLORS = [0x4f9dff, 0xff7b4f, 0x4fff8a, 0xffd94f, 0xc14fff, 0xff4f9d, 0x4fffff, 0xff884f];
 
@@ -214,6 +228,7 @@ io.on('connection', (socket) => {
   const id = socket.id;
   const player = newPlayer(id);
   players.set(id, player);
+  socket.emit('connection-ready', { id, reconnectable: true });
   socket.onAny((event) => { metrics.socketEvents[event] = (metrics.socketEvents[event] || 0) + 1; });
   console.log(`[connect] ${id} (${players.size} online)`);
 
@@ -241,13 +256,19 @@ io.on('connection', (socket) => {
     const room = code.trim().toUpperCase().slice(0, 8);
     socket.join(room); player.room = room; socket.emit('room-joined', { room });
   });
+  socket.on('matchmake', () => {
+    matchmakingQueue.add(id);
+    socket.emit('matchmaking-status', { queued: true, position: [...matchmakingQueue].indexOf(id) + 1 });
+    matchPlayers();
+  });
+  socket.on('matchmake-leave', () => { matchmakingQueue.delete(id); socket.emit('matchmaking-status', { queued: false }); });
 
   // Step 65: authoritative movement from input commands.
   socket.on('input', (cmd) => {
     const p = players.get(id);
     if (!p || !p.alive) return;
-    if (typeof cmd.seq !== 'number' || cmd.seq <= p.lastSeq) return;
-    if (!Number.isFinite(cmd.yaw) || !Number.isFinite(cmd.dt)) return;
+    if (typeof cmd.seq !== 'number' || cmd.seq <= p.lastSeq) { suspiciousInputs++; return; }
+    if (!Number.isFinite(cmd.yaw) || !Number.isFinite(cmd.dt) || cmd.dt < 0 || cmd.dt > 0.1) { suspiciousInputs++; return; }
     const dt = Math.max(0, Math.min(cmd.dt, 0.1));
 
     const next = applyInput(p, {
@@ -324,12 +345,25 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', () => {
     metrics.disconnects++;
+    matchmakingQueue.delete(id);
     players.delete(id);
     io.emit('player-left', id);
     io.emit('scoreboard', scoreboard());
     console.log(`[disconnect] ${id} (${players.size} online)`);
   });
 });
+
+function matchPlayers() {
+  while (matchmakingQueue.size >= 2) {
+    const ids = [...matchmakingQueue].slice(0, 2);
+    ids.forEach((queuedId) => matchmakingQueue.delete(queuedId));
+    const room = `match-${Date.now()}-${ids[0].slice(0, 4)}`;
+    ids.forEach((queuedId) => {
+      const socket = io.sockets.sockets.get(queuedId); const player = players.get(queuedId);
+      if (socket && player) { socket.join(room); player.room = room; socket.emit('match-found', { room, opponentCount: 1 }); }
+    });
+  }
+}
 
 process.on('uncaughtException', (error) => recordError(error, 'uncaughtException'));
 process.on('unhandledRejection', (error) => recordError(error, 'unhandledRejection'));
