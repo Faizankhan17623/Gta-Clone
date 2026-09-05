@@ -6,6 +6,10 @@ plain JavaScript ES modules. Steal cars, fly helicopters, rob stores, fight a
 gang for territory, outrun tanks at five stars... or ignore all of it and
 web-swing between the towers at 200 km/h.
 
+Live Render deployment: **https://gta-clone.onrender.com/**
+
+Admin panel: **https://gta-clone.onrender.com/admin**
+
 Ten "seasons" of updates have piled onto the original open world: zombie
 outbreaks, a kaiju that rises from the harbor, train heists, a mayor's
 office, an empire of owned properties, a casino heist, a subway, a
