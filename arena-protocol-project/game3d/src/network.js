@@ -37,7 +37,7 @@ export function createNetwork({ onInit, onPlayerJoined, onPlayerLeft, onSnapshot
   socket.on('player-left', (id) => onPlayerLeft?.(id));
   // Snapshot shape (Phase 7): { t, p: [{id, x, z, ry, seq}] }
   socket.on('snapshot', (snap) => onSnapshot?.(snap));
-  for (const event of ['scoreboard','kill','victory','respawn','you-hit','hit-confirmed','remote-shot','circle','round-reset','player-health','player-renamed','room-joined']) {
+  for (const event of ['scoreboard','kill','victory','respawn','you-hit','hit-confirmed','remote-shot','circle','round-reset','player-health','player-renamed','room-joined','connection-ready','matchmaking-status','match-found','chat','chat-error','emote','server-announcement','spectating','reconnect-session']) {
     socket.on(event, data => onEvent?.(event, data));
   }
 

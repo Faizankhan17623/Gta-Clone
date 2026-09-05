@@ -150,6 +150,9 @@ app.post('/admin/players/:id/ban', requireAdmin, (req, res) => {
 });
 app.post('/admin/players/:id/unban', requireAdmin, (_req, res) => { bannedPlayers.delete(req.params.id); res.json({ ok: true }); });
 app.get('/admin/matchmaking', requireAdmin, (_req, res) => res.json({ queued: matchmakingQueue.size, queuedPlayerIds: [...matchmakingQueue] }));
+app.post('/admin/broadcast', requireAdmin, (req, res) => { const message = String(req.body?.message || '').trim(); if (!message) return res.status(400).json({ error: 'Message required' }); announce(message, 'admin'); res.json({ ok: true }); });
+app.post('/admin/rotate-map', requireAdmin, (_req, res) => { rotateMap(); res.json({ ok: true, map: round.maps[round.map] }); });
+app.get('/admin/round', requireAdmin, (_req, res) => res.json({ mode: round.mode, map: round.maps[round.map], remainingSec: Math.max(0, Math.ceil((round.durationMs - (Date.now() - round.startedAt)) / 1000)), spectators: spectators.size }));
 
 const LEADERBOARD_FILE = path.join(process.cwd(), 'arena-leaderboard.json');
 let persistentLeaderboard = [];
@@ -164,6 +167,13 @@ const players = new Map(); // id -> player
 const bannedPlayers = new Map();
 const matchmakingQueue = new Set();
 let suspiciousInputs = 0;
+const mutedPlayers = new Set();
+const spectators = new Set();
+const chatBuckets = new Map();
+const round = { mode: 'deathmatch', map: 0, maps: ['outpost', 'harbor', 'spire'], startedAt: Date.now(), durationMs: 10 * 60 * 1000 };
+function announce(message, kind = 'server') { io.emit('server-announcement', { message: String(message).slice(0, 180), kind, at: Date.now() }); }
+function balancedTeam() { const red = [...players.values()].filter((p) => p.team === 'red').length; const blue = [...players.values()].filter((p) => p.team === 'blue').length; return red <= blue ? 'red' : 'blue'; }
+function rotateMap() { round.map = (round.map + 1) % round.maps.length; round.startedAt = Date.now(); announce(`Map changed to ${round.maps[round.map].toUpperCase()}`, 'map'); }
 let colorIndex = 0;
 const COLORS = [0x4f9dff, 0xff7b4f, 0x4fff8a, 0xffd94f, 0xc14fff, 0xff4f9d, 0x4fffff, 0xff884f];
 
@@ -227,7 +237,9 @@ io.on('connection', (socket) => {
   metrics.connections++;
   const id = socket.id;
   const player = newPlayer(id);
+  player.team = balancedTeam();
   players.set(id, player);
+  socket.emit('connection-ready', { id, reconnectable: true });
   socket.emit('connection-ready', { id, reconnectable: true });
   socket.onAny((event) => { metrics.socketEvents[event] = (metrics.socketEvents[event] || 0) + 1; });
   console.log(`[connect] ${id} (${players.size} online)`);
@@ -256,6 +268,23 @@ io.on('connection', (socket) => {
     const room = code.trim().toUpperCase().slice(0, 8);
     socket.join(room); player.room = room; socket.emit('room-joined', { room });
   });
+  socket.on('set-mode', ({ mode } = {}) => {
+    if (!['deathmatch', 'team-deathmatch', 'survival'].includes(mode)) return;
+    round.mode = mode; round.startedAt = Date.now(); announce(`Mode changed to ${mode.replaceAll('-', ' ').toUpperCase()}`, 'mode');
+  });
+  socket.on('chat', ({ message, teamOnly = false } = {}) => {
+    if (mutedPlayers.has(id) || typeof message !== 'string') return;
+    const now = Date.now(); const recent = (chatBuckets.get(id) || []).filter((t) => now - t < 10000);
+    if (recent.length >= 5) return socket.emit('chat-error', { error: 'Chat rate limit reached' });
+    recent.push(now); chatBuckets.set(id, recent);
+    const payload = { id, name: player.name, message: message.trim().slice(0, 180), at: now };
+    if (!payload.message) return;
+    if (teamOnly) io.sockets.sockets.forEach((s) => { if (players.get(s.id)?.team === player.team) s.emit('chat', payload); }); else io.emit('chat', payload);
+  });
+  socket.on('emote', ({ emote } = {}) => { if (typeof emote === 'string' && emote.length <= 24) io.emit('emote', { id, name: player.name, emote }); });
+  socket.on('spectate', ({ targetId } = {}) => { spectators.add(id); player.spectating = targetId || null; socket.emit('spectating', { targetId: player.spectating }); });
+  socket.on('stop-spectate', () => { spectators.delete(id); player.spectating = null; socket.emit('spectating', { targetId: null }); });
+  socket.on('reconnect-session', ({ name } = {}) => { if (typeof name === 'string' && name.trim()) player.name = name.trim().slice(0, 16); socket.emit('reconnect-session', { id, room: player.room || null, mode: round.mode, map: round.maps[round.map] }); });
   socket.on('matchmake', () => {
     matchmakingQueue.add(id);
     socket.emit('matchmaking-status', { queued: true, position: [...matchmakingQueue].indexOf(id) + 1 });
@@ -346,6 +375,7 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => {
     metrics.disconnects++;
     matchmakingQueue.delete(id);
+    spectators.delete(id); chatBuckets.delete(id);
     players.delete(id);
     io.emit('player-left', id);
     io.emit('scoreboard', scoreboard());
@@ -364,6 +394,10 @@ function matchPlayers() {
     });
   }
 }
+
+setInterval(() => {
+  if (Date.now() - round.startedAt >= round.durationMs) { rotateMap(); io.emit('round-reset', { mode: round.mode, map: round.maps[round.map] }); }
+}, 5000);
 
 process.on('uncaughtException', (error) => recordError(error, 'uncaughtException'));
 process.on('unhandledRejection', (error) => recordError(error, 'unhandledRejection'));
