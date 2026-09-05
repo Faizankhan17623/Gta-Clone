@@ -134,9 +134,11 @@ const netHud = createNetHud();
 document.addEventListener('keydown', e => { if (e.code === 'KeyP') game.togglePause(); });
 
 // --- Step 18: FPS counter ---
-const stats = new Stats();
-stats.showPanel(0);
-document.body.appendChild(stats.dom);
+const stats = import.meta.env.DEV ? new Stats() : null;
+if (stats) {
+  stats.showPanel(0);
+  document.body.appendChild(stats.dom);
+}
 
 // --- Step 10: resize handling ---
 window.addEventListener('resize', () => {
