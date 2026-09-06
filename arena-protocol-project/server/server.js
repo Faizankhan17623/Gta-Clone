@@ -100,17 +100,55 @@ function requireAdmin(req, res, next) {
 }
 app.get('/admin', (_req, res) => res.sendFile(path.join(SERVER_DIR, 'admin.html')));
 app.post('/admin/send-token', async (_req, res) => {
-  if (Date.now() - adminTokenSentAt < ADMIN_WINDOW_MS) return res.status(429).json({ error: 'A new admin token can be sent once per hour' });
-  const { SMTP_HOST, SMTP_PORT = '587', SMTP_USER, SMTP_PASS, ADMIN_EMAIL } = process.env;
-  if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS || !ADMIN_EMAIL) return res.status(503).json({ error: 'Admin email delivery is not configured' });
+  if (adminTokenSentAt && Date.now() - adminTokenSentAt < ADMIN_WINDOW_MS) {
+    return res.status(429).json({ error: 'A new admin token can be sent once per hour' });
+  }
+  const { SMTP_HOST, SMTP_PORT = '587', SMTP_USER, SMTP_PASS, ADMIN_EMAIL, ADMIN_TOKEN_INLINE } = process.env;
   const token = newToken();
+  const armToken = () => {
+    adminTokenHash = hashToken(token);
+    adminTokenExpiresAt = Date.now() + ADMIN_WINDOW_MS;
+    adminTokenSentAt = Date.now();
+    adminAttempts = 0;
+    adminLockedUntil = 0;
+  };
+
+  const smtpReady = SMTP_HOST && SMTP_USER && SMTP_PASS && ADMIN_EMAIL;
+  if (!smtpReady) {
+    // No mail configured. If the operator opted in with ADMIN_TOKEN_INLINE=1,
+    // return the fresh token directly (trusted-deploy convenience). Otherwise
+    // say clearly which SMTP variables are missing.
+    if (String(ADMIN_TOKEN_INLINE) === '1') {
+      armToken();
+      return res.json({ ok: true, inline: true, token, message: 'Email is off — here is your one-hour admin token' });
+    }
+    const missing = ['SMTP_HOST', 'SMTP_USER', 'SMTP_PASS', 'ADMIN_EMAIL'].filter((k) => !process.env[k]);
+    return res.status(503).json({
+      error: `Email delivery not configured — missing ${missing.join(', ')}. Or set ADMIN_TOKEN_INLINE=1 to receive the token here.`,
+    });
+  }
+
   try {
     const { default: nodemailer } = await import('nodemailer');
-    const transporter = nodemailer.createTransport({ host: SMTP_HOST, port: Number(SMTP_PORT), secure: String(SMTP_PORT) === '465', auth: { user: SMTP_USER, pass: SMTP_PASS } });
-    await transporter.sendMail({ from: SMTP_USER, to: ADMIN_EMAIL, subject: 'Arena Protocol admin token', text: `Your admin token is ${token}. It expires in one hour.` });
-    adminTokenHash = hashToken(token); adminTokenExpiresAt = Date.now() + ADMIN_WINDOW_MS; adminTokenSentAt = Date.now(); adminAttempts = 0; adminLockedUntil = 0;
-    res.json({ ok: true, message: 'A new admin token was sent to the configured admin email' });
-  } catch (error) { recordError(error, 'admin-email'); res.status(502).json({ error: 'Admin token email could not be sent' }); }
+    const transporter = nodemailer.createTransport({
+      host: SMTP_HOST,
+      port: Number(SMTP_PORT),
+      secure: String(SMTP_PORT) === '465',
+      auth: { user: SMTP_USER, pass: SMTP_PASS },
+    });
+    await transporter.verify().catch((e) => { throw new Error(`SMTP connection failed: ${e.message}`); });
+    await transporter.sendMail({
+      from: SMTP_USER,
+      to: ADMIN_EMAIL,
+      subject: 'Arena Protocol admin token',
+      text: `Your admin token is ${token}. It expires in one hour.`,
+    });
+    armToken();
+    res.json({ ok: true, message: `Admin token sent to ${ADMIN_EMAIL}` });
+  } catch (error) {
+    recordError(error, 'admin-email');
+    res.status(502).json({ error: `Could not send token: ${String(error.message || error).slice(0, 160)}` });
+  }
 });
 app.post('/admin/auth', (req, res) => {
   if (Date.now() < adminLockedUntil) return res.status(423).json({ error: 'Admin access is locked for one hour', redirect: '/' });

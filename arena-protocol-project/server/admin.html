@@ -47,8 +47,14 @@
       try{
         const res=await fetch('/admin/send-token',{method:'POST'});
         const d=await res.json().catch(()=>({}));
-        if(res.ok){$('status').textContent='✓ Check your email — admin token sent';$('status').className='ok';}
-        else{$('status').textContent=d.error||`Could not send token (${res.status})`;$('status').className='bad';}
+        if(res.ok&&d.inline&&d.token){
+          token.value=d.token;
+          $('status').textContent='✓ Token generated — filled in for you. Click CONNECT.';$('status').className='ok';
+        }else if(res.ok){
+          $('status').textContent=d.message||'✓ Check your email — admin token sent';$('status').className='ok';
+        }else{
+          $('status').textContent=d.error||`Could not send token (${res.status})`;$('status').className='bad';
+        }
       }catch(e){$('status').textContent='Network error — token not sent';$('status').className='bad';}
       finally{btn.disabled=false;$('connect').disabled=false;btn.textContent=label;}
     };
