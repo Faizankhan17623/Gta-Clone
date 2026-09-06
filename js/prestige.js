@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { placeStreetSite } from './site-layout.js';
 import { pointBlocked } from './city.js';
 import { showToast, showNews, showMissionMsg } from './hud.js';
 import { sfxMissionPass } from './sound.js';
@@ -20,6 +21,7 @@ export function initPrestige(scene, world, save, opts) {
   let pos = world.city.spawn.clone().add(new THREE.Vector3(8, 0, 26));
   const probe = new THREE.Vector3(pos.x, 1, pos.z);
   if (pointBlocked(probe, world.city.colliders, 1.5)) pos = world.city.spawn.clone().add(new THREE.Vector3(-8, 0, 26));
+  placeStreetSite(world.city, pos, 2.5, 'prestige');
 
   const column = new THREE.Mesh(
     new THREE.CylinderGeometry(0.7, 0.9, 1.6, 12),

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { placeStreetSite } from './site-layout.js';
 import { pointBlocked } from './city.js';
 import { showToast, showNews } from './hud.js';
 import { sfxMissionPass } from './sound.js';
@@ -18,6 +19,7 @@ export function initWorkbench(scene, world, save) {
   let pos = world.city.spawn.clone().add(new THREE.Vector3(24, 0, 24));
   const probe = new THREE.Vector3(pos.x, 1, pos.z);
   if (pointBlocked(probe, world.city.colliders, 1.4)) pos = world.city.spawn.clone().add(new THREE.Vector3(20, 0, 28));
+  placeStreetSite(world.city, pos, 2.5, 'workbench');
 
   const bench = new THREE.Mesh(
     new THREE.BoxGeometry(1.8, 0.9, 0.9),

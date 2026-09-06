@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { placeStreetSite } from './site-layout.js';
 import { blockStart, N, pointBlocked } from './city.js';
 import { showToast, showMissionMsg } from './hud.js';
 import { sfxMissionPass, sfxMissionFail, sfxPickup } from './sound.js';
@@ -14,6 +15,7 @@ export function initPizza(scene, world, save) {
   let pos = world.city.spawn.clone().add(new THREE.Vector3(18, 0, -22));
   const probe = new THREE.Vector3(pos.x, 1, pos.z);
   if (pointBlocked(probe, world.city.colliders, 1.6)) pos = world.city.spawn.clone().add(new THREE.Vector3(14, 0, -26));
+  placeStreetSite(world.city, pos, 2.5, 'pizza');
 
   const shop = new THREE.Mesh(
     new THREE.BoxGeometry(2, 2.2, 2),

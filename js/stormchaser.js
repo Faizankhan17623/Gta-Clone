@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { placeStreetSite } from './site-layout.js';
 import { blockStart, BLOCK, N, pointBlocked } from './city.js';
 import { showToast, showNews, showMissionMsg } from './hud.js';
 import { sfxMissionPass, sfxPickup } from './sound.js';
@@ -20,6 +21,7 @@ export function initStormChaser(scene, world, save) {
   let pos = world.city.spawn.clone().add(new THREE.Vector3(-22, 0, -30));
   const probe = new THREE.Vector3(pos.x, 1, pos.z);
   if (pointBlocked(probe, world.city.colliders, 1.4)) pos = world.city.spawn.clone().add(new THREE.Vector3(-26, 0, -24));
+  placeStreetSite(world.city, pos, 2.5, 'stormchaser');
 
   const van = new THREE.Mesh(
     new THREE.BoxGeometry(2.4, 1.6, 3.6),

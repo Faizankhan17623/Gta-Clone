@@ -9,8 +9,32 @@ export const pressed = Object.create(null);
 export const mouse = { dx: 0, dy: 0, down: false, rdown: false };
 
 const GAME_KEYS = new Set(['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyW', 'KeyA', 'KeyS', 'KeyD']);
+const sources = new Map();
+const keyboardHeld = new Map();
+
+// Independent owners: releasing a joystick/gamepad must not release a keyboard.
+export function setInputKey(source, name, down) {
+  let held = sources.get(source);
+  if (!held) { held = new Set(); sources.set(source, held); }
+  if (down) held.add(name); else held.delete(name);
+  const active = [...sources.values()].some(s => s.has(name));
+  if (active && !keys[name]) pressed[name] = true;
+  keys[name] = active;
+}
+
+export function clearInput() {
+  sources.clear(); keyboardHeld.clear();
+  for (const k in keys) keys[k] = false;
+  for (const k in pressed) delete pressed[k];
+  mouse.down = mouse.rdown = false;
+  mouse.dx = mouse.dy = 0;
+}
 
 export function namesFor(e) {
+  // A remapped D on the physical A key must not activate both opposites.
+  const letter = e.key?.toLowerCase();
+  if (['w', 'a', 's', 'd'].includes(letter)) return ['Key' + letter.toUpperCase()];
+  if (['KeyW', 'KeyA', 'KeyS', 'KeyD'].includes(e.code)) return [e.code];
   const names = [];
   if (e.code) names.push(e.code);
   if (e.key) {
@@ -27,24 +51,28 @@ export function namesFor(e) {
   // Some embedded browsers, virtual keyboards, and older automation drivers
   // omit `code`/`key` and only expose the legacy numeric keyCode/which value.
   const legacy = e.keyCode || e.which;
-  if (legacy >= 65 && legacy <= 90) names.push('Key' + String.fromCharCode(legacy));
-  else if (legacy === 32) names.push('Space');
-  else if (legacy >= 37 && legacy <= 40) names.push(['ArrowLeft','ArrowUp','ArrowRight','ArrowDown'][legacy - 37]);
-  return names;
+  if (!names.length) {
+    if (legacy >= 65 && legacy <= 90) names.push('Key' + String.fromCharCode(legacy));
+    else if (legacy === 32) names.push('Space');
+    else if (legacy >= 37 && legacy <= 40) names.push(['ArrowLeft','ArrowUp','ArrowRight','ArrowDown'][legacy - 37]);
+  }
+  return [...new Set(names)];
 }
 
 export function initInput() {
   window.addEventListener('keydown', (e) => {
     const names = namesFor(e);
+    if (e.target?.matches?.('input, textarea, select, [contenteditable="true"]')) return;
     // stop the browser acting on game keys (quick-find, scrolling, shortcuts)
     if (names.some((n) => GAME_KEYS.has(n))) e.preventDefault();
-    for (const n of names) {
-      if (!e.repeat) pressed[n] = true;
-      keys[n] = true;
-    }
+    const id = e.code || String(e.keyCode || e.which || e.key);
+    if (!keyboardHeld.has(id)) keyboardHeld.set(id, names);
+    for (const n of keyboardHeld.get(id)) setInputKey('keyboard:' + id, n, true);
   });
   window.addEventListener('keyup', (e) => {
-    for (const n of namesFor(e)) keys[n] = false;
+    const id = e.code || String(e.keyCode || e.which || e.key);
+    for (const n of keyboardHeld.get(id) || namesFor(e)) setInputKey('keyboard:' + id, n, false);
+    keyboardHeld.delete(id);
   });
   window.addEventListener('mousemove', (e) => {
     if (document.pointerLockElement) { mouse.dx += e.movementX; mouse.dy += e.movementY; }
@@ -59,11 +87,21 @@ export function initInput() {
   });
   // right mouse is the web-shooter — keep the browser menu out of the way
   window.addEventListener('contextmenu', (e) => e.preventDefault());
-  window.addEventListener('blur', () => {
-    for (const k in keys) keys[k] = false;
-    mouse.down = false;
-    mouse.rdown = false;
-  });
+  window.addEventListener('blur', clearInput);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) clearInput(); });
+  // The visible WASD controls also work as hold buttons, not just indicators.
+  for (const letter of ['w', 'a', 's', 'd']) {
+    const button = document.getElementById('k-' + letter);
+    if (!button) continue;
+    const name = 'Key' + letter.toUpperCase();
+    button.addEventListener('pointerdown', e => {
+      e.preventDefault(); e.stopPropagation(); button.setPointerCapture(e.pointerId);
+      setInputKey('hud:' + letter, name, true);
+    });
+    for (const event of ['pointerup', 'pointercancel', 'lostpointercapture']) button.addEventListener(event, e => {
+      e.preventDefault(); e.stopPropagation(); setInputKey('hud:' + letter, name, false);
+    });
+  }
 }
 
 export function endFrame() {
@@ -89,7 +127,14 @@ export function pollGamepad() {
   const pads = navigator.getGamepads ? navigator.getGamepads() : [];
   let gp = null;
   for (const p of pads) if (p && p.connected) { gp = p; break; }
-  if (!gp) return;
+  if (!gp) {
+    for (const k in gpPrev) setInputKey('gamepad', k, false);
+    gpPrev = Object.create(null); gpActive = false;
+    if (gpFire) mouse.down = false;
+    if (gpWeb) mouse.rdown = false;
+    gpFire = gpWeb = false;
+    return;
+  }
 
   if (!gpActive) {
     for (const b of gp.buttons) {
@@ -120,9 +165,8 @@ export function pollGamepad() {
   if (webBtn !== gpWeb) { mouse.rdown = webBtn; gpWeb = webBtn; }
 
   for (const k in cur) {
-    if (!gpPrev[k]) pressed[k] = true;
-    keys[k] = true;
+    setInputKey('gamepad', k, true);
   }
-  for (const k in gpPrev) if (!cur[k]) keys[k] = false;
+  for (const k in gpPrev) if (!cur[k]) setInputKey('gamepad', k, false);
   gpPrev = cur;
 }

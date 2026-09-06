@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import { initInput, endFrame, pollGamepad, keys, pressed, mouse } from './input.js';
 import { buildCity, resolveCircle, pointBlocked, groundHeight, blockStart, BLOCK, HALF, N } from './city.js';
-import { createCharacter, animateWalk, animateIdle, animateLand, CHARACTERS } from './characters.js';
-import { physStep, separateCars, darkenCar } from './car.js';
+import { createCharacter, animateWalk, animateIdle, animateLand, resetArticulation, updateCharacterDetail, CHARACTERS } from './characters.js';
+import { physStep, separateCars, darkenCar, updateVehicleDetail } from './car.js';
 import { spawnPeds, updatePeds, killPed, spawnTraffic, updateTraffic, disableTraffic, spawnParked } from './npc.js';
 import { updatePolice, addCrime, copDie, clearCops } from './police.js';
 import { makeHeli, physStepHeli, spinRotors, explodeHeli, updateFallingHeli, updatePoliceHelis } from './heli.js';
@@ -95,6 +95,20 @@ import { initPigeons, updatePigeons } from './pigeons.js';
 import { initGraffiti, updateGraffiti } from './graffiti.js';
 import { initHydrants, updateHydrants } from './hydrants.js';
 import { initSpeedcams, updateSpeedcams } from './speedcams.js';
+import { initGasStations, updateGasStations, burnFuel, hasFuel } from './gasstations.js';
+import { initRoadblocks, updateRoadblocks } from './roadblocks.js';
+import { initGarageMulti, updateGarageMulti, lockupStore, lockupSave } from './garage_multi.js';
+import { initCarRadioWheel, updateCarRadioWheel, radioWheelBusy } from './carradio_wheel.js';
+import { initStreetFood, updateStreetFood } from './streetfood.js';
+import { initChopShop, updateChopShop } from './chopshop.js';
+import { initImpound, updateImpound, impoundSeize } from './impound.js';
+import { initWeatherHazards, updateWeatherHazards, roadGrip } from './weather_hazards.js';
+import { initPassengers, updatePassengers, toggleForHire, rideHailCrash, rideHailSave } from './passengers.js';
+import { initBlackout, updateBlackout, forceBlackout } from './blackout.js';
+import { initDemolition, updateDemolition } from './demolition.js';
+import { initBountyHunter, updateBountyHunter } from './bountyhunter.js';
+import { initStreetRace, updateStreetRace } from './streetrace.js';
+import { initSafehouses, updateSafehouses, nearestSafehouseDoor } from './safehouses.js';
 import { initMeters, updateMeters } from './meters.js';
 import { initEmotes, updateEmotes, poseEmote } from './emotes.js';
 import { initVehicleFx, updateVehicleFx } from './vehiclefx.js';
@@ -147,6 +161,8 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 // ---------- renderer / scene ----------
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
+// Count the whole post-processing frame, rather than only its final screen pass.
+renderer.info.autoReset = false;
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(('ontouchstart' in window || navigator.maxTouchPoints > 0)
   ? 1 : Math.min(window.devicePixelRatio, 2)); // phones render lighter
@@ -395,6 +411,20 @@ initPigeons(scene, world, save);
 initGraffiti(scene, world, save);
 initHydrants(scene, world);
 initSpeedcams(scene, world);
+initGasStations(scene, world);
+initRoadblocks(scene, world);
+initGarageMulti(scene, world, save);
+initCarRadioWheel(world);
+initStreetFood(scene, world, save);
+initChopShop(scene, world, save);
+initImpound(scene, world);
+initWeatherHazards(scene, world);
+initPassengers(world, save);
+initBlackout(scene, world);
+initDemolition(scene, world);
+initBountyHunter(scene, world, save);
+initStreetRace(scene, world, save);
+initSafehouses(scene, world, save);
 initMeters(scene, world);
 initEmotes(world);
 initVehicleFx(world);
@@ -505,6 +535,7 @@ function applySettings() {
   setMasterVolume(st.volume);
   sun.castShadow = !st.lowGfx;
   renderer.setPixelRatio(st.lowGfx ? 1 : (isTouch ? 1 : Math.min(window.devicePixelRatio, 2)));
+  composer.setPixelRatio(renderer.getPixelRatio());
   saveGame();
 }
 
@@ -681,6 +712,13 @@ function saveGame() {
       perks: world.perkShop?.bought,
       blocksSeen: [...(world.explorer?.seen || [])], exploreRank: world.explorer?.rewarded,
       armor: world.armor?.plate,
+      lockup: lockupSave(world),
+      cartOwned: world.streetfood?.owned,
+      safehouses: [...(world.safehouses?.owned || [])],
+      safehouseRentDay: world.safehouses?.rentDay,
+      streetRaces: world.streetRaceWins,
+      bhuntDay: world.bhunt?.caughtDay,
+      ...rideHailSave(world),
     }));
   } catch {}
 }
@@ -1282,6 +1320,17 @@ function updateOnFoot(dt) {
   else if (world.druglabHint) setHint(world.druglabHint);
   else if (world.gymHint) setHint(world.gymHint);
   else if (world.phoneHint) setHint(world.phoneHint);
+  else if (world.gasHint) setHint(world.gasHint);
+  else if (world.lockupHint) setHint(world.lockupHint);
+  else if (world.foodHint) setHint(world.foodHint);
+  else if (world.chopHint) setHint(world.chopHint);
+  else if (world.impoundHint) setHint(world.impoundHint);
+  else if (world.rideHint) setHint(world.rideHint);
+  else if (world.blackoutHint) setHint(world.blackoutHint);
+  else if (world.demoHint) setHint(world.demoHint);
+  else if (world.bhuntHint) setHint(world.bhuntHint);
+  else if (world.streetRaceHint) setHint(world.streetRaceHint);
+  else if (world.safehouseHint) setHint(world.safehouseHint);
   else if (world.atmHint) setHint(world.atmHint);
   else if (world.vendorHint) setHint(world.vendorHint);
   else if (world.graffitiHint) setHint(world.graffitiHint);
@@ -1471,6 +1520,7 @@ function exitCar() {
   engine.stop();
   setRadioStation(0);
   garageCheck(shopsState, world, car); // parked on the garage pad?
+  lockupStore(world, car);             // ...or in a lockup bay
 }
 
 function enterHeli(h) {
@@ -1978,12 +2028,23 @@ function updateDriving(dt) {
     player.nitro = Math.min(nitroMax, player.nitro + (car.bigNitro ? 14 : 9) * dt);
   }
 
+  // fuel (opt-in): burn on throttle, and a dry tank kills the engine
+  if (!car.tank) {
+    burnFuel(world, dt, ctl.throttle);
+    if (!hasFuel(world)) { ctl.throttle = 0; world.gasHint = 'OUT OF FUEL — coast to a gas station'; }
+  }
+
+  // wet roads shave grip (weather_hazards.js); H toggles the for-hire light
+  car.gripMul = roadGrip(world);
+  if (pressed['KeyH']) toggleForHire(world);
+
   const impact = physStep(car, ctl, dt, city.colliders);
   checkRamp(stuntsState, world, car, dt); // stunt ramps launch fast cars
   if (impact > 8) {
     addFlash(car.pos.clone().setY(1), 0xffcc66, 1.2);
     addSparks(car.pos.clone().setY(0.7), 10);
     sfxCrash(impact);
+    rideHailCrash(world);
     world.shake = Math.min(0.5, impact * 0.03);
   }
   setEngine(car.vel.length());
@@ -2003,8 +2064,8 @@ function updateDriving(dt) {
     }
   }
 
-  // radio
-  if (pressed['KeyR']) {
+  // radio — a quick tap cycles; a hold opens the tuner wheel (carradio_wheel.js)
+  if (pressed['KeyR'] && !radioWheelBusy(world)) {
     world.radioSt = (world.radioSt + 1) % RADIO_STATIONS.length;
     setRadioStation(world.radioSt);
     showToast(RADIO_STATIONS[world.radioSt]);
@@ -2064,7 +2125,10 @@ function updateDriving(dt) {
     return;
   }
 
-  if (pressed['KeyE']) {
+  // E refuels before exiting when parked at a pump.
+  const atPump = world.settings.fuel && world.gas && !car.tank && world.gas.level <= 99.5
+    && world.gas.stations.some(s => Math.hypot(car.pos.x - s.pos.x, car.pos.z - s.pos.z) < 6);
+  if (pressed['KeyE'] && !atPump) {
     if (car.vel.length() < 5) exitCar();
     else showToast('Slow down to exit!');
   }
@@ -2561,9 +2625,12 @@ function triggerOver(text, color) {
 function respawn() {
   hideBanner();
   renderer.domElement.style.filter = '';
+  const diedAt = player.pos.clone(); // for picking the nearest safehouse
   if (player.inCar) {
     player.inCar.vel.set(0, 0, 0);
-    if (!player.inCar.dead && !player.inCar.tank) world.parked.push(player.inCar);
+    // a bust while driving impounds the car; a wasted just leaves it
+    if (world.busted && !player.inCar.dead) impoundSeize(world);
+    else if (!player.inCar.dead && !player.inCar.tank) world.parked.push(player.inCar);
     player.inCar = null;
   }
   if (player.inHeli) {
@@ -2587,6 +2654,9 @@ function respawn() {
   player.mesh.rotation.z = 0;
   player.mesh.visible = true;
   player.pos.copy(city.spawn).add(new THREE.Vector3(3, 0, 3));
+  // an owned safehouse near where you fell becomes your respawn point
+  const shDoor = nearestSafehouseDoor(world, diedAt);
+  if (shDoor && !world.busted) player.pos.copy(shDoor);
   player.pos.y = 0;
   player.vel.set(0, 0, 0);
   player.vy = 0;
@@ -2696,6 +2766,8 @@ let saveT = 0;
 
 function update(dt) {
   world.time += dt;
+  city.district?.update(player.pos, world.settings.lowGfx);
+  resetArticulation(player.ch);
 
   // day/night cycle: 1 real minute = 1 game hour
   world.clock = (world.clock + dt / 60) % 24;
@@ -2740,6 +2812,7 @@ function update(dt) {
 
   // bloom breathes with the night: stronger glow when the city lights are on
   bloom.strength = world.settings.lowGfx ? 0 : 0.22 + dn.glow * 0.33;
+  bloom.enabled = !world.settings.lowGfx;
 
   // headlights when driving after dark
   const pcar = player.inCar;
@@ -2793,8 +2866,20 @@ function update(dt) {
   else updateOnFoot(dt);
 
   updatePeds(world, dt);
+  updateCharacterDetail(player.ch, player.pos, world.settings.lowGfx);
+  for (const ped of world.peds) updateCharacterDetail(ped.ch, player.pos, world.settings.lowGfx);
   updateTraffic(world, dt);
   updatePolice(world, dt);
+
+  // Sedan close-up trim + brake lights. The player's own car counts as focus.
+  {
+    const focus = player.inCar ? player.inCar.pos : player.pos;
+    const low = world.settings.lowGfx;
+    for (const group of [world.traffic, world.parked, world.cops]) {
+      for (const v of group) updateVehicleDetail(v, focus, low);
+    }
+    if (player.inCar) updateVehicleDetail(player.inCar, focus, low, !!(keys['KeyS'] || keys['Space']));
+  }
   updatePoliceHelis(world, dt, heliHooks);
   updateHelis(dt);
   updateRockets(dt);
@@ -2882,6 +2967,20 @@ function update(dt) {
   updateGraffiti(world, dt, keys);
   updateHydrants(world, dt);
   updateSpeedcams(world, dt);
+  updateGasStations(world, dt, keys);
+  updateRoadblocks(world, dt);
+  updateGarageMulti(world, dt, keys, pressed);
+  updateCarRadioWheel(world, dt, keys, pressed);
+  updateStreetFood(world, dt, keys, pressed);
+  updateChopShop(world, dt, pressed);
+  updateImpound(world, dt, pressed);
+  updateWeatherHazards(world, dt);
+  updatePassengers(world, dt);
+  updateBlackout(world, dt, pressed);
+  updateDemolition(world, dt, keys, pressed);
+  updateBountyHunter(world, dt, pressed);
+  updateStreetRace(world, dt, pressed);
+  updateSafehouses(world, dt, pressed);
   updateMeters(world, dt);
   updateEmotes(world, dt, pressed, keys);
   updateVehicleFx(world, dt, pressed);
@@ -2940,7 +3039,8 @@ function update(dt) {
       world.heistHint || world.trainHint || world.cheistHint || world.derbyHint ||
       world.empireHint || world.papHint || world.fireHint || world.museumHint ||
       world.turfHint || world.raidHint || world.syndHint || world.kaijuHint ||
-      world.medHint || world.expHint || world.bountyHint ||
+      world.medHint || world.expHint || world.bountyHint || world.bhuntHint ||
+      world.streetRaceHint ||
       world.tourneyHint || world.contractHint || world.stormHint ||
       world.taxiHint || world.valetHint || world.carwashHint || world.druglabHint ||
       world.phoneHint || world.pizzaHint || world.repoHint || world.newsHint ||
@@ -3093,6 +3193,7 @@ function animate() {
     camera.rotation.z += Math.sin(t * 0.0021) * 0.09;
     camera.rotation.x += Math.sin(t * 0.0013) * 0.04;
   }
+  renderer.info.reset();
   composer.render();
   if (world.captureNext) {
     world.captureNext = false;
@@ -3107,6 +3208,7 @@ animate();
 
 // debug handle for automated testing
 window.__debug = {
+  renderInfo: () => ({ calls: renderer.info.render.calls, triangles: renderer.info.render.triangles, geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures }),
   world,
   player,
   mission,
@@ -3181,6 +3283,11 @@ window.__debug = {
     engine.start();
   },
   enterCarDirect: (v) => enterCar(v || world.parked.find((c) => !c.dead && !c.bike)),
+  exitCarDirect: () => { if (player.inCar) exitCar(); },
+  forceBlackout: () => forceBlackout(world),
+  impound: () => world.impound,
+  rideHail: () => world.rideHail,
+  demo: () => world.demo,
   kaiju: () => world.kaiju,
   forceKaiju: () => forceKaiju(world),
   synd: () => world.synd,

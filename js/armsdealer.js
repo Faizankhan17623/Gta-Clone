@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { placeStreetSite } from './site-layout.js';
 import { pointBlocked } from './city.js';
 import { showToast, showNews } from './hud.js';
 import { sfxMissionPass } from './sound.js';
@@ -20,6 +21,7 @@ export function initArmsdealer(scene, world) {
   let pos = world.city.spawn.clone().add(new THREE.Vector3(-32, 0, -8));
   const probe = new THREE.Vector3(pos.x, 1, pos.z);
   if (pointBlocked(probe, world.city.colliders, 2)) pos = world.city.spawn.clone().add(new THREE.Vector3(-34, 0, -14));
+  placeStreetSite(world.city, pos, 2.5, 'armsdealer');
 
   const van = new THREE.Mesh(
     new THREE.BoxGeometry(2.6, 1.8, 4),

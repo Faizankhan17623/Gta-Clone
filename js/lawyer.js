@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { placeStreetSite } from './site-layout.js';
 import { pointBlocked } from './city.js';
 import { showToast, showMissionMsg } from './hud.js';
 import { sfxMissionPass } from './sound.js';
@@ -14,6 +15,7 @@ export function initLawyer(scene, world, save) {
   let pos = world.city.spawn.clone().add(new THREE.Vector3(-40, 0, -4));
   const probe = new THREE.Vector3(pos.x, 1, pos.z);
   if (pointBlocked(probe, world.city.colliders, 1.6)) pos = world.city.spawn.clone().add(new THREE.Vector3(-44, 0, 2));
+  placeStreetSite(world.city, pos, 2.5, 'lawyer');
 
   const office = new THREE.Mesh(
     new THREE.BoxGeometry(2.4, 2.6, 2),

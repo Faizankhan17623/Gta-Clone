@@ -1,5 +1,8 @@
 import * as THREE from 'three';
 import { resolveCircle, HALF } from './city.js';
+import { createSedanMesh, updateVehicleDetail } from './vehicleModel.js';
+
+export { updateVehicleDetail };
 
 const CAR_COLORS = ['#6e1f1f', '#1f2f45', '#2a2a2e', '#3d3d42', '#5a5247', '#23402a', '#494544', '#6b6760', '#2e2330', '#14181d', '#b89b2e', '#742a14'];
 export function randomCarColor() {
@@ -12,6 +15,11 @@ const wheelMat = new THREE.MeshStandardMaterial({ color: 0x16161a, roughness: 0.
 
 // Builds a car mesh facing +z. Returns { group, wheels, lightbar }.
 export function createCarMesh(color, opts = {}) {
+  // Detailed sedan for ordinary four-wheel civilian, traffic and police cars.
+  // Tanks and monster trucks keep the simple box body they scale and reshape.
+  if (!opts.tank && !opts.monster) {
+    return createSedanMesh(color || randomCarColor(), { police: !!opts.police });
+  }
   const group = new THREE.Group();
   // metallic paint that picks up environment reflections
   const mat = (c, e) => new THREE.MeshStandardMaterial({ color: c, emissive: e || 0x000000, metalness: 0.7, roughness: 0.32 });
@@ -163,11 +171,12 @@ export function physStep(v, ctl, dt, colliders) {
   const steerFactor = Math.max(-1, Math.min(1, speedF / 4.5));
   v.heading += ctl.steer * 2.1 * (ctl.handbrake ? 1.5 : 1) * steerFactor * dt;
 
-  // lateral grip (low while handbraking => drift)
+  // lateral grip (low while handbraking => drift; wet roads shave it, see
+  // weather_hazards.js which sets v.gripMul each frame while driving)
   _fwd.set(Math.sin(v.heading), 0, Math.cos(v.heading));
   const sf = v.vel.dot(_fwd);
   _side.copy(v.vel).addScaledVector(_fwd, -sf);
-  const grip = ctl.handbrake ? 2.2 : 8;
+  const grip = (ctl.handbrake ? 2.2 : 8) * (v.gripMul ?? 1);
   v.vel.addScaledVector(_side, -Math.min(1, grip * dt));
 
   v.pos.addScaledVector(v.vel, dt);
@@ -237,8 +246,13 @@ export function separateCars(a, b, bStatic = false) {
   return 0;
 }
 
-// Recolor a vehicle's main body panel (garage respray).
+// Recolor a vehicle's painted panels (garage respray).
 export function resprayVehicle(v, color) {
+  let painted = false;
+  v.mesh.traverse((m) => {
+    if (m.isMesh && m.userData.respray && m.material?.color) { m.material.color.set(color); painted = true; }
+  });
+  if (painted) return;
   const body = v.mesh.children[0];
   if (body && body.material && body.material.color) body.material.color.set(color);
 }

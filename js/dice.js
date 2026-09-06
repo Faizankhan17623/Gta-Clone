@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { placeStreetSite } from './site-layout.js';
 import { pointBlocked } from './city.js';
 import { createCharacter } from './characters.js';
 import { showToast } from './hud.js';
@@ -12,6 +13,7 @@ export function initDice(scene, world) {
   let pos = world.city.spawn.clone().add(new THREE.Vector3(36, 0, -14));
   const probe = new THREE.Vector3(pos.x, 1, pos.z);
   if (pointBlocked(probe, world.city.colliders, 1.8)) pos = world.city.spawn.clone().add(new THREE.Vector3(40, 0, -10));
+  placeStreetSite(world.city, pos, 2.5, 'dice');
 
   const mat = new THREE.Mesh(
     new THREE.PlaneGeometry(1.6, 1.1),

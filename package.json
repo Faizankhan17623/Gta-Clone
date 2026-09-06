@@ -4,6 +4,10 @@
   "description": "GTA-style open-world game that runs in the browser",
   "type": "module",
   "scripts": {
+    "dev:local": "node scripts/serve-local.mjs",
+    "check:district": "node scripts/inspect-district.mjs",
+    "test:models": "node test/visual-models.mjs",
+    "test:gameplay": "node test/fulltest.mjs",
     "start": "npx -y http-server -p 8080 -c-1 -s ."
   },
   "devDependencies": {

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { placeStreetSite } from './site-layout.js';
 import { pointBlocked } from './city.js';
 import { makeVehicle } from './car.js';
 import { showToast, showMissionMsg } from './hud.js';
@@ -15,6 +16,7 @@ export function initIcetruck(scene, world, save) {
   let pos = world.city.spawn.clone().add(new THREE.Vector3(40, 0, 10));
   const probe = new THREE.Vector3(pos.x, 1, pos.z);
   if (pointBlocked(probe, world.city.colliders, 2.4)) pos = world.city.spawn.clone().add(new THREE.Vector3(46, 0, 6));
+  placeStreetSite(world.city, pos, 2.5, 'icetruck');
 
   const truck = makeVehicle(scene, pos.x, pos.z, Math.PI / 2, '#e8e2f0');
   // the box body that makes it a truck

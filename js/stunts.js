@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { placeStreetSite } from './site-layout.js';
 import { roadCenter, N, HALF } from './city.js';
 import { showToast, showNews } from './hud.js';
 import { sfxPickup as pickupSfx } from './sound.js';
@@ -19,11 +20,12 @@ export function initStunts(scene, world) {
     const vertical = i % 2 === 0;
     const road = roadCenter(1 + ((i * 2.3) | 0) % (N - 1));
     const along = -HALF + 60 + (i / RAMPS) * (2 * HALF - 120);
-    const x = vertical ? road : along;
-    const z = vertical ? along : road;
+    const site = placeStreetSite(world.city, { x: vertical ? road : along, z: vertical ? along : road }, 4.2, `stunt ramp ${i + 1}`);
+    const { x, z } = site;
     const heading = vertical ? 0 : Math.PI / 2;
     const mesh = new THREE.Mesh(rampGeo, rampMat);
-    mesh.position.set(x, 0.9, z);
+    mesh.position.set(x, 1.2, z);
+    mesh.name = `Off-road stunt ramp ${i + 1}`;
     mesh.rotation.y = heading;
     mesh.rotation.x = -0.3; // the slope
     mesh.castShadow = true;

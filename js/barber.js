@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { placeStreetSite } from './site-layout.js';
 import { pointBlocked } from './city.js';
 import { applySuit } from './characters.js';
 import { showToast, showNews } from './hud.js';
@@ -21,6 +22,7 @@ export function initBarber(scene, world, save) {
   let pos = world.city.spawn.clone().add(new THREE.Vector3(22, 0, 2));
   const probe = new THREE.Vector3(pos.x, 1, pos.z);
   if (pointBlocked(probe, world.city.colliders, 1.4)) pos = world.city.spawn.clone().add(new THREE.Vector3(24, 0, -2));
+  placeStreetSite(world.city, pos, 2.5, 'barber');
 
   const chair = new THREE.Mesh(
     new THREE.CylinderGeometry(0.5, 0.6, 1, 10),

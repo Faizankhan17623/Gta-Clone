@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { placeStreetSite } from './site-layout.js';
 import { HALF, groundHeight } from './city.js';
 import { showToast, showNews } from './hud.js';
 import { sfxMissionPass } from './sound.js';
@@ -12,6 +13,7 @@ const COST = 200;
 
 export function initBalloon(scene, world) {
   const padPos = world.city.spawn.clone().add(new THREE.Vector3(-8, 0, 40));
+  placeStreetSite(world.city, padPos, 4, 'balloon');
   const pad = new THREE.Mesh(
     new THREE.CylinderGeometry(3, 3, 0.2, 20),
     new THREE.MeshLambertMaterial({ color: 0x3a3a42 })

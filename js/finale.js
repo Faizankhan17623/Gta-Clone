@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { placeStreetSite } from './site-layout.js';
 import { makeHeli } from './heli.js';
 import { showToast, showNews, showMissionMsg } from './hud.js';
 import { sfxMissionPass, sfxMissionFail } from './sound.js';
@@ -55,6 +56,7 @@ function clearFoes(world) {
 export function initFinale(h, scene, world, save) {
   hooks = h;
   const pos = world.city.spawn.clone().add(new THREE.Vector3(0, 0, 36));
+  placeStreetSite(world.city, pos, 4, 'finale marker');
   const beam = new THREE.Mesh(
     new THREE.CylinderGeometry(2.6, 3.8, 60, 12, 1, true),
     new THREE.MeshBasicMaterial({ color: 0xff2a1a, transparent: true, opacity: 0.25, side: THREE.DoubleSide, depthWrite: false })

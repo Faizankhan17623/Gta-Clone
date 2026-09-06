@@ -37,9 +37,9 @@ export function initHUD() {
   news.id = 'news';
   news.style.cssText =
     'position:fixed;bottom:0;left:0;right:0;z-index:30;display:none;' +
-    'background:rgba(8,10,14,0.78);color:#ffd24a;text-align:center;' +
-    'font:600 13px/1.9 Arial;letter-spacing:2px;text-transform:uppercase;' +
-    'border-top:1px solid rgba(255,210,74,0.35);padding:2px 0';
+    'background:rgba(6,12,20,0.82);color:#55e6ff;text-align:center;' +
+    'font:800 11px/2 Consolas,ui-monospace,monospace;letter-spacing:.28em;text-transform:uppercase;' +
+    'border-top:1px solid rgba(85,230,255,0.4);padding:2px 0;text-shadow:0 0 10px rgba(85,230,255,.4)';
   document.body.appendChild(news);
   els.news = news;
 
@@ -49,17 +49,20 @@ export function initHUD() {
     const b = document.createElement('div');
     b.style.cssText =
       'position:fixed;z-index:6;display:none;transform:translate(-50%,-100%);' +
-      'background:rgba(255,255,255,0.92);color:#111;font:700 12px Arial;' +
-      'padding:3px 8px;border-radius:8px;white-space:nowrap;pointer-events:none;';
+      'background:rgba(9,16,26,0.92);color:#eef4fb;font:700 11px Consolas,monospace;' +
+      'letter-spacing:.04em;padding:4px 9px;white-space:nowrap;pointer-events:none;' +
+      'border:1px solid rgba(85,230,255,0.35);' +
+      'clip-path:polygon(6px 0,100% 0,100% calc(100% - 6px),calc(100% - 6px) 100%,0 100%,0 6px);';
     document.body.appendChild(b);
     els.barks.push(b);
   }
 
-  // level badge next to the money counter
+  // level badge along the top edge
   const lvl = document.createElement('div');
   lvl.style.cssText =
-    'position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:6;' +
-    'color:#8fd0ff;font:800 13px Arial;letter-spacing:2px;text-shadow:1px 1px 0 #000;pointer-events:none;';
+    'position:fixed;top:9px;left:50%;transform:translateX(-50%);z-index:6;text-align:center;' +
+    'color:#55e6ff;font:800 12px/1.5 Consolas,ui-monospace,monospace;letter-spacing:.22em;' +
+    'text-transform:uppercase;text-shadow:0 2px 6px #000;pointer-events:none;';
   document.body.appendChild(lvl);
   els.level = lvl;
 }
@@ -124,17 +127,19 @@ export function updateHUD(world) {
   }
 
   const hp = Math.max(0, player.health);
-  els.health.style.width = Math.min(100, (hp / (world.maxHealth || 100)) * 100) + '%';
+  const hpPct = Math.min(100, (hp / (world.maxHealth || 100)) * 100);
+  els.health.style.width = hpPct + '%';
   els.health.style.background = hp > 40
-    ? 'linear-gradient(90deg,#2faf4e,#5fe07a)'
-    : 'linear-gradient(90deg,#b03030,#e05f5f)';
+    ? 'linear-gradient(90deg,#28c46e,#7cf0ac)'
+    : 'linear-gradient(90deg,#c0362e,#ff6a60)';
+  if (els.hpnum) els.hpnum.textContent = Math.round(hpPct);
 
   if (player.inCar || player.inHeli || player.inBoat) {
     const v = player.inCar || player.inHeli || player.inBoat;
     els.speed.style.display = 'block';
     const nitro = player.inCar && !player.inCar.tank
       ? ` <small style="color:#7ecbff">N₂O ${Math.round(player.nitro ?? 100)}%</small>` : '';
-    els.speed.innerHTML = Math.round(v.vel.length() * 2.4) + ' <small>MPH</small>' + nitro;
+    els.speed.innerHTML = `<span class="big">${Math.round(v.vel.length() * 2.4)}</span> <small>MPH</small>` + nitro;
     els.crosshair.style.display = 'none';
     els.weapon.style.display = 'none';
   } else {
@@ -188,7 +193,7 @@ export function updateHUD(world) {
     sub = `DAILY: ${world.daily.text} (${got}/${world.daily.goal})`;
   }
   els.level.innerHTML = line +
-    (sub ? `<br><span style="font-size:10px;color:#ffd24a">${sub}</span>` : '');
+    (sub ? `<br><span style="font-size:9.5px;color:#ffb648;letter-spacing:.18em">${sub}</span>` : '');
 
   // hurt flash + low health pulse
   let dmg = world.damageFlash || 0;
@@ -205,11 +210,11 @@ function drawMinimap(world) {
   const sc = size / (CITY + 30);
   const toMap = (x, z) => [(x + HALF + 15) * sc, (z + HALF + 15) * sc];
 
-  g.fillStyle = '#17202b';
+  g.fillStyle = '#0a141d';
   g.fillRect(0, 0, size, size);
 
   // roads
-  g.strokeStyle = '#46505c';
+  g.strokeStyle = '#26414f';
   g.lineWidth = Math.max(2, 16 * sc);
   for (const rx of world.city.roadXs) {
     const [mx] = toMap(rx, 0);
@@ -402,6 +407,8 @@ function drawMinimap(world) {
     [world.slipBlip, '#f05a9a', 'dot'],
     [world.boatraceBlip, '#4af0c8', 'ring'],
     [world.bossrushBlip, '#b08af0', 'ring'],
+    [world.bhBlip, '#e8a04a', 'dot'],
+    [world.streetRaceBlip, '#ff8adf', 'ring'],
   ];
   for (const [blip, color, kind] of S10) {
     if (!blip) continue;
@@ -548,6 +555,23 @@ function drawMinimap(world) {
     g.fill();
   }
 
+  // ride-hail passenger / drop-off pin
+  if (world.rideBlip) {
+    const [mx, mz] = toMap(world.rideBlip.x, world.rideBlip.z);
+    g.fillStyle = '#ffd24a';
+    g.beginPath();
+    g.moveTo(mx, mz - 4); g.lineTo(mx + 3.6, mz + 3); g.lineTo(mx - 3.6, mz + 3);
+    g.closePath();
+    g.fill();
+  }
+
+  // blackout substation
+  if (world.blackoutBlip) {
+    const [mx, mz] = toMap(world.blackoutBlip.x, world.blackoutBlip.z);
+    g.fillStyle = Math.floor(performance.now() * 0.006) % 2 === 0 ? '#ffd24a' : '#5a5a20';
+    g.fillRect(mx - 3, mz - 3, 6, 6);
+  }
+
   // cops
   for (const cop of world.cops) {
     if (cop.dead) continue;
@@ -586,7 +610,15 @@ function drawMinimap(world) {
   g.save();
   g.translate(mx, mz);
   g.rotate(Math.PI - h);
-  g.fillStyle = '#ffffff';
+  // sight cone ahead of the player, then the arrowhead
+  g.fillStyle = 'rgba(85,230,255,0.16)';
+  g.beginPath();
+  g.moveTo(0, 0);
+  g.lineTo(11, -20);
+  g.lineTo(-11, -20);
+  g.closePath();
+  g.fill();
+  g.fillStyle = '#55e6ff';
   g.beginPath();
   g.moveTo(0, -6);
   g.lineTo(4.5, 5);

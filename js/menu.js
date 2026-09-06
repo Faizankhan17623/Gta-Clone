@@ -9,14 +9,16 @@ let mapCanvas = null;
 let statsEl = null;
 let hooks = null;
 
+const CLIP =
+  'clip-path:polygon(9px 0,100% 0,100% calc(100% - 9px),calc(100% - 9px) 100%,0 100%,0 9px);';
 const BTN =
-  'display:block;width:240px;margin:8px auto;padding:11px 0;cursor:pointer;' +
-  'font:800 16px Arial;letter-spacing:2px;color:#111;border:none;border-radius:7px;' +
-  'background:linear-gradient(180deg,#ffd24a,#f0a32a);';
+  'display:block;width:240px;margin:8px auto;padding:12px 0;cursor:pointer;' +
+  'font:900 14px Consolas,ui-monospace,monospace;letter-spacing:.16em;text-transform:uppercase;' +
+  'color:#06131a;border:none;background:#55e6ff;' + CLIP;
 
 function row(label, input) {
   const r = document.createElement('div');
-  r.style.cssText = 'display:flex;justify-content:space-between;align-items:center;width:260px;margin:7px auto;color:#cfd8e3;font:600 13px Arial;';
+  r.style.cssText = 'display:flex;justify-content:space-between;align-items:center;width:260px;margin:7px auto;color:#cfd8e3;font:700 12px Consolas,monospace;letter-spacing:.08em;';
   const l = document.createElement('span');
   l.textContent = label;
   r.append(l, input);
@@ -31,10 +33,12 @@ export function initMenu(h) {
   menuEl.id = 'pausemenu';
   menuEl.style.cssText =
     'position:fixed;inset:0;z-index:40;display:none;flex-direction:column;align-items:center;' +
-    'justify-content:center;background:rgba(6,9,14,0.88);color:#fff;text-align:center;overflow-y:auto;';
+    'justify-content:center;background:radial-gradient(ellipse at 50% 35%,rgba(22,52,79,.6),rgba(6,11,18,.94));' +
+    'color:#eef4fb;text-align:center;overflow-y:auto;font-family:Segoe UI,Inter,Arial,sans-serif;';
   const h1 = document.createElement('div');
   h1.textContent = 'PAUSED';
-  h1.style.cssText = 'font:900 italic 44px Arial;letter-spacing:4px;color:#ffd24a;margin-bottom:14px;';
+  h1.style.cssText = 'font:900 40px Segoe UI,Inter,sans-serif;letter-spacing:.28em;color:#55e6ff;' +
+    'text-shadow:0 0 26px rgba(85,230,255,.4);margin-bottom:16px;';
   menuEl.appendChild(h1);
 
   const resume = document.createElement('button');
@@ -45,21 +49,21 @@ export function initMenu(h) {
 
   const photo = document.createElement('button');
   photo.textContent = 'PHOTO MODE';
-  photo.style.cssText = BTN + 'background:linear-gradient(180deg,#7ecbff,#3d8fd0);';
+  photo.style.cssText = BTN + 'background:transparent;color:#eef4fb;box-shadow:inset 0 0 0 1px rgba(85,230,255,.5);';
   photo.onclick = () => hooks.onPhoto();
   menuEl.appendChild(photo);
 
   if (hooks.cameraSupported) {
     const cam = document.createElement('button');
     cam.textContent = '📷 SELFIE CAM';
-    cam.style.cssText = BTN + 'background:linear-gradient(180deg,#b6f5c0,#3dcf6a);';
+    cam.style.cssText = BTN + 'background:transparent;color:#eef4fb;box-shadow:inset 0 0 0 1px rgba(85,230,255,.5);';
     cam.onclick = () => hooks.onCamera();
     menuEl.appendChild(cam);
   }
 
   const restart = document.createElement('button');
   restart.textContent = 'RESTART (RESPAWN)';
-  restart.style.cssText = BTN + 'background:linear-gradient(180deg,#ff8a6a,#d05a3a);';
+  restart.style.cssText = BTN + 'background:transparent;color:#ff9a90;box-shadow:inset 0 0 0 1px rgba(255,91,82,.55);';
   restart.onclick = () => hooks.onRestart();
   menuEl.appendChild(restart);
 
@@ -77,20 +81,24 @@ export function initMenu(h) {
   const qual = document.createElement('input');
   qual.type = 'checkbox'; qual.checked = !!s.lowGfx;
   qual.onchange = () => { s.lowGfx = qual.checked; hooks.onSettings(); };
+  const fuel = document.createElement('input');
+  fuel.type = 'checkbox'; fuel.checked = !!s.fuel;
+  fuel.onchange = () => { s.fuel = fuel.checked; hooks.onSettings(); };
 
   const box = document.createElement('div');
-  box.style.cssText = 'margin-top:16px;padding:12px 20px;background:rgba(0,0,0,0.4);border:1px solid rgba(255,255,255,0.15);border-radius:10px;';
+  box.style.cssText = 'margin-top:16px;padding:14px 22px;background:rgba(8,15,24,0.72);border:1px solid rgba(85,230,255,0.3);' + CLIP;
   box.append(
     row('VOLUME', vol),
     row('SENSITIVITY', sens),
     row('INVERT Y', inv),
     row('LOW GRAPHICS', qual),
+    row('VEHICLE FUEL', fuel),
   );
   menuEl.appendChild(box);
 
   // lifetime stats
   statsEl = document.createElement('div');
-  statsEl.style.cssText = 'margin-top:14px;font:600 12px/1.9 Arial;color:#9fb2c8;letter-spacing:1px;text-align:left;';
+  statsEl.style.cssText = 'margin-top:14px;font:600 11px/1.95 Consolas,ui-monospace,monospace;color:#8ea6bb;letter-spacing:.1em;text-align:left;';
   menuEl.appendChild(statsEl);
   document.body.appendChild(menuEl);
 
@@ -99,14 +107,15 @@ export function initMenu(h) {
   mapEl.id = 'bigmap';
   mapEl.style.cssText =
     'position:fixed;inset:0;z-index:40;display:none;align-items:center;justify-content:center;' +
-    'flex-direction:column;background:rgba(6,9,14,0.9);';
+    'flex-direction:column;background:radial-gradient(ellipse at center,rgba(22,52,79,.5),rgba(6,11,18,.95));';
   const tip = document.createElement('div');
   tip.textContent = 'TAP / CLICK TO SET A WAYPOINT — M TO CLOSE';
-  tip.style.cssText = 'color:#ffd24a;font:700 14px Arial;letter-spacing:2px;margin-bottom:8px;';
+  tip.style.cssText = 'color:#55e6ff;font:800 12px Consolas,ui-monospace,monospace;letter-spacing:.24em;margin-bottom:10px;';
   mapCanvas = document.createElement('canvas');
   mapCanvas.width = 640;
   mapCanvas.height = 640;
-  mapCanvas.style.cssText = 'width:min(88vmin,640px);height:min(88vmin,640px);border:2px solid rgba(255,255,255,0.25);border-radius:8px;cursor:crosshair;';
+  mapCanvas.style.cssText = 'width:min(88vmin,640px);height:min(88vmin,640px);border:1px solid rgba(85,230,255,0.4);cursor:crosshair;' +
+    'clip-path:polygon(12px 0,100% 0,100% calc(100% - 12px),calc(100% - 12px) 100%,0 100%,0 12px);';
   mapCanvas.addEventListener('pointerdown', (e) => {
     const r = mapCanvas.getBoundingClientRect();
     const u = (e.clientX - r.left) / r.width;

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { placeStreetSite } from './site-layout.js';
 import { pointBlocked } from './city.js';
 import { showToast, showNews, showMissionMsg } from './hud.js';
 import { sfxMissionPass, sfxPickup } from './sound.js';
@@ -34,6 +35,7 @@ export function initMayor(scene, world, save) {
   let hallPos = world.city.spawn.clone().add(new THREE.Vector3(0, 0, -30));
   const probe = new THREE.Vector3(hallPos.x, 1, hallPos.z);
   if (pointBlocked(probe, world.city.colliders, 2)) hallPos = world.city.spawn.clone().add(new THREE.Vector3(-30, 0, 0));
+  placeStreetSite(world.city, hallPos, 5, 'mayor');
 
   const base = new THREE.Mesh(
     new THREE.BoxGeometry(8, 0.6, 5),

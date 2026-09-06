@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { placeStreetSite } from './site-layout.js';
 import { pointBlocked } from './city.js';
 import { showToast, showMissionMsg } from './hud.js';
 import { sfxMissionPass, sfxMissionFail, sfxCrash } from './sound.js';
@@ -15,6 +16,7 @@ export function initGym(scene, world, save) {
   let pos = world.city.spawn.clone().add(new THREE.Vector3(-2, 0, 18));
   const probe = new THREE.Vector3(pos.x, 1, pos.z);
   if (pointBlocked(probe, world.city.colliders, 1.6)) pos = world.city.spawn.clone().add(new THREE.Vector3(-6, 0, 14));
+  placeStreetSite(world.city, pos, 2.5, 'gym');
 
   const frame = new THREE.Mesh(
     new THREE.BoxGeometry(0.12, 2.6, 0.12),

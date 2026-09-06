@@ -1,4 +1,6 @@
-import * as THREE from 'three';
+import { createHumanRig, resetArticulation, updateCharacterDetail } from './characterModel.js';
+
+export { resetArticulation, updateCharacterDetail };
 
 const SHIRTS = ['#7a2a22', '#8c8c84', '#2a4a6a', '#9a8a3a', '#5a3a6a', '#2a6a5a', '#8a5222', '#23303d', '#6a3a4a'];
 const PANTS = ['#22304d', '#28333d', '#181f28', '#43302a', '#33333a', '#1f2566'];
@@ -31,42 +33,9 @@ export const CHARACTERS = [
   },
 ];
 
-// Blocky GTA-style character, feet at y=0, facing +z.
+// Articulated character, feet at y=0, facing +z; legacy limb handles retained.
 export function createCharacter({ shirt = '#ffffff', pants = '#2c3e66', skin = '#c98e63', hair = '#221a14' } = {}) {
-  const g = new THREE.Group();
-  const mat = (c) => new THREE.MeshLambertMaterial({ color: c });
-
-  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.7, 0.34), mat(shirt));
-  torso.position.y = 1.17;
-  torso.castShadow = true;
-  g.add(torso);
-
-  const head = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.34, 0.34), mat(skin));
-  head.position.y = 1.74;
-  head.castShadow = true;
-  g.add(head);
-
-  const hairMesh = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.12, 0.36), mat(hair));
-  hairMesh.position.y = 1.95;
-  g.add(hairMesh);
-
-  function limb(w, len, color, x, y) {
-    const pivot = new THREE.Group();
-    pivot.position.set(x, y, 0);
-    const m = new THREE.Mesh(new THREE.BoxGeometry(w, len, w), mat(color));
-    m.position.y = -len / 2;
-    m.castShadow = true;
-    pivot.add(m);
-    g.add(pivot);
-    return pivot;
-  }
-
-  const lArm = limb(0.18, 0.66, skin, -0.4, 1.48);
-  const rArm = limb(0.18, 0.66, skin, 0.4, 1.48);
-  const lLeg = limb(0.22, 0.8, pants, -0.17, 0.82);
-  const rLeg = limb(0.22, 0.8, pants, 0.17, 0.82);
-
-  return { group: g, lArm, rArm, lLeg, rLeg };
+  return createHumanRig({ shirt, pants, skin, hair });
 }
 
 // Recolor an existing character — used by the wardrobe suits.
@@ -83,12 +52,19 @@ export function applySuit(ch, { shirt, pants, skin, hair }) {
 }
 
 export function animateWalk(ch, t, amp) {
+  resetArticulation(ch);
   const s = Math.sin(t) * amp;
   const c = Math.cos(t * 2) * amp; // knee/elbow bend at twice the stride
   ch.lLeg.rotation.x = s;
   ch.rLeg.rotation.x = -s;
   ch.lArm.rotation.x = -s * 0.85;
   ch.rArm.rotation.x = s * 0.85;
+  if (ch.lKnee) {
+    ch.lKnee.rotation.x = Math.max(0, -Math.sin(t)) * amp * .8;
+    ch.rKnee.rotation.x = Math.max(0, Math.sin(t)) * amp * .8;
+    ch.lElbow.rotation.x = -.18 - Math.abs(s) * .45;
+    ch.rElbow.rotation.x = -.18 - Math.abs(s) * .45;
+  }
   // subtle counter-rotation and bob so it reads as real running
   ch.lArm.rotation.z = 0.08;
   ch.rArm.rotation.z = -0.08;
@@ -98,6 +74,7 @@ export function animateWalk(ch, t, amp) {
 }
 
 export function animateIdle(ch) {
+  resetArticulation(ch);
   const g = ch.group;
   const t = (performance.now() * 0.001);
   // breathing sway instead of a dead-still statue
@@ -119,5 +96,9 @@ export function animateLand(ch, p) {
   ch.rLeg.rotation.x = dip;
   ch.lArm.rotation.x = -dip * 0.7;
   ch.rArm.rotation.x = -dip * 0.7;
+  if (ch.lKnee) {
+    ch.lKnee.rotation.x = ch.rKnee.rotation.x = dip * 1.5;
+    ch.lElbow.rotation.x = ch.rElbow.rotation.x = -.25;
+  }
   ch.group.position.y = (ch.group.userData.baseY || 0) - dip * 0.35;
 }

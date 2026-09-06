@@ -10,8 +10,8 @@ const _away = new THREE.Vector3();
 
 export function initVehicleFx(world) {
   const el = document.createElement('div');
-  el.style.cssText = 'position:fixed;right:18px;bottom:64px;font:700 22px/1 monospace;' +
-    'color:#9fe8ff;text-shadow:0 1px 4px #000;display:none;z-index:30;pointer-events:none';
+  el.style.cssText = 'position:fixed;right:28px;bottom:82px;font:800 11px/1 Consolas,ui-monospace,monospace;' +
+    'letter-spacing:.16em;color:#8ea6bb;text-shadow:0 2px 5px #000;display:none;z-index:30;pointer-events:none';
   document.body.appendChild(el);
   world.vehiclefx = { speedo: el, hornCd: 0 };
 }

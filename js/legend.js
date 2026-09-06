@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { placeStreetSite } from './site-layout.js';
 import { showToast, showNews, showMissionMsg } from './hud.js';
 import { sfxMissionPass } from './sound.js';
 import { addExplosion } from './effects.js';
@@ -60,6 +61,7 @@ function crownRegalia(world) {
   });
   // the statue: a gold likeness on a plinth near spawn
   const spot = world.city.spawn.clone().add(new THREE.Vector3(0, 0, 28));
+  placeStreetSite(world.city, spot, 3, 'legend statue');
   const gold = new THREE.MeshStandardMaterial({ color: 0xd0a020, emissive: 0x604808, metalness: 0.9, roughness: 0.3 });
   const plinth = new THREE.Mesh(new THREE.BoxGeometry(2.6, 1.4, 2.6), new THREE.MeshStandardMaterial({ color: 0x8a8f99, roughness: 0.8 }));
   plinth.position.copy(spot).setY(0.7);

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { placeStreetSite } from './site-layout.js';
 import { pointBlocked } from './city.js';
 import { showToast } from './hud.js';
 import { sfxPickup } from './sound.js';
@@ -15,6 +16,7 @@ export function initArmor(scene, world, save) {
   let pos = world.city.spawn.clone().add(new THREE.Vector3(28, 0, 32));
   const probe = new THREE.Vector3(pos.x, 1, pos.z);
   if (pointBlocked(probe, world.city.colliders, 1.4)) pos = world.city.spawn.clone().add(new THREE.Vector3(32, 0, 36));
+  placeStreetSite(world.city, pos, 2.5, 'armor');
 
   const crate = new THREE.Mesh(
     new THREE.BoxGeometry(1.4, 1, 1),
@@ -27,8 +29,9 @@ export function initArmor(scene, world, save) {
   scene.add(helm);
 
   const el = document.createElement('div');
-  el.style.cssText = 'position:fixed;right:18px;bottom:92px;font:700 15px/1 monospace;' +
-    'color:#9fc87a;text-shadow:0 1px 4px #000;display:none;z-index:30;pointer-events:none';
+  el.style.cssText = 'position:fixed;right:26px;bottom:96px;font:800 13px/1 Consolas,ui-monospace,monospace;' +
+    'letter-spacing:.14em;color:#55e6ff;text-shadow:0 0 10px rgba(85,230,255,.4),0 2px 4px #000;' +
+    'display:none;z-index:30;pointer-events:none';
   document.body.appendChild(el);
 
   world.armor = { pos, el, plate: save?.armor ?? 0, lastHp: null };

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { placeStreetSite } from './site-layout.js';
 import { pointBlocked } from './city.js';
 import { createCharacter } from './characters.js';
 import { showToast, showMissionMsg } from './hud.js';
@@ -21,6 +22,7 @@ export function initHobo(scene, world, save) {
   let pos = world.city.spawn.clone().add(new THREE.Vector3(-36, 0, 10));
   const probe = new THREE.Vector3(pos.x, 1, pos.z);
   if (pointBlocked(probe, world.city.colliders, 1.4)) pos = world.city.spawn.clone().add(new THREE.Vector3(-38, 0, 4));
+  placeStreetSite(world.city, pos, 2.5, 'hobo');
 
   const ch = createCharacter({ shirt: '#5a4a3a', pants: '#3a3226', skin: '#b9855c', hair: '#777' });
   ch.group.position.copy(pos);

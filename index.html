@@ -9,168 +9,243 @@
 <title>OPEN CITY — browser open world</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='18' fill='%23111722'/><text x='50' y='72' font-size='62' text-anchor='middle' fill='%23ffd24a' font-family='Arial' font-weight='bold' font-style='italic'>OC</text></svg>">
 <style>
+  :root {
+    --ink: #eef4fb;
+    --dim: #8ea6bb;
+    --cyan: #55e6ff;
+    --amber: #ffb648;
+    --green: #4fe08a;
+    --red: #ff5b52;
+    --panel: rgba(8, 15, 24, 0.72);
+    --panel-solid: rgba(9, 16, 26, 0.92);
+    --edge: rgba(85, 230, 255, 0.30);
+    --cut: 11px;
+  }
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body { width: 100%; height: 100%; overflow: hidden; background: #000; font-family: 'Segoe UI', Arial, sans-serif; touch-action: none; overscroll-behavior: none; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #000; font-family: 'Segoe UI', Inter, Arial, sans-serif; touch-action: none; overscroll-behavior: none; }
   canvas#game { display: block; }
 
-  #hud { position: fixed; inset: 0; pointer-events: none; user-select: none; }
+  #hud {
+    position: fixed; inset: 0; pointer-events: none; user-select: none;
+    color: var(--ink); text-shadow: 0 2px 6px rgba(0,0,0,.85);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* shared panel treatment: dark glass, thin cyan edge, clipped corners */
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--edge);
+    box-shadow: 0 14px 44px rgba(0,0,0,.55), inset 0 0 26px rgba(85,230,255,.04);
+    clip-path: polygon(var(--cut) 0, 100% 0, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0 100%, 0 var(--cut));
+    backdrop-filter: blur(3px);
+  }
+  .lbl {
+    font: 800 9.5px/1 'Consolas', ui-monospace, monospace;
+    letter-spacing: .24em; text-transform: uppercase; color: var(--dim);
+  }
 
   #topright {
-    position: absolute; top: 18px; right: 22px; text-align: right;
+    position: absolute; top: 20px; right: 22px; text-align: right;
+    padding: 11px 18px 12px 26px; min-width: 172px;
   }
   #money {
-    font-size: 30px; font-weight: 800; font-style: italic; color: #7cc77c;
-    text-shadow: 2px 2px 0 #000, 0 0 8px rgba(0,0,0,.8); letter-spacing: 1px;
+    font-size: 27px; font-weight: 800; color: var(--green); letter-spacing: .5px;
+    font-variant-numeric: tabular-nums;
   }
   #clock {
-    font-size: 20px; font-weight: 700; color: #e8eef5;
-    text-shadow: 2px 2px 0 #000; letter-spacing: 2px; margin-top: 2px;
+    font: 700 15px/1 'Consolas', ui-monospace, monospace; color: var(--ink);
+    letter-spacing: 3px; margin-top: 5px;
   }
-  #stars { margin-top: 4px; font-size: 26px; letter-spacing: 3px; }
-  #stars span { color: rgba(255,255,255,.18); text-shadow: 1px 1px 0 #000; transition: color .2s; }
-  #stars span.lit { color: #ffd24a; text-shadow: 0 0 10px rgba(255,180,0,.9), 1px 1px 0 #000; }
+  #stars { margin-top: 7px; font-size: 20px; letter-spacing: 5px; }
+  #stars span { color: rgba(180,205,225,.32); transition: color .2s, text-shadow .2s; }
+  #stars span.lit { color: var(--amber); text-shadow: 0 0 14px rgba(255,182,72,.95); }
 
-  #bottomleft { position: absolute; left: 20px; bottom: 20px; }
+  #bottomleft { position: absolute; left: 22px; bottom: 22px; }
+  #minimapframe {
+    position: relative; padding: 6px; padding-top: 20px;
+  }
+  #minimapframe::before {
+    content: 'CITY'; position: absolute; top: 5px; left: 12px;
+    font: 800 9px/1 'Consolas', ui-monospace, monospace; letter-spacing: .3em; color: var(--cyan);
+  }
   #minimap {
-    display: block; border: 3px solid rgba(255,255,255,.75); border-radius: 8px;
-    background: #0c1117; box-shadow: 0 4px 18px rgba(0,0,0,.6);
+    display: block;
+    box-shadow: inset 0 0 0 1px rgba(85,230,255,.22);
+    clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
   }
+  #healthpanel { padding: 7px 12px 9px; margin-bottom: 9px; }
+  #healthpanel .lbl { display: flex; justify-content: space-between; margin-bottom: 5px; }
   #healthwrap {
-    width: 176px; height: 12px; margin-bottom: 8px; border: 2px solid rgba(255,255,255,.75);
-    border-radius: 6px; background: rgba(0,0,0,.55); overflow: hidden;
+    width: 188px; height: 13px; background: #10202c;
+    box-shadow: inset 0 0 0 1px rgba(140,170,190,.35);
+    transform: skew(-13deg); overflow: hidden;
   }
-  #health { height: 100%; width: 100%; background: linear-gradient(90deg,#2faf4e,#5fe07a); transition: width .15s; }
+  #health {
+    height: 100%; width: 100%;
+    background: linear-gradient(90deg, #28c46e, #7cf0ac);
+    transition: width .15s, background .3s;
+  }
 
   #speed {
-    position: absolute; right: 26px; bottom: 24px; font-size: 34px; font-weight: 800; font-style: italic;
-    color: #fff; text-shadow: 2px 2px 0 #000; display: none;
+    position: absolute; right: 26px; bottom: 26px; text-align: right;
+    padding: 6px 16px 8px 24px; display: none;
   }
-  #speed small { font-size: 16px; color: #bbb; }
+  #speed .big {
+    font: 800 40px/0.85 'Segoe UI', Inter, sans-serif; color: var(--ink);
+    font-variant-numeric: tabular-nums;
+  }
+  #speed small { font: 700 12px/1 'Consolas', monospace; color: var(--cyan); letter-spacing: .2em; }
 
   #weapon {
-    position: absolute; right: 26px; bottom: 26px; font-size: 22px; font-weight: 800; font-style: italic;
-    color: #ffd24a; text-shadow: 2px 2px 0 #000; letter-spacing: 1px;
+    position: absolute; right: 26px; bottom: 26px; text-align: right;
+    padding: 7px 16px 9px 24px;
+    font: 800 18px/1 'Segoe UI', Inter, sans-serif; color: var(--amber);
+    letter-spacing: 1.5px; text-transform: uppercase;
   }
 
   #hint {
-    position: absolute; left: 50%; bottom: 16%; transform: translateX(-50%);
-    background: rgba(0,0,0,.65); color: #fff; padding: 8px 18px; border-radius: 6px;
-    font-size: 17px; font-weight: 600; display: none; border: 1px solid rgba(255,255,255,.25);
+    position: absolute; left: 50%; bottom: 15%; transform: translateX(-50%);
+    background: var(--panel-solid); color: var(--ink); padding: 8px 20px;
+    border: 1px solid var(--edge);
+    clip-path: polygon(9px 0, 100% 0, 100% calc(100% - 9px), calc(100% - 9px) 100%, 0 100%, 0 9px);
+    font-size: 15px; font-weight: 600; display: none; letter-spacing: .3px;
   }
-  #hint b { color: #ffd24a; }
+  #hint b { color: var(--cyan); font-weight: 800; }
 
   #crosshair {
     position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%);
-    color: rgba(255,255,255,.9); font-size: 22px; font-weight: 300; text-shadow: 0 0 4px #000;
+    width: 18px; height: 18px; font-size: 0;
   }
+  #crosshair::before, #crosshair::after {
+    content: ''; position: absolute; background: rgba(255,255,255,.9);
+    box-shadow: 0 0 4px rgba(0,0,0,.9);
+  }
+  #crosshair::before { left: 8px; top: 0; width: 2px; height: 18px; }
+  #crosshair::after { top: 8px; left: 0; height: 2px; width: 18px; }
 
   #banner {
-    position: absolute; left: 0; right: 0; top: 38%; text-align: center;
-    font-size: 84px; font-weight: 900; font-style: italic; letter-spacing: 6px;
-    color: #c0392b; text-shadow: 4px 4px 0 #000, 0 0 30px rgba(0,0,0,.9);
+    position: absolute; left: 0; right: 0; top: 37%; text-align: center;
+    font-size: 78px; font-weight: 900; letter-spacing: 10px;
+    color: var(--red); text-shadow: 0 0 40px rgba(255,91,82,.5), 0 4px 0 #000;
     display: none; text-transform: uppercase;
   }
 
   #keysind {
-    position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%);
-    text-align: center; opacity: 0.8;
+    position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%);
+    text-align: center; opacity: 0.85;
   }
-  #keysind span {
-    display: inline-block; width: 30px; height: 30px; line-height: 30px; margin: 2px;
-    background: rgba(0,0,0,.55); border: 2px solid rgba(255,255,255,.5); border-radius: 6px;
-    color: #fff; font-weight: 700; font-size: 15px;
+  #keysind button {
+    pointer-events: auto; touch-action: none; cursor: pointer; padding: 0;
+    display: inline-block; width: 30px; height: 30px; line-height: 27px; margin: 2px;
+    background: var(--panel); border: 1px solid rgba(140,170,190,.4);
+    color: var(--ink); font-weight: 700; font-size: 13px;
+    font-family: 'Consolas', monospace;
+    clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
   }
-  #keysind span.on { background: #ffd24a; border-color: #ffd24a; color: #111; }
+  #keysind button.on { background: var(--cyan); border-color: var(--cyan); color: #06131a; }
 
   #toast {
-    position: absolute; left: 50%; top: 12%; transform: translateX(-50%);
-    color: #ffd24a; font-size: 22px; font-weight: 700; font-style: italic;
-    text-shadow: 2px 2px 0 #000; display: none;
+    position: absolute; left: 50%; top: 11%; transform: translateX(-50%);
+    color: var(--amber); font-size: 19px; font-weight: 800;
+    letter-spacing: .5px; text-transform: uppercase; display: none;
   }
 
   #mission {
-    position: absolute; left: 20px; top: 18px; display: none;
-    background: rgba(0,0,0,.55); border-left: 4px solid #ffd24a; border-radius: 0 8px 8px 0;
-    padding: 10px 16px; min-width: 210px;
+    position: absolute; left: 22px; top: 20px; display: none;
+    padding: 11px 18px 12px; min-width: 216px;
+    border-left: 2px solid var(--cyan);
   }
-  #mtitle { color: #ffd24a; font-size: 17px; font-weight: 800; font-style: italic; letter-spacing: 1px; }
-  #mtext { color: #dfe7ef; font-size: 13px; margin-top: 3px; }
-  #mtimer { color: #fff; font-size: 24px; font-weight: 800; margin-top: 4px; text-shadow: 2px 2px 0 #000; }
+  #mtitle { color: var(--cyan); font-size: 15px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase; }
+  #mtext { color: var(--ink); font-size: 12.5px; margin-top: 4px; opacity: .85; }
+  #mtimer {
+    color: var(--ink); font: 800 22px/1 'Segoe UI', Inter, sans-serif; margin-top: 6px;
+    font-variant-numeric: tabular-nums;
+  }
 
   #missionmsg {
-    position: absolute; left: 0; right: 0; top: 30%; text-align: center;
-    opacity: 0; transform: scale(.92); transition: opacity .35s, transform .35s;
+    position: absolute; left: 0; right: 0; top: 29%; text-align: center;
+    opacity: 0; transform: scale(.94); transition: opacity .35s, transform .35s;
     pointer-events: none;
   }
   #missionmsg.show { opacity: 1; transform: scale(1); }
   #mm1 {
-    font-size: 54px; font-weight: 900; font-style: italic; letter-spacing: 4px;
-    text-shadow: 3px 3px 0 #000, 0 0 24px rgba(0,0,0,.8); text-transform: uppercase;
+    font-size: 50px; font-weight: 900; letter-spacing: 6px;
+    text-shadow: 0 0 30px rgba(0,0,0,.7), 0 3px 0 #000; text-transform: uppercase;
   }
-  #mm2 { font-size: 22px; font-weight: 700; color: #e8eef5; text-shadow: 2px 2px 0 #000; margin-top: 4px; }
+  #mm2 { font-size: 20px; font-weight: 700; color: var(--ink); margin-top: 6px; letter-spacing: 1px; }
 
   /* touch devices: HUD rearranged around the on-screen controls */
   body.touch #keysind { display: none; }
   body.touch #hint { bottom: auto; top: 70px; font-size: 14px; max-width: 78vw; }
   body.touch #bottomleft { transform: scale(0.66); transform-origin: bottom left; bottom: 170px; left: 12px; }
-  body.touch #weapon { right: 200px; bottom: 8px; font-size: 18px; }
-  body.touch #speed { right: 230px; bottom: 8px; font-size: 26px; }
+  body.touch #weapon { right: 200px; bottom: 8px; font-size: 16px; }
+  body.touch #speed { right: 230px; bottom: 8px; }
+  body.touch #speed .big { font-size: 28px; }
   body.touch #mission { left: 12px; top: 6px; padding: 6px 10px; min-width: 0; max-width: 150px; }
-  body.touch #mtitle { font-size: 13px; }
+  body.touch #mtitle { font-size: 12px; }
   body.touch #mtext { font-size: 10px; }
-  body.touch #mtimer { font-size: 16px; }
+  body.touch #mtimer { font-size: 15px; }
 
   #vignette {
     position: fixed; inset: 0; pointer-events: none; z-index: 4;
-    background: radial-gradient(ellipse at center, transparent 52%, rgba(0,0,0,.38) 100%);
+    background: radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,.42) 100%);
   }
   #damage {
     position: fixed; inset: 0; pointer-events: none; z-index: 5; opacity: 0;
-    background: radial-gradient(ellipse at center, transparent 42%, rgba(190,15,15,.55) 100%);
+    background: radial-gradient(ellipse at center, transparent 40%, rgba(190,15,15,.6) 100%);
+    box-shadow: inset 0 0 150px 30px rgba(255,20,30,.35);
     transition: opacity .1s;
   }
 
   #start {
-    position: fixed; inset: 0; background: radial-gradient(ellipse at 50% 30%, #1d2a3a 0%, #090d13 70%);
+    position: fixed; inset: 0;
+    background: radial-gradient(ellipse at 50% 32%, #16344f 0%, #060b12 68%);
     display: flex; flex-direction: column; align-items: center; justify-content: safe center;
-    color: #fff; z-index: 10; text-align: center;
+    color: var(--ink); z-index: 10; text-align: center;
     overflow-y: auto; padding: 20px 10px; box-sizing: border-box;
+    font-family: 'Segoe UI', Inter, Arial, sans-serif;
   }
   /* phones: shrink the menu so PLAY always fits on screen */
   @media (max-width: 700px), (max-height: 620px) {
-    #start h1 { font-size: 40px; }
-    #start .tag { font-size: 13px; margin-bottom: 12px; }
-    #playbtn { margin: 4px 0 12px; font-size: 20px; padding: 12px 44px; }
+    #start h1 { font-size: 42px; }
+    #start .tag { font-size: 12px; margin-bottom: 12px; }
+    #playbtn { margin: 4px 0 12px; font-size: 18px; padding: 12px 44px; }
   }
   #start h1 {
-    font-size: 72px; font-weight: 900; font-style: italic; letter-spacing: 4px;
-    background: linear-gradient(180deg, #ffd24a, #e8732a);
+    font-size: 74px; font-weight: 900; letter-spacing: 6px; line-height: .95;
+    background: linear-gradient(180deg, #eef4fb, #55e6ff);
     -webkit-background-clip: text; background-clip: text; color: transparent;
-    text-shadow: none; filter: drop-shadow(4px 4px 0 #000);
+    filter: drop-shadow(0 0 26px rgba(85,230,255,.35));
   }
-  #start .tag { color: #9fb2c8; margin: 6px 0 26px; font-size: 17px; letter-spacing: 1px; }
+  #start .edition {
+    font: 800 11px 'Consolas', ui-monospace, monospace; color: var(--cyan);
+    letter-spacing: .4em; margin: 2px 0 4px; text-transform: uppercase;
+  }
+  #start .tag { color: var(--dim); margin: 8px 0 26px; font-size: 15px; letter-spacing: 1.5px; }
   #playbtn {
     margin: 6px 0 20px; pointer-events: auto; cursor: pointer;
-    font-size: 26px; font-weight: 800; font-style: italic; letter-spacing: 3px;
-    color: #111; background: linear-gradient(180deg, #ffd24a, #f0a32a);
-    border: none; border-radius: 10px; padding: 16px 64px;
-    box-shadow: 0 6px 24px rgba(240,160,40,.45); transition: transform .12s;
+    font-size: 22px; font-weight: 900; letter-spacing: 5px; text-transform: uppercase;
+    color: #06131a; background: var(--cyan);
+    border: none; padding: 15px 62px;
+    clip-path: polygon(12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%, 0 12px);
+    box-shadow: 0 0 30px rgba(85,230,255,.35); transition: transform .12s, filter .12s;
   }
-  #playbtn:hover { transform: scale(1.05); }
+  #playbtn:hover { transform: translateY(-2px); filter: brightness(1.12); }
 
   #charpick { pointer-events: auto; margin-bottom: 4px; }
-  #charpick .chartitle { color: #9fb2c8; font: 700 12px Arial; letter-spacing: 3px; margin-bottom: 8px; }
+  #charpick .chartitle { color: var(--dim); font: 800 11px 'Consolas', monospace; letter-spacing: .3em; margin-bottom: 10px; }
   #charrow { display: flex; gap: 10px; justify-content: center; }
   .charcard {
-    cursor: pointer; width: 128px; padding: 12px 8px; border-radius: 10px;
-    background: rgba(0,0,0,.5); border: 2px solid rgba(255,255,255,.14); transition: all .15s;
+    cursor: pointer; width: 128px; padding: 12px 8px;
+    background: rgba(8,15,24,.72); border: 1px solid rgba(140,170,190,.2); transition: all .15s;
+    clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
   }
-  .charcard:hover { border-color: rgba(255,255,255,.4); }
-  .charcard.sel { border-color: #ffd24a; background: rgba(255,210,74,.1); }
-  .charcard .cname { font: 800 16px Arial; letter-spacing: 1px; color: #fff; }
-  .charcard .ctag { font: 600 10px Arial; color: #9fb2c8; margin: 3px 0 6px; }
-  .charcard .swatch { height: 28px; border-radius: 5px; margin-bottom: 6px; }
-  .charcard .stat { font: 600 9px Arial; color: #cfd8e3; line-height: 1.5; }
+  .charcard:hover { border-color: rgba(85,230,255,.5); }
+  .charcard.sel { border-color: var(--cyan); background: rgba(85,230,255,.1); }
+  .charcard .cname { font: 800 15px 'Segoe UI', Inter, sans-serif; letter-spacing: 1.5px; color: var(--ink); text-transform: uppercase; }
+  .charcard .ctag { font: 600 10px Arial; color: var(--dim); margin: 3px 0 6px; }
+  .charcard .swatch { height: 28px; margin-bottom: 6px; }
+  .charcard .stat { font: 600 9px 'Consolas', monospace; color: #cfd8e3; line-height: 1.6; letter-spacing: .04em; }
   @media (max-width: 700px), (max-height: 620px) {
     .charcard { width: 96px; padding: 8px 5px; }
     .charcard .cname { font-size: 13px; }
@@ -178,31 +253,36 @@
 
   #start .tabs { display: flex; gap: 8px; pointer-events: auto; margin-bottom: 12px; }
   #start .tab {
-    cursor: pointer; background: rgba(255,255,255,.07); color: #9fb2c8;
-    border: 1px solid rgba(255,255,255,.14); border-radius: 20px;
-    padding: 8px 18px; font: 700 14px Arial; letter-spacing: 1px; transition: all .15s;
+    cursor: pointer; background: rgba(255,255,255,.05); color: var(--dim);
+    border: 1px solid rgba(140,170,190,.2);
+    padding: 8px 18px; font: 800 12px 'Consolas', monospace; letter-spacing: .16em; transition: all .15s;
+    text-transform: uppercase;
+    clip-path: polygon(7px 0, 100% 0, 100% calc(100% - 7px), calc(100% - 7px) 100%, 0 100%, 0 7px);
   }
-  #start .tab:hover { color: #fff; }
-  #start .tab.active { background: linear-gradient(180deg,#ffd24a,#f0a32a); color: #111; border-color: transparent; }
+  #start .tab:hover { color: var(--ink); }
+  #start .tab.active { background: var(--cyan); color: #06131a; border-color: transparent; }
 
   #start .panel {
     display: none; width: min(560px, 92vw); text-align: left;
-    background: rgba(0,0,0,.5); border: 1px solid rgba(255,255,255,.14);
-    border-radius: 12px; padding: 18px 22px;
+    background: rgba(8,15,24,.72); border: 1px solid var(--edge);
+    padding: 18px 22px;
+    clip-path: polygon(13px 0, 100% 0, 100% calc(100% - 13px), calc(100% - 13px) 100%, 0 100%, 0 13px);
+    backdrop-filter: none; box-shadow: none;
   }
   #start .panel.active { display: block; animation: fadein .25s ease; }
   @keyframes fadein { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
   #start .ctl { color: #cfd8e3; font-size: 14px; line-height: 2.1; }
-  #start .ctl b { color: #ffd24a; }
-  #start .ctl.mob { margin-top: 6px; color: #8fd0ff; }
+  #start .ctl b { color: var(--cyan); }
+  #start .ctl.mob { margin-top: 6px; color: var(--cyan); }
   #start .k {
-    display: inline-block; background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.28);
-    border-radius: 5px; padding: 1px 8px; margin-right: 4px; color: #fff; font-weight: 700; font-size: 12px;
+    display: inline-block; background: rgba(85,230,255,.12); border: 1px solid rgba(85,230,255,.35);
+    padding: 1px 8px; margin-right: 4px; color: var(--ink); font-weight: 700; font-size: 12px;
+    font-family: 'Consolas', monospace;
   }
-  #start .feat { color: #dfe7ef; font-size: 13px; line-height: 1.5; padding: 7px 0; border-bottom: 1px solid rgba(255,255,255,.06); }
+  #start .feat { color: #dfe7ef; font-size: 13px; line-height: 1.5; padding: 7px 0; border-bottom: 1px solid rgba(140,170,190,.1); }
   #start .feat:last-child { border-bottom: none; }
-  #start .feat b { color: #ffd24a; }
+  #start .feat b { color: var(--cyan); }
 
   @media (max-width: 700px), (max-height: 620px) {
     #start .panel { padding: 12px 16px; }
@@ -222,26 +302,31 @@
 </head>
 <body>
   <div id="hud">
-    <div id="topright">
+    <div id="topright" class="panel">
       <div id="money">$0</div>
       <div id="clock">10:00</div>
       <div id="stars"><span>★</span><span>★</span><span>★</span><span>★</span><span>★</span></div>
     </div>
     <div id="bottomleft">
-      <div id="healthwrap"><div id="health"></div></div>
-      <canvas id="minimap" width="176" height="176"></canvas>
+      <div id="healthpanel" class="panel">
+        <div class="lbl"><span>HEALTH</span><span id="hpnum"></span></div>
+        <div id="healthwrap"><div id="health"></div></div>
+      </div>
+      <div id="minimapframe" class="panel">
+        <canvas id="minimap" width="176" height="176"></canvas>
+      </div>
     </div>
-    <div id="speed">0 <small>MPH</small></div>
-    <div id="weapon">PISTOL</div>
+    <div id="speed" class="panel"><span class="big">0</span> <small>MPH</small></div>
+    <div id="weapon" class="panel">PISTOL</div>
     <div id="hint"></div>
     <div id="keysind">
-      <span id="k-w">W</span><br>
-      <span id="k-a">A</span><span id="k-s">S</span><span id="k-d">D</span>
+      <button id="k-w" aria-label="Move forward">W</button><br>
+      <button id="k-a" aria-label="Move or steer left">A</button><button id="k-s" aria-label="Move backward or brake">S</button><button id="k-d" aria-label="Move or steer right">D</button>
     </div>
     <div id="crosshair">+</div>
     <div id="banner">WASTED</div>
     <div id="toast"></div>
-    <div id="mission">
+    <div id="mission" class="panel">
       <div id="mtitle"></div>
       <div id="mtext"></div>
       <div id="mtimer"></div>
@@ -256,7 +341,7 @@
 
   <div id="start">
     <h1>OPEN CITY</h1>
-    <div style="font:800 12px Arial;color:#ffd24a;letter-spacing:4px;margin:-6px 0 4px">👑 FINAL EDITION</div>
+    <div class="edition">▚ Final Edition</div>
     <div class="tag">Swing · Drive · Fly — a GTA-style open world in your browser</div>
 
     <div id="charpick">

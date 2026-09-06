@@ -1,4 +1,4 @@
-import { keys, pressed, mouse } from './input.js';
+import { keys, pressed, mouse, setInputKey } from './input.js';
 
 // Touch controls for phones/tablets: a virtual joystick on the left drives
 // WASD, dragging the rest of the screen looks around, and buttons cover
@@ -79,20 +79,20 @@ export function initTouch() {
     const len = Math.hypot(dx, dy) || 1;
     const cx = (Math.abs(dx) > len * 0.38 ? Math.sign(dx) : 0);
     const cy = (Math.abs(dy) > len * 0.38 ? Math.sign(dy) : 0);
-    keys['KeyW'] = cy < 0 && len > 14;
-    keys['KeyS'] = cy > 0 && len > 14;
-    keys['KeyA'] = cx < 0 && len > 14;
-    keys['KeyD'] = cx > 0 && len > 14;
+    setInputKey('touch-stick', 'KeyW', cy < 0 && len > 14);
+    setInputKey('touch-stick', 'KeyS', cy > 0 && len > 14);
+    setInputKey('touch-stick', 'KeyA', cx < 0 && len > 14);
+    setInputKey('touch-stick', 'KeyD', cx > 0 && len > 14);
     // sprint when the stick is pushed to the rim
-    keys['ShiftLeft'] = len > 44 && !downHeld;
+    setInputKey('touch-stick', 'ShiftLeft', len > 44 && !downHeld);
     const nx = Math.max(-R, Math.min(R, dx));
     const ny = Math.max(-R, Math.min(R, dy));
     nub.style.transform = `translate(calc(-50% + ${nx}px), calc(-50% + ${ny}px))`;
   }
 
   function clearStick() {
-    for (const k of STICK_KEYS) keys[k] = false;
-    if (!downHeld) keys['ShiftLeft'] = false;
+    for (const k of STICK_KEYS) setInputKey('touch-stick', k, false);
+    if (!downHeld) setInputKey('touch-stick', 'ShiftLeft', false);
     nub.style.transform = 'translate(-50%,-50%)';
   }
 
@@ -166,8 +166,8 @@ export function initTouch() {
     return b;
   }
 
-  const press = (k) => { pressed[k] = true; keys[k] = true; };
-  const release = (k) => { keys[k] = false; };
+  const press = (k) => { setInputKey('touch-button', k, true); };
+  const release = (k) => { setInputKey('touch-button', k, false); };
 
   // right-hand cluster
   button('WEB', 'right:24px;bottom:96px;width:86px;height:86px;font-size:16px;',
@@ -177,8 +177,8 @@ export function initTouch() {
   button('JUMP', 'right:34px;bottom:12px;width:64px;height:64px;',
     () => press('Space'), () => release('Space')).id = 'btn-jump';
   button('▼', 'right:124px;bottom:120px;width:52px;height:52px;',
-    () => { downHeld = true; keys['ShiftLeft'] = true; },
-    () => { downHeld = false; keys['ShiftLeft'] = false; });
+    () => { downHeld = true; setInputKey('touch-button', 'ShiftLeft', true); },
+    () => { downHeld = false; setInputKey('touch-button', 'ShiftLeft', false); });
   // actions in an arc to the right of the joystick (the minimap sits above it)
   button('E', 'left:170px;bottom:104px;width:56px;height:56px;font-size:16px;',
     () => press('KeyE'), () => release('KeyE'));

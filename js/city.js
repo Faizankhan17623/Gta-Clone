@@ -1,10 +1,11 @@
 import * as THREE from 'three';
+import { seededRandom, buildRoadDetails, createDistrictManager } from './district.js';
 
 // City layout: N x N blocks separated by roads, surrounded by a perimeter road.
 export const BLOCK = 60;
 export const ROAD = 16;
 export const N = 10; // 10x10 grid — a bigger metropolis (was 8x8)
-export const CITY = N * BLOCK + (N + 1) * ROAD; // 624
+export const CITY = N * BLOCK + (N + 1) * ROAD; // 776 metres
 export const HALF = CITY / 2;
 
 export const roadCenter = (i) => -HALF + ROAD / 2 + i * (BLOCK + ROAD);
@@ -83,28 +84,26 @@ function windowTextures(base) {
 }
 
 function roadTexture() {
+  const random = seededRandom(104);
   const c = document.createElement('canvas');
-  c.width = 128; c.height = 128;
+  c.width = 512; c.height = 512;
   const g = c.getContext('2d');
-  g.fillStyle = '#28282d';
-  g.fillRect(0, 0, 128, 128);
-  for (let i = 0; i < 350; i++) {
-    g.fillStyle = `rgba(255,255,255,${Math.random() * 0.035})`;
-    g.fillRect(Math.random() * 128, Math.random() * 128, 2, 2);
+  g.fillStyle = '#55575a';
+  g.fillRect(0, 0, 512, 512);
+  for (let i = 0; i < 22000; i++) {
+    g.fillStyle = random() > .5 ? '#ffffff15' : '#0000001c';
+    g.fillRect(random() * 512, random() * 512, 1 + random(), 1 + random());
   }
-  for (let i = 0; i < 60; i++) {
-    g.fillStyle = `rgba(0,0,0,${Math.random() * 0.25})`;
-    g.fillRect(Math.random() * 128, Math.random() * 128, 4, 3);
+  // Subtle tyre wear. Markings are separate geometry so junctions stay clear.
+  for (const x of [110, 146, 366, 402]) {
+    const wear = g.createLinearGradient(x - 12, 0, x + 12, 0);
+    wear.addColorStop(0, '#00000000'); wear.addColorStop(.5, '#00000017'); wear.addColorStop(1, '#00000000');
+    g.fillStyle = wear; g.fillRect(x - 12, 0, 24, 512);
   }
-  g.fillStyle = '#a8954a';
-  g.fillRect(62, 8, 4, 48);
-  g.fillRect(62, 72, 4, 48);
-  g.fillStyle = '#8e8e90';
-  g.fillRect(4, 0, 3, 128);
-  g.fillRect(121, 0, 3, 128);
   const t = new THREE.CanvasTexture(c);
-  t.wrapT = THREE.RepeatWrapping;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
   t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
   return t;
 }
 
@@ -152,6 +151,8 @@ function helipadTexture() {
 }
 
 export function buildCity(scene) {
+  const buildings = [];
+  const walks = [];
   const colliders = [];   // {x0,z0,x1,z1,h}
   const pedRects = [];
   const roadXs = [];
@@ -191,7 +192,7 @@ export function buildCity(scene) {
     tv.needsUpdate = true;
     tv.wrapT = THREE.RepeatWrapping;
     tv.repeat.set(1, CITY / ROAD);
-    const v = new THREE.Mesh(roadGeo, new THREE.MeshLambertMaterial({ map: tv }));
+    const v = new THREE.Mesh(roadGeo, new THREE.MeshStandardMaterial({ map: tv, roughness: .96 }));
     v.position.set(cx, 0.04, 0);
     v.receiveShadow = true;
     scene.add(v);
@@ -200,7 +201,7 @@ export function buildCity(scene) {
     th.needsUpdate = true;
     th.wrapT = THREE.RepeatWrapping;
     th.repeat.set(1, CITY / ROAD);
-    const h = new THREE.Mesh(roadGeo, new THREE.MeshLambertMaterial({ map: th }));
+    const h = new THREE.Mesh(roadGeo, new THREE.MeshStandardMaterial({ map: th, roughness: .96 }));
     h.position.set(0, 0.08, cx);
     h.rotation.y = Math.PI / 2;
     h.receiveShadow = true;
@@ -237,6 +238,8 @@ export function buildCity(scene) {
 
   for (let bi = 0; bi < N; bi++) {
     for (let bj = 0; bj < N; bj++) {
+      // Per-block randomness is independent of texture creation and other systems.
+      const random = seededRandom(17623 + bi * N + bj);
       const sx = blockStart(bi);
       const sz = blockStart(bj);
       const cx = sx + BLOCK / 2;
@@ -247,6 +250,7 @@ export function buildCity(scene) {
       walk.position.set(cx, 0.12, cz);
       walk.receiveShadow = true;
       scene.add(walk);
+      walks.push({ bi, bj, x: cx, z: cz, mesh: walk });
 
       pedRects.push({ x0: sx + 2, z0: sz + 2, x1: sx + BLOCK - 2, z1: sz + BLOCK - 2 });
 
@@ -269,8 +273,8 @@ export function buildCity(scene) {
         }
 
         for (let t = 0; t < 7; t++) {
-          const tx = cx + (Math.random() - 0.5) * (BLOCK - 20);
-          const tz = cz + (Math.random() - 0.5) * (BLOCK - 20);
+          const tx = cx + (random() - 0.5) * (BLOCK - 20);
+          const tz = cz + (random() - 0.5) * (BLOCK - 20);
           if (hasPad && Math.abs(tx - cx) < 11 && Math.abs(tz - cz) < 11) continue;
           addTree(tx, tz);
         }
@@ -281,10 +285,10 @@ export function buildCity(scene) {
         for (let lj = 0; lj < 2; lj++) {
           const lotX = sx + 5 + li * 25 + 12.5;
           const lotZ = sz + 5 + lj * 25 + 12.5;
-          const w = 17 + Math.random() * 6;
-          const d = 17 + Math.random() * 6;
-          const hgt = 12 + Math.floor(Math.random() * 9) * 6;
-          const set = winSets[(Math.random() * winSets.length) | 0];
+          const w = 17 + random() * 6;
+          const d = 17 + random() * 6;
+          const hgt = 12 + Math.floor(random() * 9) * 6;
+          const set = winSets[(random() * winSets.length) | 0];
           const sideMat = new THREE.MeshStandardMaterial({
             map: set.map,
             emissive: 0xffffff,
@@ -295,33 +299,42 @@ export function buildCity(scene) {
           });
           windowMats.push(sideMat);
           const geo = new THREE.BoxGeometry(w, hgt, d);
+          // Four walls share one material, as do the roof and underside. Keep
+          // their UVs/normals intact but draw two groups instead of six faces.
+          // The material slots remain compatible with streamed facade swaps.
+          const indices = Array.from(geo.index.array);
+          geo.setIndex([...indices.slice(0, 12), ...indices.slice(24), ...indices.slice(12, 24)]);
+          geo.clearGroups();
+          geo.addGroup(0, 24, 0);
+          geo.addGroup(24, 12, 2);
           const b = new THREE.Mesh(geo, [sideMat, sideMat, roofMat, roofMat, sideMat, sideMat]);
           b.position.set(lotX, hgt / 2 + 0.2, lotZ);
           b.castShadow = true;
           b.receiveShadow = true;
           scene.add(b);
+          buildings.push({ bi, bj, li, lj, x: lotX, z: lotZ, w, d, h: hgt, mesh: b });
           colliders.push({ x0: lotX - w / 2, z0: lotZ - d / 2, x1: lotX + w / 2, z1: lotZ + d / 2, h: hgt + 0.5 });
 
           // rooftop clutter: AC units + antennas
           const top = hgt + 0.2;
-          if (Math.random() < 0.7) {
+          if (random() < 0.7) {
             const ac = new THREE.Mesh(acGeo, roofPropMat);
-            ac.position.set(lotX + (Math.random() - 0.5) * (w - 5), top + 0.7, lotZ + (Math.random() - 0.5) * (d - 5));
+            ac.position.set(lotX + (random() - 0.5) * (w - 5), top + 0.7, lotZ + (random() - 0.5) * (d - 5));
             ac.castShadow = true;
             scene.add(ac);
           }
-          if (Math.random() < 0.35) {
+          if (random() < 0.35) {
             const ant = new THREE.Mesh(antennaGeo, roofPropMat);
-            ant.position.set(lotX + (Math.random() - 0.5) * (w - 6), top + 3.5, lotZ + (Math.random() - 0.5) * (d - 6));
+            ant.position.set(lotX + (random() - 0.5) * (w - 6), top + 3.5, lotZ + (random() - 0.5) * (d - 6));
             scene.add(ant);
           }
           // glowing billboard on some tall buildings, facing the road
-          if (hgt >= 30 && Math.random() < 0.3) {
+          if (hgt >= 30 && random() < 0.3) {
             const bb = new THREE.Mesh(
               new THREE.PlaneGeometry(11, 4.2),
               new THREE.MeshBasicMaterial({ map: billboardTexture() })
             );
-            const face = (Math.random() * 4) | 0;
+            const face = (random() * 4) | 0;
             const y = hgt - 4;
             if (face === 0) { bb.position.set(lotX, y, lotZ + d / 2 + 0.15); }
             else if (face === 1) { bb.position.set(lotX, y, lotZ - d / 2 - 0.15); bb.rotation.y = Math.PI; }
@@ -362,7 +375,10 @@ export function buildCity(scene) {
   const mid = Math.floor(N / 2);
   const spawn = new THREE.Vector3(roadCenter(mid), 0, roadCenter(mid));
 
-  return { colliders, pedRects, roadXs, roadZs, spawn, helipads, windowMats, lampGlowMat: glowMat, bulbMat };
+  const city = { colliders, pedRects, roadXs, roadZs, spawn, helipads, windowMats, lampGlowMat: glowMat, bulbMat, buildings, walks };
+  city.roads = buildRoadDetails(scene, { roadXs, roadZs, roadWidth: ROAD, blockSize: BLOCK, surfaceMap: roadTex });
+  city.district = createDistrictManager(scene, city);
+  return city;
 }
 
 // Push a circle (pos, r) out of every AABB collider it overlaps.

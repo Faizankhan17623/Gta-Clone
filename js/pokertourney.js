@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { placeStreetSite } from './site-layout.js';
 import { pointBlocked } from './city.js';
 import { showToast, showMissionMsg } from './hud.js';
 import { sfxMissionPass, sfxMissionFail, sfxPickup } from './sound.js';
@@ -16,6 +17,7 @@ export function initPokertourney(scene, world) {
   let pos = world.city.spawn.clone().add(new THREE.Vector3(-22, 0, 8));
   const probe = new THREE.Vector3(pos.x, 1, pos.z);
   if (pointBlocked(probe, world.city.colliders, 1.4)) pos = world.city.spawn.clone().add(new THREE.Vector3(-26, 0, 4));
+  placeStreetSite(world.city, pos, 2.5, 'pokertourney');
 
   const table = new THREE.Mesh(
     new THREE.CylinderGeometry(1.2, 1.2, 0.75, 10),

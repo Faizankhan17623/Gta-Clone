@@ -164,6 +164,10 @@ export function updateWebVisual(web, hand) {
 
 // web arm up, legs trailing behind
 export function poseSwing(ch, t) {
+  if (ch.lElbow) {
+    ch.rElbow.rotation.x = -.08; ch.lElbow.rotation.x = -.45;
+    ch.lKnee.rotation.x = .35; ch.rKnee.rotation.x = .6;
+  }
   ch.rArm.rotation.x = Math.PI;
   ch.lArm.rotation.x = -0.6 + Math.sin(t * 2.2) * 0.15;
   ch.lLeg.rotation.x = 0.5 + Math.sin(t * 3) * 0.12;
@@ -171,6 +175,10 @@ export function poseSwing(ch, t) {
 }
 
 export function poseFall(ch) {
+  if (ch.lElbow) {
+    ch.lElbow.rotation.x = ch.rElbow.rotation.x = -.3;
+    ch.lKnee.rotation.x = .3; ch.rKnee.rotation.x = .65;
+  }
   ch.lArm.rotation.x = -0.9;
   ch.rArm.rotation.x = -0.9;
   ch.lLeg.rotation.x = 0.45;
