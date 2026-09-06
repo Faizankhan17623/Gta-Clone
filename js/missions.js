@@ -417,12 +417,15 @@ function endMission(world) {
 }
 
 function passMission(world) {
-  world.money += mission.reward;
+  // small rewards paid in cash (capped), big ones wired to the bank
+  const line = world.awardMoney
+    ? world.awardMoney(world, mission.reward)
+    : (world.money += mission.reward, '+$' + mission.reward);
   mission.done++;
   if (world.stats) world.stats.missions++;
   world.addXP?.(200);
   sfxMissionPass();
-  showMissionMsg('MISSION PASSED!', '+$' + mission.reward, '#7cf78c');
+  showMissionMsg('MISSION PASSED!', line, '#7cf78c');
   endMission(world);
   world.onSave?.();
 }

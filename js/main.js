@@ -90,6 +90,7 @@ import { initArmsdealer, updateArmsdealer } from './armsdealer.js';
 import { initDruglab, updateDruglab, endDruglab } from './druglab.js';
 import { initVendors, updateVendors } from './vendors.js';
 import { initAtms, updateAtms } from './atm.js';
+import { initBanking, updateBanking, bankingSave, awardMoney } from './banking.js';
 import { initPayphones, updatePayphones, endPhoneJob } from './payphone.js';
 import { initPigeons, updatePigeons } from './pigeons.js';
 import { initGraffiti, updateGraffiti } from './graffiti.js';
@@ -410,6 +411,8 @@ initArmsdealer(scene, world);
 initDruglab(scene, world, save);
 initVendors(scene, world);
 initAtms(scene, world, save);
+initBanking(world, save); // after initAtms — extends world.bank
+world.awardMoney = awardMoney; // reward routing for missions and jobs
 initPayphones(scene, world, save);
 initPigeons(scene, world, save);
 initGraffiti(scene, world, save);
@@ -697,6 +700,7 @@ function saveGame() {
       hair: world.barber?.hair,
       druglabDay: world.druglab?.doneDay,
       bank: world.bank?.balance, karma: world.hobo?.karma,
+      ...bankingSave(world),
       pigeons: world.pigeonNet ? world.pigeonNet.birds.filter((b) => b.dead).map((b) => b.id) : [],
       graffiti: world.graffiti ? world.graffiti.spots.filter((s) => s.done).map((s) => s.id) : [],
       guard: world.guard?.hired, phoneStreak: world.payphone?.streak,
@@ -2966,6 +2970,7 @@ function update(dt) {
   updateDruglab(world, dt);
   updateVendors(world, dt, pressed);
   updateAtms(world, dt, pressed);
+  updateBanking(world, dt, keys, pressed);
   updatePayphones(world, dt, pressed);
   updatePigeons(world, dt);
   updateGraffiti(world, dt, keys);
