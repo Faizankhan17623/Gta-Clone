@@ -381,11 +381,68 @@ export function buildCity(scene) {
   return city;
 }
 
+// --- broad phase --------------------------------------------------------------
+// The collider list is ~500 static AABBs. Scanning all of them for every
+// vehicle and the player, every frame, was a measurable slice of frame time.
+// Bucket them into a uniform grid once; callers then test only the handful of
+// colliders in the cells they overlap. The grid is keyed to the array itself
+// and its length, so roadblocks / district detail colliders being spliced in
+// or out transparently trigger a rebuild.
+const GRID_CELL = 24;              // metres — a touch wider than the widest lot
+const _gridCache = new WeakMap();  // colliders[] -> { len, cells: Map }
+
+function cellKey(ix, iz) { return ix * 100000 + iz; }
+
+function buildGrid(colliders) {
+  const cells = new Map();
+  for (let i = 0; i < colliders.length; i++) {
+    const c = colliders[i];
+    const x0 = Math.floor(c.x0 / GRID_CELL), x1 = Math.floor(c.x1 / GRID_CELL);
+    const z0 = Math.floor(c.z0 / GRID_CELL), z1 = Math.floor(c.z1 / GRID_CELL);
+    for (let ix = x0; ix <= x1; ix++) {
+      for (let iz = z0; iz <= z1; iz++) {
+        const k = cellKey(ix, iz);
+        let bucket = cells.get(k);
+        if (!bucket) cells.set(k, bucket = []);
+        bucket.push(c);
+      }
+    }
+  }
+  return { len: colliders.length, cells };
+}
+
+// Colliders whose cells the circle (pos, r) touches. Falls back to the full
+// list for out-of-bounds probes (rare — helicopters far past the edge).
+function nearbyColliders(pos, r, colliders) {
+  let grid = _gridCache.get(colliders);
+  if (!grid || grid.len !== colliders.length) {
+    grid = buildGrid(colliders);
+    _gridCache.set(colliders, grid);
+  }
+  const x0 = Math.floor((pos.x - r) / GRID_CELL), x1 = Math.floor((pos.x + r) / GRID_CELL);
+  const z0 = Math.floor((pos.z - r) / GRID_CELL), z1 = Math.floor((pos.z + r) / GRID_CELL);
+  if (x1 - x0 > 6 || z1 - z0 > 6) return colliders; // huge radius: just scan all
+  const seen = new Set();
+  const out = [];
+  for (let ix = x0; ix <= x1; ix++) {
+    for (let iz = z0; iz <= z1; iz++) {
+      const bucket = grid.cells.get(cellKey(ix, iz));
+      if (!bucket) continue;
+      for (const c of bucket) {
+        if (seen.has(c)) continue;
+        seen.add(c);
+        out.push(c);
+      }
+    }
+  }
+  return out;
+}
+
 // Push a circle (pos, r) out of every AABB collider it overlaps.
 // Pass maxY to ignore colliders shorter than the entity's altitude (helicopters).
 export function resolveCircle(pos, r, colliders, maxY = -Infinity) {
   let hit = null;
-  for (const c of colliders) {
+  for (const c of nearbyColliders(pos, r, colliders)) {
     if (maxY > (c.h ?? Infinity)) continue;
     const cx = Math.max(c.x0, Math.min(pos.x, c.x1));
     const cz = Math.max(c.z0, Math.min(pos.z, c.z1));
@@ -423,7 +480,7 @@ export function resolveCircle(pos, r, colliders, maxY = -Infinity) {
 // drop can never skip straight through a roof — buildings are solid brick.
 export function groundHeight(pos, colliders, pad = 0.1, probeY = pos.y) {
   let g = 0;
-  for (const c of colliders) {
+  for (const c of nearbyColliders(pos, pad + 0.5, colliders)) {
     if (pos.x < c.x0 - pad || pos.x > c.x1 + pad || pos.z < c.z0 - pad || pos.z > c.z1 + pad) continue;
     const top = (c.h ?? 0) - 0.3; // collider tops sit 0.3 above the visible roof
     if (top > g && probeY >= top - 0.5) g = top;
@@ -433,7 +490,7 @@ export function groundHeight(pos, colliders, pad = 0.1, probeY = pos.y) {
 
 // True if a point is inside any collider that reaches above the point's height.
 export function pointBlocked(pos, colliders, pad = 0.3) {
-  for (const c of colliders) {
+  for (const c of nearbyColliders(pos, pad + 0.5, colliders)) {
     if (pos.y > (c.h ?? Infinity)) continue;
     if (pos.x > c.x0 - pad && pos.x < c.x1 + pad && pos.z > c.z0 - pad && pos.z < c.z1 + pad) return true;
   }

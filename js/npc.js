@@ -56,14 +56,40 @@ function placePedOnBlock(p, city) {
   );
 }
 
+// Beyond this range a pedestrian just slides along its sidewalk loop with no
+// limb animation, no facial detail and no per-collider push — it's a few
+// pixels tall and the saved work (a ~21-mesh matrix cascade + resolveCircle
+// over 480 colliders, times every distant ped) is most of the crowd cost.
+const PED_ANIM_RANGE = 55;
+const PED_ANIM_RANGE_LOW = 34;
+const PED_HIDE_RANGE = 115;
+
 export function updatePeds(world, dt) {
   const { peds, player, city } = world;
   const pcar = player.inCar;
+  const focus = pcar ? pcar.pos : (player.inHeli ? player.inHeli.pos : player.pos);
+  const animRange = world.settings?.lowGfx ? PED_ANIM_RANGE_LOW : PED_ANIM_RANGE;
 
   // fewer people out at night
   const night = world.clock >= 22 || world.clock < 6;
 
   for (const p of peds) {
+    const distSq = (p.pos.x - focus.x) ** 2 + (p.pos.z - focus.z) ** 2;
+    const far = distSq > animRange * animRange;
+    const hidden = distSq > PED_HIDE_RANGE * PED_HIDE_RANGE;
+    if (p.mesh.visible === hidden) p.mesh.visible = !hidden;
+    if (hidden && !p.dead && p.webT <= 0) {
+      // keep it drifting so the crowd isn't frozen when you turn back
+      if (!p.fleeing && p.corners) {
+        const tgt = p.corners[p.target];
+        _v.subVectors(tgt, p.pos); _v.y = 0;
+        if (_v.length() < 0.8) p.target = (p.target + p.cw + 4) % 4;
+        else { _v.normalize(); p.pos.addScaledVector(_v, 1.7 * dt); p.mesh.position.y = 0; }
+      }
+      continue;
+    }
+    p.far = far;
+
     if (p.dead) {
       p.deadT += dt;
       if (p.deadT > (night ? 55 : 20)) {
@@ -107,7 +133,7 @@ export function updatePeds(world, dt) {
       _v.normalize();
       p.heading = Math.atan2(_v.x, _v.z);
       p.pos.addScaledVector(_v, speed * dt);
-      resolveCircle(p.pos, 0.4, city.colliders);
+      if (!p.far) resolveCircle(p.pos, 0.4, city.colliders);
       const B = HALF - 2;
       p.pos.x = Math.max(-B, Math.min(B, p.pos.x));
       p.pos.z = Math.max(-B, Math.min(B, p.pos.z));
@@ -125,13 +151,19 @@ export function updatePeds(world, dt) {
         _v.normalize();
         p.heading = Math.atan2(_v.x, _v.z);
         p.pos.addScaledVector(_v, speed * dt);
-        resolveCircle(p.pos, 0.4, city.colliders);
+        if (!p.far) resolveCircle(p.pos, 0.4, city.colliders);
       }
     }
 
-    p.animT += speed * dt * 2.3;
-    animateWalk(p.ch, p.animT, threat ? 0.95 : 0.55);
     p.mesh.rotation.y = p.heading;
+    if (p.far) {
+      // distant: no limb animation, no ground push — just glide
+      if (p.wasAnimated) { p.mesh.position.y = 0; p.mesh.rotation.z = 0; p.wasAnimated = false; }
+    } else {
+      p.animT += speed * dt * 2.3;
+      animateWalk(p.ch, p.animT, threat ? 0.95 : 0.55);
+      p.wasAnimated = true;
+    }
 
     // run over by the player's car or a cop car
     if (pcar && !pcar.dead && pcar.vel.lengthSq() > 25 && p.pos.distanceTo(pcar.pos) < 1.9) {
@@ -220,6 +252,9 @@ export function updateTraffic(world, dt) {
   const flow = ((hour >= 8 && hour < 10) || (hour >= 17 && hour < 19) ? 0.65
     : hour >= 22 || hour < 5 ? 1.35 : 1) / policy;
 
+  const focus = pcar ? pcar.pos : (player.inHeli ? player.inHeli.pos : player.pos);
+  const AVOID_RANGE_SQ = 120 * 120; // beyond this, cars just cruise their lane
+
   for (const t of traffic) {
     if (t.dead || !t.ai) continue;
     if (t.webT > 0) { // webbed to the road
@@ -228,8 +263,9 @@ export function updateTraffic(world, dt) {
       continue;
     }
     const ai = t.ai;
+    const nearPlayer = (t.pos.x - focus.x) ** 2 + (t.pos.z - focus.z) ** 2 < AVOID_RANGE_SQ;
 
-    // brake if something is ahead
+    // brake if something is ahead — only worth the O(n) scan near the player
     const px = t.pos.x + ai.fx * 8;
     const pz = t.pos.z + ai.fz * 8;
     let blocked = false;
@@ -240,17 +276,17 @@ export function updateTraffic(world, dt) {
     };
     if (pcar && near(pcar)) blocked = true;
     if (!blocked && !pcar && near(player)) blocked = true;
-    if (!blocked) {
+    if (!blocked && nearPlayer) {
       for (const o of traffic) {
         if (o === t) continue;
         if (near(o)) { blocked = true; break; }
       }
-    }
-    if (!blocked) {
-      for (const o of world.parked) if (near(o)) { blocked = true; break; }
-    }
-    if (!blocked) {
-      for (const o of world.cops) if (!o.dead && near(o)) { blocked = true; break; }
+      if (!blocked) {
+        for (const o of world.parked) if (near(o)) { blocked = true; break; }
+      }
+      if (!blocked) {
+        for (const o of world.cops) if (!o.dead && near(o)) { blocked = true; break; }
+      }
     }
 
     const target = blocked ? 0 : ai.cruise * flow;
@@ -266,8 +302,11 @@ export function updateTraffic(world, dt) {
     if (ai.fz !== 0 && Math.abs(t.pos.z) > W) t.pos.z = -Math.sign(t.pos.z) * W;
     if (ai.fx !== 0 && Math.abs(t.pos.x) > W) t.pos.x = -Math.sign(t.pos.x) * W;
 
-    const spin = (ai.speed * dt) / 0.36;
-    for (const w of t.wheels) w.rotation.x += spin;
+    // wheel spin only reads at conversational distance
+    if (nearPlayer) {
+      const spin = (ai.speed * dt) / 0.36;
+      for (const w of t.wheels) w.rotation.x += spin;
+    }
   }
 }
 

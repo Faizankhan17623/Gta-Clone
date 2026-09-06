@@ -2892,7 +2892,9 @@ function update(dt) {
 
   updatePeds(world, dt);
   updateCharacterDetail(player.ch, player.pos, world.settings.lowGfx);
-  for (const ped of world.peds) updateCharacterDetail(ped.ch, player.pos, world.settings.lowGfx);
+  for (const ped of world.peds) {
+    if (ped.mesh.visible) updateCharacterDetail(ped.ch, player.pos, world.settings.lowGfx);
+  }
   updateTraffic(world, dt);
   updatePolice(world, dt);
 
