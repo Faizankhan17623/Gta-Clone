@@ -11,6 +11,8 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
+import bankApi from './bank-api.js';
+import { initSchema, dbEnabled } from './db.js';
 
 const app = express();
 const clientOrigin = process.env.CLIENT_ORIGIN || true;
@@ -83,7 +85,10 @@ app.get('/', (_req, res) => {
   if (fs.existsSync(index)) return res.sendFile(index);
   res.send('game3d server running');
 });
-app.get('/health', (_req, res) => res.json({ ok: true, uptimeSec: Math.round(process.uptime()) }));
+app.get('/health', (_req, res) => res.json({ ok: true, uptimeSec: Math.round(process.uptime()), bank: dbEnabled }));
+
+// Open City bank — replies 503 (offline) until DATABASE_URL is set
+app.use('/api/bank', bankApi);
 
 function adminAuthorized(req) {
   const configured = process.env.ADMIN_TOKEN;
@@ -465,6 +470,9 @@ const gameMode = createGameMode(io, players, MAX_HEALTH);
 
 const PORT = process.env.PORT || 3001;
 httpServer.listen(PORT, () => console.log(`game3d server listening on http://localhost:${PORT}`));
+
+// bring up the bank schema (no-op when DATABASE_URL is unset)
+initSchema().catch((e) => console.error('[db] initSchema failed:', e.message));
 
 // ---------------------------------------------------------------------------
 // Phase 9 game mode lives here (kept in one file for simplicity).
