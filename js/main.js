@@ -236,6 +236,10 @@ const SAVE_KEY = 'opencity-save-v1';
 let save = {};
 try { save = JSON.parse(localStorage.getItem(SAVE_KEY) || '{}') || {}; } catch { save = {}; }
 
+// every new player starts with a $5,000 bank balance
+const STARTING_CASH = 5000;
+const isNewPlayer = save.money === undefined;
+
 // chosen playable character (saved between sessions)
 const charDef = CHARACTERS.find((c) => c.key === save.char) || CHARACTERS[0];
 const playerChar = createCharacter(charDef.colors);
@@ -279,7 +283,7 @@ const world = {
   wantedTimer: 0,
   bustedT: 0,
   busted: false,
-  money: save.money || 0,
+  money: isNewPlayer ? STARTING_CASH : (save.money || 0),
   damageFlash: 0,
   time: 0,
   lastShot: null,

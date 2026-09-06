@@ -1,9 +1,8 @@
 import { showToast } from './hud.js';
 import { sfxPickup } from './sound.js';
 
-// STREET BRIBES: at one or two stars, stop near a cruiser, press Y, and
-// $500 a star makes the paperwork disappear. At three-plus they stop
-// taking envelopes — too many witnesses in their own cars.
+// STREET BRIBES: while wanted, stop near a cruiser, press Y, and $500 a
+// star makes the paperwork disappear — the whole wanted level clears.
 
 export function initBribe(world) {
   world.bribe = { cd: 0, paid: 0 };
@@ -16,7 +15,7 @@ export function updateBribe(world, dt, pressed) {
   world.bribeHint = null;
   br.cd = Math.max(0, br.cd - dt);
 
-  if (world.wanted < 1 || world.wanted > 2 || br.cd > 0) return;
+  if (world.wanted < 1 || br.cd > 0) return;
   const slow = player.inCar ? player.inCar.vel.length() < 3 : player.vel.length() < 2;
   if (!slow) return;
 
