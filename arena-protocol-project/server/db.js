@@ -71,6 +71,63 @@ export async function initSchema() {
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS transfers_from_idx ON transfers (from_account, created_at DESC);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS transfers_to_idx   ON transfers (to_account,   created_at DESC);`);
+
+  // Admin token + session storage so a server restart doesn't invalidate an
+  // outstanding token (the previous behaviour: it lived only in process memory
+  // and reset every deploy).
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS admin_tokens (
+      token_hash  TEXT PRIMARY KEY,
+      expires_at  TIMESTAMPTZ NOT NULL,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS admin_sessions (
+      session_key TEXT PRIMARY KEY,
+      expires_at  TIMESTAMPTZ NOT NULL
+    );
+  `);
   console.log('[db] schema ready');
   return true;
+}
+
+// --- admin token / session persistence (no-ops when the DB is off) ------------
+
+export async function saveAdminToken(tokenHash, expiresAt) {
+  if (!pool) return;
+  await pool.query(
+    `INSERT INTO admin_tokens (token_hash, expires_at) VALUES ($1, to_timestamp($2/1000.0))
+     ON CONFLICT (token_hash) DO UPDATE SET expires_at = EXCLUDED.expires_at`,
+    [tokenHash, expiresAt],
+  );
+  await pool.query(`DELETE FROM admin_tokens WHERE expires_at < now()`);
+}
+
+export async function adminTokenValid(tokenHash) {
+  if (!pool) return false;
+  const { rows } = await pool.query(
+    `SELECT 1 FROM admin_tokens WHERE token_hash = $1 AND expires_at > now()`,
+    [tokenHash],
+  );
+  return rows.length > 0;
+}
+
+export async function saveAdminSession(sessionKey, expiresAt) {
+  if (!pool) return;
+  await pool.query(
+    `INSERT INTO admin_sessions (session_key, expires_at) VALUES ($1, to_timestamp($2/1000.0))
+     ON CONFLICT (session_key) DO UPDATE SET expires_at = EXCLUDED.expires_at`,
+    [sessionKey, expiresAt],
+  );
+  await pool.query(`DELETE FROM admin_sessions WHERE expires_at < now()`);
+}
+
+export async function adminSessionValid(sessionKey) {
+  if (!pool) return false;
+  const { rows } = await pool.query(
+    `SELECT 1 FROM admin_sessions WHERE session_key = $1 AND expires_at > now()`,
+    [sessionKey],
+  );
+  return rows.length > 0;
 }

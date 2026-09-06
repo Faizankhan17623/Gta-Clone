@@ -12,7 +12,10 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
 import bankApi from './bank-api.js';
-import { initSchema, dbEnabled } from './db.js';
+import {
+  initSchema, dbEnabled,
+  saveAdminToken, adminTokenValid, saveAdminSession, adminSessionValid,
+} from './db.js';
 
 const app = express();
 const clientOrigin = process.env.CLIENT_ORIGIN || true;
@@ -48,9 +51,17 @@ function cookieValue(req, name) {
 }
 function validAdminSession(req) {
   const key = cookieValue(req, 'arena_admin_session');
+  if (!key) return false;
   const expires = adminSessions.get(key);
-  if (!key || !expires || expires < Date.now()) { if (key) adminSessions.delete(key); return false; }
-  return true;
+  if (expires && expires >= Date.now()) return true;
+  if (expires) adminSessions.delete(key);
+  return false;
+}
+// DB-aware check used by the async guard below.
+async function validAdminSessionAsync(req) {
+  if (validAdminSession(req)) return true;
+  const key = cookieValue(req, 'arena_admin_session');
+  return key ? adminSessionValid(key).catch(() => false) : false;
 }
 function recordError(error, context = 'server') {
   const entry = { at: new Date().toISOString(), context, message: String(error?.message || error) };
@@ -90,27 +101,35 @@ app.get('/health', (_req, res) => res.json({ ok: true, uptimeSec: Math.round(pro
 // Open City bank — replies 503 (offline) until DATABASE_URL is set
 app.use('/api/bank', bankApi);
 
-function adminAuthorized(req) {
+async function adminAuthorized(req) {
   const configured = process.env.ADMIN_TOKEN;
-  return validAdminSession(req) || Boolean(configured && req.get('x-admin-token') === configured);
+  if (configured && req.get('x-admin-token') === configured) return true;
+  return validAdminSessionAsync(req);
 }
 function requireAdmin(req, res, next) {
-  if (!adminAuthorized(req)) return res.status(401).json({ error: 'Admin authorization required' });
-  next();
+  adminAuthorized(req)
+    .then((ok) => ok ? next() : res.status(401).json({ error: 'Admin authorization required' }))
+    .catch(() => res.status(401).json({ error: 'Admin authorization required' }));
 }
 app.get('/admin', (_req, res) => res.sendFile(path.join(SERVER_DIR, 'admin.html')));
 app.post('/admin/send-token', async (_req, res) => {
   if (adminTokenSentAt && Date.now() - adminTokenSentAt < ADMIN_WINDOW_MS) {
     return res.status(429).json({ error: 'A new admin token can be sent once per hour' });
   }
-  const { SMTP_HOST, SMTP_PORT = '587', SMTP_USER, SMTP_PASS, ADMIN_EMAIL, ADMIN_TOKEN_INLINE } = process.env;
+  const { SMTP_HOST, SMTP_PORT = '587', SMTP_USER, ADMIN_EMAIL, ADMIN_TOKEN_INLINE } = process.env;
+  // Gmail shows app passwords as "xxxx xxxx xxxx xxxx"; the spaces are display
+  // only and break auth if sent literally.
+  const SMTP_PASS = (process.env.SMTP_PASS || '').replace(/\s+/g, '');
   const token = newToken();
-  const armToken = () => {
+  const expiresAt = Date.now() + ADMIN_WINDOW_MS;
+  const armToken = async () => {
     adminTokenHash = hashToken(token);
-    adminTokenExpiresAt = Date.now() + ADMIN_WINDOW_MS;
+    adminTokenExpiresAt = expiresAt;
     adminTokenSentAt = Date.now();
     adminAttempts = 0;
     adminLockedUntil = 0;
+    // persist so a restart within the hour doesn't invalidate it
+    await saveAdminToken(adminTokenHash, expiresAt).catch((e) => recordError(e, 'admin-token-save'));
   };
 
   const smtpReady = SMTP_HOST && SMTP_USER && SMTP_PASS && ADMIN_EMAIL;
@@ -119,7 +138,7 @@ app.post('/admin/send-token', async (_req, res) => {
     // return the fresh token directly (trusted-deploy convenience). Otherwise
     // say clearly which SMTP variables are missing.
     if (String(ADMIN_TOKEN_INLINE) === '1') {
-      armToken();
+      await armToken();
       return res.json({ ok: true, inline: true, token, message: 'Email is off — here is your one-hour admin token' });
     }
     const missing = ['SMTP_HOST', 'SMTP_USER', 'SMTP_PASS', 'ADMIN_EMAIL'].filter((k) => !process.env[k]);
@@ -143,24 +162,42 @@ app.post('/admin/send-token', async (_req, res) => {
       subject: 'Arena Protocol admin token',
       text: `Your admin token is ${token}. It expires in one hour.`,
     });
-    armToken();
+    await armToken();
     res.json({ ok: true, message: `Admin token sent to ${ADMIN_EMAIL}` });
   } catch (error) {
     recordError(error, 'admin-email');
     res.status(502).json({ error: `Could not send token: ${String(error.message || error).slice(0, 160)}` });
   }
 });
-app.post('/admin/auth', (req, res) => {
+app.post('/admin/auth', async (req, res) => {
   if (Date.now() < adminLockedUntil) return res.status(423).json({ error: 'Admin access is locked for one hour', redirect: '/' });
   const supplied = typeof req.body?.token === 'string' ? req.body.token : '';
-  const matches = adminTokenHash && Date.now() < adminTokenExpiresAt && crypto.timingSafeEqual(Buffer.from(hashToken(supplied)), Buffer.from(adminTokenHash));
+  const suppliedHash = supplied ? hashToken(supplied) : '';
+
+  // 1) in-memory token (this process), 2) DB-stored token (survives restart),
+  // 3) the static ADMIN_TOKEN env var
+  let matches = false;
+  if (suppliedHash) {
+    if (adminTokenHash && Date.now() < adminTokenExpiresAt &&
+        crypto.timingSafeEqual(Buffer.from(suppliedHash), Buffer.from(adminTokenHash))) {
+      matches = true;
+    } else if (process.env.ADMIN_TOKEN && supplied === process.env.ADMIN_TOKEN) {
+      matches = true;
+    } else if (await adminTokenValid(suppliedHash).catch(() => false)) {
+      matches = true;
+    }
+  }
+
   if (!matches) {
     adminAttempts++;
     if (adminAttempts >= 2) { adminLockedUntil = Date.now() + ADMIN_WINDOW_MS; return res.status(423).json({ error: 'Two invalid attempts used. Admin access is locked for one hour.', redirect: '/' }); }
     return res.status(401).json({ error: 'Invalid token', attemptsRemaining: 2 - adminAttempts });
   }
   adminAttempts = 0;
-  const session = crypto.randomBytes(24).toString('base64url'); adminSessions.set(session, Date.now() + ADMIN_WINDOW_MS);
+  const session = crypto.randomBytes(24).toString('base64url');
+  const sessionExpires = Date.now() + ADMIN_WINDOW_MS;
+  adminSessions.set(session, sessionExpires);
+  await saveAdminSession(session, sessionExpires).catch((e) => recordError(e, 'admin-session-save'));
   res.setHeader('Set-Cookie', `arena_admin_session=${encodeURIComponent(session)}; HttpOnly; SameSite=Strict; Path=/admin; Max-Age=3600`);
   res.json({ ok: true });
 });
@@ -507,10 +544,13 @@ setInterval(() => {
 const gameMode = createGameMode(io, players, MAX_HEALTH);
 
 const PORT = process.env.PORT || 3001;
-httpServer.listen(PORT, () => console.log(`game3d server listening on http://localhost:${PORT}`));
 
-// bring up the bank schema (no-op when DATABASE_URL is unset)
-initSchema().catch((e) => console.error('[db] initSchema failed:', e.message));
+// Create the DB tables before accepting traffic (no-op when DATABASE_URL is
+// unset). A failed schema init doesn't stop the server — the bank and admin
+// persistence just stay off.
+await initSchema().catch((e) => console.error('[db] initSchema failed:', e.message));
+
+httpServer.listen(PORT, () => console.log(`game3d server listening on http://localhost:${PORT}`));
 
 // ---------------------------------------------------------------------------
 // Phase 9 game mode lives here (kept in one file for simplicity).
