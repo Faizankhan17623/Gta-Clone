@@ -214,10 +214,24 @@ window.addEventListener('resize', () => {
 
 // ---------- world ----------
 
+// Snapshot the scene before the city goes in, so we can freeze only what the
+// city and landmarks add. Their meshes never move; recomputing their world
+// matrices every frame was ~10% of frame time once the district kit landed.
+const preCityChildren = new Set(scene.children);
 const city = buildCity(scene);
+const landmarks = buildLandmarks(scene, city);
+for (const child of scene.children) {
+  if (preCityChildren.has(child)) continue;
+  child.updateMatrixWorld(true);
+  child.traverse((o) => {
+    // instanced meshes and anything tagged dynamic keep updating
+    if (o.userData?.dynamic || o.isInstancedMesh && o.userData?.animated) return;
+    o.matrixAutoUpdate = false;
+  });
+}
+
 const sky = createSkyDome(scene);
 const weather = initWeather(scene);
-const landmarks = buildLandmarks(scene, city);
 initEffects(scene);
 initHUD();
 initInput();
@@ -273,9 +287,12 @@ const world = {
   scene,
   city,
   player,
-  peds: spawnPeds(scene, city, 100),   // more life for the bigger city
-  traffic: spawnTraffic(scene, city, 28),
-  parked: spawnParked(scene, 38),
+  // Crowd/traffic counts scale with the graphics setting. Each pedestrian is
+  // an articulated rig (~15 meshes); 100 of them was a big slice of the
+  // per-frame scene-graph walk. Low graphics thins the city a lot.
+  peds: spawnPeds(scene, city, save.settings?.lowGfx ? 34 : 64),
+  traffic: spawnTraffic(scene, city, save.settings?.lowGfx ? 16 : 24),
+  parked: spawnParked(scene, save.settings?.lowGfx ? 22 : 34),
   cops: [],
   helis: [],
   policeHelis: [],

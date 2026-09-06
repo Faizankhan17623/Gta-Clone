@@ -7,25 +7,63 @@ let boomLight = null; // one persistent light reused for every explosion (no sha
 let boomT = 0;
 const list = [];
 
+// --- shared geometry (never disposed) -----------------------------------------
+const flashGeo = new THREE.SphereGeometry(1, 10, 8);
+const smokeGeo = new THREE.SphereGeometry(1, 7, 6);
+const ringGeo = new THREE.RingGeometry(0.55, 1, 26); ringGeo.rotateX(-Math.PI / 2);
+const debrisGeo = new THREE.BoxGeometry(0.28, 0.28, 0.28);
+const skidGeo = new THREE.PlaneGeometry(0.26, 1.7); skidGeo.rotateX(-Math.PI / 2);
+
+// Per-instance materials still need their own opacity, but they are cheap
+// clones of a template whose shader is already compiled — the expensive part
+// (program link + getProgramInfoLog) happens once, at init, not mid-fight.
+const flashTemplate = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95 });
+const smokeTemplate = new THREE.MeshBasicMaterial({ color: 0x55555a, transparent: true, opacity: 0.55 });
+const ringTemplate = new THREE.MeshBasicMaterial({ color: 0xffcc88, transparent: true, opacity: 0.75, side: THREE.DoubleSide, depthWrite: false });
+const skidTemplate = new THREE.MeshBasicMaterial({ color: 0x0c0c0e, transparent: true, opacity: 0.5, depthWrite: false });
+const tracerTemplate = new THREE.LineBasicMaterial({ color: 0xffe9a0, transparent: true, opacity: 0.95 });
+const sparkTemplate = new THREE.PointsMaterial({ color: 0xffc96a, size: 0.16, transparent: true, opacity: 1, depthWrite: false });
+const debrisTemplate = new THREE.MeshLambertMaterial({ color: 0x33333a, transparent: true });
+
+function mat(template, color) {
+  const m = template.clone();
+  if (color != null) m.color.set(color);
+  return m;
+}
+
 export function initEffects(s) {
   scene = s;
   boomLight = new THREE.PointLight(0xff9a3d, 0, 55, 1.6);
   boomLight.position.set(0, -50, 0);
   scene.add(boomLight);
+
+  // warm every effect shader now so the first shot/explosion doesn't hitch
+  const warm = [
+    new THREE.Mesh(flashGeo, flashTemplate),
+    new THREE.Mesh(smokeGeo, smokeTemplate),
+    new THREE.Mesh(ringGeo, ringTemplate),
+    new THREE.Mesh(skidGeo, skidTemplate),
+    new THREE.Mesh(debrisGeo, debrisTemplate),
+    new THREE.Points(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(3), 3)), sparkTemplate),
+    new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, 0.01, 0)]), tracerTemplate),
+  ];
+  const g = new THREE.Group();
+  g.position.set(0, -200, 0); // off-screen
+  for (const m of warm) g.add(m);
+  scene.add(g);
+  // one hidden frame is enough for three.js to compile the programs
+  setTimeout(() => { scene.remove(g); for (const m of warm) { m.geometry.dispose?.(); } }, 0);
 }
 
 export function addTracer(a, b) {
   const geo = new THREE.BufferGeometry().setFromPoints([a, b]);
-  const mesh = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: 0xffe9a0, transparent: true, opacity: 0.95 }));
+  const mesh = new THREE.Line(geo, mat(tracerTemplate));
   scene.add(mesh);
   list.push({ mesh, t: 0, life: 0.09, kind: 'fade' });
 }
 
 export function addFlash(pos, color, size) {
-  const mesh = new THREE.Mesh(
-    new THREE.SphereGeometry(1, 10, 8),
-    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.95 })
-  );
+  const mesh = new THREE.Mesh(flashGeo, mat(flashTemplate, color));
   mesh.position.copy(pos);
   mesh.scale.setScalar(size * 0.3);
   scene.add(mesh);
@@ -34,12 +72,7 @@ export function addFlash(pos, color, size) {
 
 // expanding ground shockwave ring
 export function addRing(pos, color = 0xffcc88) {
-  const geo = new THREE.RingGeometry(0.55, 1, 26);
-  geo.rotateX(-Math.PI / 2);
-  const mesh = new THREE.Mesh(
-    geo,
-    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.75, side: THREE.DoubleSide, depthWrite: false })
-  );
+  const mesh = new THREE.Mesh(ringGeo, mat(ringTemplate, color));
   mesh.position.set(pos.x, 0.18, pos.z);
   scene.add(mesh);
   list.push({ mesh, t: 0, life: 0.6, kind: 'ring' });
@@ -61,19 +94,16 @@ export function addSparks(pos, count = 12, color = 0xffc96a) {
     ));
   }
   geo.setAttribute('position', new THREE.BufferAttribute(p, 3));
-  const mesh = new THREE.Points(
-    geo,
-    new THREE.PointsMaterial({ color, size: 0.16, transparent: true, opacity: 1, depthWrite: false })
-  );
+  const mesh = new THREE.Points(geo, mat(sparkTemplate, color));
   scene.add(mesh);
   list.push({ mesh, t: 0, life: 0.75, kind: 'sparks', vels });
 }
 
 // tumbling chunks of wreckage that bounce on the road
-const debrisGeo = new THREE.BoxGeometry(0.28, 0.28, 0.28);
 export function addDebris(pos, count = 8, color = 0x33333a) {
   for (let i = 0; i < count; i++) {
-    const mesh = new THREE.Mesh(debrisGeo, new THREE.MeshLambertMaterial({ color }));
+    const mesh = new THREE.Mesh(debrisGeo, mat(debrisTemplate, color));
+    mesh.material.transparent = false;
     mesh.position.set(pos.x, Math.max(0.6, pos.y), pos.z);
     mesh.scale.setScalar(0.6 + Math.random() * 1.3);
     scene.add(mesh);
@@ -107,13 +137,8 @@ export function addExplosion(pos) {
 }
 
 // rubber stripes left on the road while drifting
-const skidGeo = new THREE.PlaneGeometry(0.26, 1.7);
-skidGeo.rotateX(-Math.PI / 2);
 export function addSkid(pos, heading) {
-  const mesh = new THREE.Mesh(
-    skidGeo,
-    new THREE.MeshBasicMaterial({ color: 0x0c0c0e, transparent: true, opacity: 0.5, depthWrite: false })
-  );
+  const mesh = new THREE.Mesh(skidGeo, mat(skidTemplate));
   mesh.position.set(pos.x, 0.06 + Math.random() * 0.015, pos.z);
   mesh.rotation.y = heading;
   scene.add(mesh);
@@ -121,10 +146,7 @@ export function addSkid(pos, heading) {
 }
 
 export function addSmoke(pos, size = 0.7) {
-  const mesh = new THREE.Mesh(
-    new THREE.SphereGeometry(1, 7, 6),
-    new THREE.MeshBasicMaterial({ color: 0x55555a, transparent: true, opacity: 0.55 })
-  );
+  const mesh = new THREE.Mesh(smokeGeo, mat(smokeTemplate));
   mesh.position.copy(pos);
   mesh.scale.setScalar(size * 0.5);
   scene.add(mesh);
@@ -143,8 +165,9 @@ export function updateEffects(dt) {
     const p = e.t / e.life;
     if (p >= 1) {
       scene.remove(e.mesh);
-      e.mesh.geometry.dispose();
-      e.mesh.material.dispose();
+      // geometry is shared for most kinds; only tracers/sparks own theirs
+      if (e.kind === 'fade' || e.kind === 'sparks') e.mesh.geometry.dispose();
+      e.mesh.material.dispose(); // the per-instance clone
       list.splice(i, 1);
       continue;
     }
