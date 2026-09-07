@@ -154,6 +154,56 @@ bounty pays $300 for a framed park shot and refills the target list.
 `sw.js` cache bumped to `opencity-v5-slots-replay-a11y` (covers all 8 new
 modules — the `js/` glob in the fetch handler caches them automatically).
 
+## Cloud save — local only
+
+Cloud save Phase 1: the three local save slots now mirror to the server so a
+player can restore on another device. No deployment or push by this session.
+
+- **Server** (`arena-protocol-project/server/`): new `save-api.js` router
+  mounted at `/api/save`, and a `cloud_saves` JSONB table (`db.js`
+  `initSchema`). Auth is the SAME bearer token the bank uses (`bank-api.js`
+  pattern) — "cloud save" == "has a bank account". Endpoints: `PUT
+  /api/save/:slot` (body `{ blob, baseRev? }`), `GET /api/save/:slot`, `GET
+  /api/save` (list + summaries), `DELETE /api/save/:slot`. Every uploaded blob
+  is filtered against an allow-list of the keys `saveGame()` writes and capped
+  at 96 KB (under the 100 KB `express.json` limit). A stale `baseRev` → 409
+  with the server's version. Whole router 503s when `DATABASE_URL` is unset.
+- **Client** (`js/cloudsave.js`, `js/bankapi.js` gains `apiCall()`,
+  `js/saveslots.js` gains blob/cloud-rev helpers): pushes the active slot —
+  debounced ~12 s off `saveGame()`, a `setInterval` backstop, and a `pagehide`
+  / `visibilitychange` flush so a closing tab still saves — plus an immediate
+  `world.cloud.push()`. `world.cloud` also exposes `pull(slot)`,
+  `resolve(slot, choice)`, `conflict()`, `list()`, `status(slot)`. Pull
+  overwrites the local slot and reloads if it's active. On a 409 the local
+  save is kept, a toast fires, and the pause menu prompts keep-local vs
+  take-server (`maybePromptCloudConflict` in `main.js`).
+- **Start screen** (`js/saveslots.js` `buildSlotPicker`): when signed in, each
+  slot card shows the cloud copy's cash/level/date and a ☁↓ pull button; the
+  header shows "☁ SYNCED".
+- Not signed in / DB off / offline → cloud is silently unavailable, game plays
+  from localStorage exactly as before.
+
+**Testing** (kept local, under ignored `test/`):
+- `test/cloudsave.test.mjs` — 6 pure-logic tests (blob sanitiser drops unknown
+  and `__proto__` keys, `summary()` maths, size cap). `node --test`.
+- `test/cloudsave-integration.mjs` — boots the server against the **real
+  `DATABASE_URL`** from `server/.env`, registers a throwaway bank account,
+  exercises auth gates / sanitise / rev+409 conflict / summary / 413 size cap /
+  delete, then **deletes the test account and its rows**. Skips (exit 0) with
+  no `DATABASE_URL`. 13 assertions, all pass.
+- Browser end-to-end against the real DB (throwaway account, cleaned up):
+  force push → server has the sanitised blob; `pagehide` flush pushes the
+  pending save; pull overwrites local; out-of-band server change → client push
+  → `conflict` status + `world.cloud.conflict()` populated; `resolve('local')`
+  force-pushes and clears the conflict; list + delete. All pass.
+- Regression: `node --test` 24/24; browser `fulltest` all PASS 0 errors,
+  `newfeatures` 18/18, `admin-integration` all PASS (the `/api/save` mount
+  didn't disturb the admin routes).
+
+**Server env for the live site:** set `DATABASE_URL` on Render (same value as
+`server/.env`). Nothing else — no keys, no new services. Without it the cloud
+routes just 503 and the game is unchanged.
+
 Verification: `node --check` on all touched files; `node --test
 test/input.test.mjs test/wallet.test.mjs` (7/7); browser suites fulltest
 (all PASS, 0 runtime errors), newfeatures (18/18, 0 errors), keytest

@@ -239,12 +239,24 @@ visual editor is polish.
 
 ---
 
-## 4. Save slots + cloud save
+## 4. Save slots + cloud save — DONE
 
-**Slots are done** (`js/saveslots.js`, this session). This covers the
-remaining **cloud-save** half.
+**Slots** (`js/saveslots.js`) and **cloud save Phase 1** (`js/cloudsave.js` +
+`arena-protocol-project/server/save-api.js`) are both shipped.
 
-### Phase 1 — account-backed save — ~1 week
+Cloud save as built: `PUT/GET/DELETE /api/save/:slot` + `GET /api/save` on the
+server, keyed by the bank account's bearer token (a `cloud_saves` JSONB table).
+The client pushes the active slot (debounced ~12 s off `saveGame()`, flushed on
+`pagehide`, plus an immediate `world.cloud.push()`), pulls per slot from the
+start screen, and a stale `baseRev` returns 409 → `world.cloud.conflict()` →
+the pause menu asks keep-local vs take-server. Server sanitises every uploaded
+blob against an allow-list and caps it at 96 KB. Offline / no-DB / no-account
+all degrade to local-only silently.
+
+Phase 2 hardening (conflict UI showing both summaries side by side, a
+"download all slots" bundle) is still open but not blocking.
+
+### Phase 1 — account-backed save — DONE (see above)
 
 - **Server** (`arena-protocol-project/server`): the game already has a bank API
   (`server/bank-api.js`) and Postgres (`server/db.js`) with a user concept and
@@ -402,7 +414,7 @@ priority for a reason. Phase 1 (proving the render path) is the go/no-go gate.
 
 ## Suggested sequencing
 
-1. **Cloud save (#4 remaining)** — small, protects players, infra exists. 1 wk.
+1. ~~**Cloud save (#4)**~~ — DONE.
 2. **Co-op Phase 1 (#1)** — ghost players. High wow-factor, self-contained. 1 wk.
 3. **Skeletal animation Phase 1 (#2)** — hero GLB. Biggest feel upgrade. 1 wk.
 4. **Economy Phase 1 (#6)** — sinks behind a toggle. 1 wk.

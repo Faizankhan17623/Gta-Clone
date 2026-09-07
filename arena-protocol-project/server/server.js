@@ -14,6 +14,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
 import bankApi from './bank-api.js';
+import saveApi from './save-api.js';
 import {
   initSchema, dbEnabled,
   saveAdminToken, adminTokenValid, saveAdminSession, adminSessionValid,
@@ -108,6 +109,8 @@ app.get('/health', (_req, res) => res.json({ ok: true, uptimeSec: Math.round(pro
 
 // Open City bank — replies 503 (offline) until DATABASE_URL is set
 app.use('/api/bank', bankApi);
+// Open City cloud save — same story, same bearer token as the bank
+app.use('/api/save', saveApi);
 
 async function adminAuthorized(req) {
   const configured = process.env.ADMIN_TOKEN;

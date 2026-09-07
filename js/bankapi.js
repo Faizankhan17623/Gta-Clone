@@ -40,6 +40,23 @@ export function isOnline() { return online; }
 export function accountNo() { return cred?.account_no || null; }
 export function handle() { return cred?.handle || null; }
 
+// Generic authed request against the same origin as the bank API, for sibling
+// services that share the bank's bearer token (e.g. /api/save). `path` is the
+// full path from the origin, e.g. '/api/save/0'.
+export async function apiCall(path, { method = 'GET', body } = {}) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (cred?.token) headers.Authorization = 'Bearer ' + cred.token;
+  const res = await fetch((override || '') + path, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined,
+    signal: AbortSignal.timeout(12000),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw Object.assign(new Error(data.error || res.statusText), { status: res.status, data });
+  return data;
+}
+
 function persist() {
   try { localStorage.setItem(LS_KEY, JSON.stringify(cred)); } catch {}
 }

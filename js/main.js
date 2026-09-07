@@ -156,6 +156,7 @@ import { initNightclub, updateNightclub } from './nightclub.js';
 import { initSkateboard, updateSkateboard } from './skateboard.js';
 import { resolveTier, tierSpec, createEnvironment, createShadowRig, createPostChain } from './graphics.js';
 import { bootActiveSlot, mirrorActiveSlot, buildSlotPicker } from './saveslots.js';
+import { initCloudSave, cloudSaveTick, scheduleCloudPush } from './cloudsave.js';
 import { initReplay, recordReplay, updateReplay, openReplay, replayActive } from './replay.js';
 import { initAccessibility, openAccessibility } from './accessibility.js';
 import { initPerf, updatePerf } from './perf.js';
@@ -509,6 +510,7 @@ initPerks(scene, world, save);
 initExplorer(world, save);
 initArmor(scene, world, save);
 initScars(scene, world);
+initCloudSave(world);
 initCityNews(world);
 initNpcMemory(world);
 initPhotoBounty(scene, world, camera, save, landmarks);
@@ -625,6 +627,25 @@ function pauseGame() {
   showTouchUI(false);
   document.exitPointerLock?.();
   openMenu(world);
+  maybePromptCloudConflict();
+}
+
+// If a background cloud push hit a conflict, ask the player which save wins.
+// Plain confirm() — rare event, no need for bespoke UI.
+function maybePromptCloudConflict() {
+  const c = world.cloud?.conflict?.();
+  if (!c) return;
+  const s = c.server?.summary;
+  const detail = s ? `\n\nServer save: $${(s.money + s.bank).toLocaleString()} · level ${s.level} · ${s.missions} missions` : '';
+  const takeServer = confirm(
+    `This slot changed on another device.${detail}\n\n` +
+    `OK  = use the SERVER save (your local progress since is lost)\n` +
+    `Cancel = keep THIS device's save (overwrites the server)`
+  );
+  world.cloud.resolve(c.slot, takeServer ? 'server' : 'local').then((r) => {
+    if (r?.error) showToast('Cloud: ' + r.error);
+    else if (!r?.reloading) showToast(takeServer ? 'Pulled server save' : 'Kept local save');
+  });
 }
 
 function resumeGame() {
@@ -781,6 +802,7 @@ function saveGame() {
       ...photoBountySave(world),
     }));
     mirrorActiveSlot(); // keep the active save slot in sync with the live save
+    scheduleCloudPush(); // debounced upload to the server if signed in
   } catch {}
 }
 world.onSave = saveGame;
@@ -2866,10 +2888,24 @@ function respawn() {
 
 const startEl = document.getElementById('start');
 
-// save-slot picker: a row of slot cards above the character picker
+// save-slot picker: a row of slot cards above the character picker. If the
+// player is signed in for cloud save, fetch their remote slots and rebuild the
+// picker with the sync info + pull buttons.
 (function buildSlots() {
   const charpick = document.getElementById('charpick');
-  if (charpick) buildSlotPicker(charpick);
+  if (!charpick) return;
+  buildSlotPicker(charpick);
+  if (world.cloud?.available()) {
+    world.cloud.list().then((remote) => {
+      document.getElementById('slotpick')?.remove();
+      buildSlotPicker(charpick, {
+        available: world.cloud.available,
+        status: world.cloud.status,
+        pull: world.cloud.pull,
+        remote,
+      });
+    }).catch(() => {});
+  }
 })();
 
 // character picker: cards on the start screen, choice saved for next time
@@ -3050,6 +3086,7 @@ function update(dt) {
   // autosave every 10s
   saveT += dt;
   if (saveT > 10) { saveT = 0; saveGame(); }
+  cloudSaveTick(); // debounced upload after saveGame(), if signed in
 
   if (gameState === 'over') {
     overTimer -= dt;

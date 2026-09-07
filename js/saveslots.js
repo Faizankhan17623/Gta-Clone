@@ -115,19 +115,53 @@ export function importIntoSlot(i, text) {
   if (i === activeSlot()) lsSet(LIVE_KEY, text);
 }
 
+// ---------- cloud-save support ----------
+// cloudsave.js reads/writes slot blobs and remembers the last synced server
+// revision per slot so it can detect conflicts.
+
+const CLOUD_REV_KEY = (i) => `opencity-slot-cloudrev-${i}`;
+
+export function slotBlob(i) {
+  const raw = lsGet(SLOT_KEY(i));
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch { return null; }
+}
+
+export function writeSlotBlob(i, obj) {
+  const text = JSON.stringify(obj);
+  lsSet(SLOT_KEY(i), text);
+  if (i === activeSlot()) lsSet(LIVE_KEY, text);
+}
+
+export function slotCloudRev(i) {
+  const n = parseInt(lsGet(CLOUD_REV_KEY(i)) || '0', 10);
+  return Number.isFinite(n) ? n : 0;
+}
+
+export function setSlotCloudRev(i, rev) {
+  lsSet(CLOUD_REV_KEY(i), String(rev | 0));
+}
+
+export { SLOT_COUNT as CLOUD_SLOT_COUNT };
+
 // ---------- start-screen UI ----------
 // A row of slot cards injected above the character picker. Purely DOM; the
 // game loop hasn't started yet when this is shown.
 
-export function buildSlotPicker(container) {
+// `cloud` (optional) = { available(), status(slot), pull(slot), remote:[{slot,rev,updated_at,summary}] }
+// so the picker can show sync state + a "pull from cloud" action per slot.
+export function buildSlotPicker(container, cloud = null) {
   const wrap = document.createElement('div');
   wrap.id = 'slotpick';
   wrap.style.cssText = 'pointer-events:auto;margin-bottom:14px;';
+  const cloudOn = !!cloud?.available?.();
   wrap.innerHTML =
-    '<div style="color:#8ea6bb;font:800 11px Consolas,monospace;letter-spacing:.3em;margin-bottom:10px">SAVE SLOT</div>' +
+    '<div style="color:#8ea6bb;font:800 11px Consolas,monospace;letter-spacing:.3em;margin-bottom:10px">SAVE SLOT' +
+    (cloudOn ? ' <span style="color:#7cf78c">· ☁ SYNCED</span>' : '') + '</div>' +
     '<div id="slotrow" style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap"></div>';
   const row = wrap.querySelector('#slotrow');
   const active = activeSlot();
+  const remoteBySlot = new Map((cloud?.remote || []).map((r) => [r.slot, r]));
 
   for (let i = 0; i < SLOT_COUNT; i++) {
     const sum = slotSummary(i);
@@ -143,13 +177,25 @@ export function buildSlotPicker(container) {
           : `<div style="font:800 13px Consolas,monospace;color:#7cf78c">$${(sum.money + sum.bank).toLocaleString()}</div>` +
             `<div style="font:600 10px Consolas,monospace;color:#cfd8e3;line-height:1.7">LVL ${sum.level} · ${sum.missions} MISS<br>${sum.packages}/20 PKG${sum.crowned ? ' · 👑' : ''}</div>`)
       : '<div style="color:#8ea6bb;font:700 11px Arial">empty — new game</div>';
+    const remote = remoteBySlot.get(i);
+    let cloudLine = '';
+    if (cloudOn) {
+      if (remote) {
+        const d = new Date(remote.updated_at);
+        const when = isNaN(d) ? '' : d.toLocaleDateString();
+        cloudLine = `<div style="font:600 9px Consolas,monospace;color:#7cf78c;margin-top:4px">☁ $${(remote.summary.money + remote.summary.bank).toLocaleString()} · LVL ${remote.summary.level}${when ? ' · ' + when : ''}</div>`;
+      } else {
+        cloudLine = `<div style="font:600 9px Consolas,monospace;color:#8ea6bb;margin-top:4px">☁ no cloud copy</div>`;
+      }
+    }
     card.innerHTML =
       `<div style="font:800 12px Consolas,monospace;letter-spacing:.12em;color:#eef4fb;text-transform:uppercase;margin-bottom:5px">${slotName(i)}</div>` +
-      body +
-      `<div style="display:flex;gap:4px;margin-top:7px;justify-content:center">` +
+      body + cloudLine +
+      `<div style="display:flex;gap:4px;margin-top:7px;justify-content:center;flex-wrap:wrap">` +
       `<button data-act="rename" title="Rename" style="${MINI}">✎</button>` +
       `<button data-act="export" title="Export to file" style="${MINI}">⬇</button>` +
       `<button data-act="import" title="Import from file" style="${MINI}">⬆</button>` +
+      (cloudOn && remote ? `<button data-act="pull" title="Pull this save from the cloud" style="${MINI};color:#7cf78c">☁↓</button>` : '') +
       (sum && !sum.empty ? `<button data-act="delete" title="Delete" style="${MINI};color:#ff8a6a">🗑</button>` : '') +
       `</div>`;
 
@@ -176,7 +222,16 @@ export function buildSlotPicker(container) {
         return;
       }
       if (act === 'delete') {
-        if (confirm(`Delete "${slotName(i)}" permanently?`)) { deleteSlot(i); rebuild(container); }
+        if (confirm(`Delete "${slotName(i)}" permanently?`)) { deleteSlot(i); rebuild(container, cloud); }
+        return;
+      }
+      if (act === 'pull') {
+        if (!confirm(`Overwrite "${slotName(i)}" with the cloud save?`)) return;
+        Promise.resolve(cloud.pull(i)).then((r) => {
+          if (r?.reloading) return; // active slot reloads
+          if (r?.error) alert('Cloud pull failed: ' + r.error);
+          else rebuild(container, cloud);
+        });
         return;
       }
       // plain click on the card = make it active
@@ -192,7 +247,7 @@ const MINI =
   'background:rgba(85,230,255,.12);border:1px solid rgba(85,230,255,.3);color:#eef4fb;' +
   'border-radius:4px;line-height:1;';
 
-function rebuild(container) {
+function rebuild(container, cloud = null) {
   document.getElementById('slotpick')?.remove();
-  buildSlotPicker(container);
+  buildSlotPicker(container, cloud);
 }

@@ -89,6 +89,22 @@ export async function initSchema() {
       expires_at  TIMESTAMPTZ NOT NULL
     );
   `);
+
+  // Cloud save: one JSON blob per (account, slot). The game keeps up to three
+  // local save slots (js/saveslots.js); this mirrors them server-side so a
+  // player can restore on another device. Blob shape is whatever saveGame()
+  // in js/main.js writes — validated and size-capped by save-api.js.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS cloud_saves (
+      account_id  BIGINT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+      slot        SMALLINT NOT NULL CHECK (slot BETWEEN 0 AND 2),
+      blob        JSONB NOT NULL,
+      rev         BIGINT NOT NULL DEFAULT 1,
+      updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (account_id, slot)
+    );
+  `);
+
   console.log('[db] schema ready');
   return true;
 }
