@@ -302,6 +302,8 @@ const world = {
   wantedTimer: 0,
   bustedT: 0,
   busted: false,
+  roadWet: 0, // 0 dry .. 1 soaked; driven by weather, decays after rain
+
   money: isNewPlayer ? STARTING_CASH : (save.money || 0),
   damageFlash: 0,
   time: 0,
@@ -2887,6 +2889,21 @@ function update(dt) {
   }
   world.rainI = wx.intensity; // myths check the weather too
   world.lightningFlash = wx.flash; // storm chaser watches for the strike window
+
+  // Wet roads: wetness chases the rain up quickly and dries off over ~40 s.
+  // A wet road is smoother and mirrors the sky/lights far more.
+  const wetTarget = Math.min(1, wx.intensity * 1.4);
+  world.roadWet += (wetTarget - world.roadWet) * Math.min(1, dt * (wetTarget > world.roadWet ? 1.5 : 0.025));
+  if (Math.abs(world.roadWet - (world._roadWetApplied ?? -1)) > 0.01) {
+    world._roadWetApplied = world.roadWet;
+    const w = world.roadWet;
+    for (const m of city.roadMats) {
+      m.roughness = m.userData.dryRoughness * (1 - w * 0.72);
+      m.metalness = w * 0.12;
+      m.envMapIntensity = 0.35 + w * 1.1;
+      m.needsUpdate = true;
+    }
+  }
 
   // outbreak nights close in: thicker fog, dimmer sky
   if (world.zombies?.active) {

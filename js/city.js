@@ -179,7 +179,9 @@ export function buildCity(scene) {
   slab.receiveShadow = true;
   scene.add(slab);
 
-  // roads
+  // roads. Materials are collected in `roadMats` so the weather code can wet
+  // them down (drop roughness, lift reflections) during and after rain.
+  const roadMats = [];
   const roadTex = roadTexture();
   const roadGeo = new THREE.PlaneGeometry(ROAD, CITY);
   roadGeo.rotateX(-Math.PI / 2);
@@ -192,7 +194,10 @@ export function buildCity(scene) {
     tv.needsUpdate = true;
     tv.wrapT = THREE.RepeatWrapping;
     tv.repeat.set(1, CITY / ROAD);
-    const v = new THREE.Mesh(roadGeo, new THREE.MeshStandardMaterial({ map: tv, roughness: .96 }));
+    const mv = new THREE.MeshStandardMaterial({ map: tv, roughness: .92, metalness: .0, envMapIntensity: .35 });
+    mv.userData.dryRoughness = .92;
+    roadMats.push(mv);
+    const v = new THREE.Mesh(roadGeo, mv);
     v.position.set(cx, 0.04, 0);
     v.receiveShadow = true;
     scene.add(v);
@@ -201,7 +206,10 @@ export function buildCity(scene) {
     th.needsUpdate = true;
     th.wrapT = THREE.RepeatWrapping;
     th.repeat.set(1, CITY / ROAD);
-    const h = new THREE.Mesh(roadGeo, new THREE.MeshStandardMaterial({ map: th, roughness: .96 }));
+    const mh = new THREE.MeshStandardMaterial({ map: th, roughness: .92, metalness: .0, envMapIntensity: .35 });
+    mh.userData.dryRoughness = .92;
+    roadMats.push(mh);
+    const h = new THREE.Mesh(roadGeo, mh);
     h.position.set(0, 0.08, cx);
     h.rotation.y = Math.PI / 2;
     h.receiveShadow = true;
@@ -375,7 +383,7 @@ export function buildCity(scene) {
   const mid = Math.floor(N / 2);
   const spawn = new THREE.Vector3(roadCenter(mid), 0, roadCenter(mid));
 
-  const city = { colliders, pedRects, roadXs, roadZs, spawn, helipads, windowMats, lampGlowMat: glowMat, bulbMat, buildings, walks };
+  const city = { colliders, pedRects, roadXs, roadZs, spawn, helipads, windowMats, lampGlowMat: glowMat, bulbMat, buildings, walks, roadMats };
   city.roads = buildRoadDetails(scene, { roadXs, roadZs, roadWidth: ROAD, blockSize: BLOCK, surfaceMap: roadTex });
   city.district = createDistrictManager(scene, city);
   return city;
