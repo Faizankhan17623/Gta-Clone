@@ -1,3 +1,4 @@
+import { invalidateColliderGrid } from './city.js';
 import * as THREE from 'three';
 import { roadCenter, N, HALF } from './city.js';
 import { showToast, showNews } from './hud.js';
@@ -95,6 +96,7 @@ function clearAll(world) {
     for (const c of b.colliders) {
       const i = world.city.colliders.indexOf(c);
       if (i >= 0) world.city.colliders.splice(i, 1);
+      invalidateColliderGrid(world.city.colliders);
     }
     for (const m of b.meshes) rb.scene.remove(m);
   }
@@ -144,6 +146,7 @@ function dropBlock(world) {
     x1: cx + (horizontal ? 3.4 : 0.6), z1: cz + (horizontal ? 0.6 : 3.4), h: 1.3,
   });
   for (const c of colliders) world.city.colliders.push(c);
+  invalidateColliderGrid(world.city.colliders);
   rb.list.push({ x: cx, z: cz, horizontal, meshes, colliders, hp: 3, t: 0 });
   showNews('units set up a roadblock');
 }
@@ -188,6 +191,7 @@ export function updateRoadblocks(world, dt) {
         for (const c of b.colliders) {
           const ci = world.city.colliders.indexOf(c);
           if (ci >= 0) world.city.colliders.splice(ci, 1);
+      invalidateColliderGrid(world.city.colliders);
         }
         for (const m of b.meshes) rb.scene.remove(m);
         rb.list.splice(i, 1);

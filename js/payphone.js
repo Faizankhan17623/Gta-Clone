@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { placeStreetSite } from './site-layout.js';
 import { blockStart, pointBlocked } from './city.js';
 import { showToast, showMissionMsg } from './hud.js';
 import { sfxMissionPass, sfxMissionFail, sfxPickup } from './sound.js';
@@ -15,6 +16,7 @@ export function initPayphones(scene, world, save) {
     let pos = new THREE.Vector3(blockStart(bi) + 12, 0, blockStart(bj) - 2.5);
     const probe = new THREE.Vector3(pos.x, 1, pos.z);
     if (pointBlocked(probe, world.city.colliders, 1.2)) pos = new THREE.Vector3(blockStart(bi) + 22, 0, blockStart(bj) - 2.5);
+    placeStreetSite(world.city, pos, 1, `payphone ${bi},${bj}`);
 
     const booth = new THREE.Mesh(
       new THREE.BoxGeometry(1.1, 2.4, 1.1),

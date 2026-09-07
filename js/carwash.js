@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { placeStreetSite } from './site-layout.js';
 import { pointBlocked } from './city.js';
 import { showToast, showNews } from './hud.js';
 import { sfxMissionPass, sfxPickup } from './sound.js';
@@ -13,6 +14,7 @@ export function initCarwash(scene, world) {
   let pos = world.city.spawn.clone().add(new THREE.Vector3(30, 0, -6));
   const probe = new THREE.Vector3(pos.x, 1, pos.z);
   if (pointBlocked(probe, world.city.colliders, 2)) pos = world.city.spawn.clone().add(new THREE.Vector3(26, 0, -2));
+  placeStreetSite(world.city, pos, 3, 'carwash');
 
   const arch = new THREE.Group();
   for (const s of [-1, 1]) {

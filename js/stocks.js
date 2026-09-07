@@ -1,3 +1,5 @@
+import { availableFunds, spendMoney } from './wallet.js';
+import { pressedModifiers } from './input.js';
 import * as THREE from 'three';
 import { blockStart, pointBlocked } from './city.js';
 import { showToast } from './hud.js';
@@ -80,7 +82,7 @@ export function updateStocks(world, dt, pressed, keys) {
     if (!pressed['Digit' + (i + 1)]) continue;
     const l = LISTINGS[i];
     const price = sk.prices[l.key];
-    const selling = keys['ShiftLeft'] || keys['ShiftRight'];
+    const selling = pressedModifiers['Digit' + (i + 1)]?.shift ?? !!(keys['ShiftLeft'] || keys['ShiftRight']);
     if (selling) {
       if (!(sk.held[l.key] > 0)) { showToast(`No ${l.name} to sell`); continue; }
       sk.held[l.key]--;
@@ -88,8 +90,8 @@ export function updateStocks(world, dt, pressed, keys) {
       sfxMissionPass();
       showToast(`SOLD 1 ${l.name} @ $${price}`);
     } else {
-      if (world.money < price) { showToast('Not enough cash'); continue; }
-      world.money -= price;
+      if (availableFunds(world, price) < price) { showToast('Not enough cash'); continue; }
+      spendMoney(world, price);
       sk.held[l.key] = (sk.held[l.key] || 0) + 1;
       sfxPickup();
       showToast(`BOUGHT 1 ${l.name} @ $${price}`);

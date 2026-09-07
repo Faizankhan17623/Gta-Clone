@@ -12,10 +12,11 @@ export const dbEnabled = Boolean(process.env.DATABASE_URL);
 if (dbEnabled) {
   // Strip sslmode/channel_binding from the URL and set TLS explicitly so
   // pg doesn't warn about the deprecated sslmode aliases.
-  const url = process.env.DATABASE_URL.replace(/([?&])(sslmode|channel_binding)=[^&]*/g, '').replace(/[?&]$/, '');
+  const url = new URL(process.env.DATABASE_URL);
+  for (const key of ['sslmode', 'channel_binding', 'sslcert', 'sslkey', 'sslrootcert']) url.searchParams.delete(key);
   pool = new Pool({
-    connectionString: url,
-    ssl: { require: true, rejectUnauthorized: false }, // Neon pooler TLS
+    connectionString: url.toString(),
+    ssl: { rejectUnauthorized: true, ...(process.env.DATABASE_CA ? { ca: process.env.DATABASE_CA } : {}) },
     max: 5,
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 8000,

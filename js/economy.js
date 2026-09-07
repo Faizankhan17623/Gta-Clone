@@ -1,3 +1,4 @@
+import { availableFunds, spendMoney } from './wallet.js';
 import * as THREE from 'three';
 import { showToast, showNews } from './hud.js';
 import { sfxMissionPass } from './sound.js';
@@ -149,8 +150,8 @@ export function updateEconomy(world, dt, keys, pressed) {
     if (Math.hypot(m.pos.x - focus.x, m.pos.z - focus.z) < 6) {
       world.propHint = `Press <b>B</b> to buy ${m.def.name} — $${m.def.cost} ($${m.def.income}/hr)`;
       if (pressed['KeyB']) {
-        if (world.money >= m.def.cost) {
-          world.money -= m.def.cost;
+        if (availableFunds(world, m.def.cost) >= m.def.cost) {
+          spendMoney(world, m.def.cost);
           world.props.owned[m.def.key] = true;
           addRep(world, 500);
           refreshPropBeams(world);

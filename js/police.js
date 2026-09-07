@@ -5,12 +5,12 @@ import { roadCenter, HALF, N, resolveCircle } from './city.js';
 import { createCharacter, animateWalk } from './characters.js';
 import { showNews } from './hud.js';
 
-export function addCrime(world, n) {
+export function addCrime(world, n, { witnessed = false } = {}) {
   // an undercover shift carries a badge (copcareer.js)
   if (world.onDuty) return;
   // witness system: a petty crime from zero heat can go unreported if
   // nobody's around to see it — half the time, luck holds
-  if (world.wanted === 0 && n <= 2 && world.peds) {
+  if (!witnessed && world.wanted === 0 && n <= 2 && world.peds) {
     let seen = false;
     const p = world.player.pos;
     for (const ped of world.peds) {

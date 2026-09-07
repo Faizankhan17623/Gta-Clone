@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { pressedModifiers } from './input.js';
 import { pointBlocked } from './city.js';
 import { showToast, showNews } from './hud.js';
 import { sfxMissionPass, sfxPickup } from './sound.js';
@@ -93,7 +94,7 @@ export function updateSkateboard(world, dt, pressed) {
     !player.swim && !world.diving?.on;
 
   // K flips it out / kicks it up
-  if (pressed['KeyK'] && grounded) {
+  if (pressed['KeyK'] && !pressedModifiers.KeyK?.shift && grounded) {
     sk.on = !sk.on;
     sfxPickup();
     showToast(sk.on ? '🛹 ROLLING — Shift carves faster, Space ollies' : 'DECK POCKETED');

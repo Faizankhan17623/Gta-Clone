@@ -144,7 +144,7 @@ export function updateHUD(world) {
     els.weapon.style.display = 'none';
   } else {
     els.speed.style.display = 'none';
-    els.crosshair.style.display = 'block';
+    els.crosshair.style.display = world.aiming ? 'block' : 'none';
     els.weapon.style.display = 'block';
     els.weapon.textContent = world.weaponName || '';
   }

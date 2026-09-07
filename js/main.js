@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { solidDistance, createWeaponModel, equipCharacter, poseWeapon, muzzlePosition } from './combat-view.js';
 import { initInput, endFrame, pollGamepad, keys, pressed, mouse } from './input.js';
 import { buildCity, resolveCircle, pointBlocked, groundHeight, blockStart, BLOCK, HALF, N } from './city.js';
 import { createCharacter, animateWalk, animateIdle, animateLand, resetArticulation, updateCharacterDetail, CHARACTERS } from './characters.js';
@@ -258,6 +259,7 @@ const isNewPlayer = save.money === undefined;
 // chosen playable character (saved between sessions)
 const charDef = CHARACTERS.find((c) => c.key === save.char) || CHARACTERS[0];
 const playerChar = createCharacter(charDef.colors);
+playerChar.group.userData.stableRoot = true;
 scene.add(playerChar.group);
 
 const player = {
@@ -768,6 +770,21 @@ const WEAPONS = [
 const ammo = { mg: save.mg ?? 60, rpg: save.rpg ?? 3, sg: save.sg ?? 24, sn: save.sn ?? 8, gren: save.gren ?? 5 };
 let weaponIdx = 0;
 let shootT = 0;
+let recoilT = 0;
+let weaponWheelT = 0;
+let firstPerson = false;
+let firstWeapon = createWeaponModel(0);
+const viewHands = new THREE.Group();
+viewHands.name = 'first-person weapon and hands';
+const handGeo = new THREE.BoxGeometry(.09, .1, .22);
+for (const x of [.02, -.1]) {
+  const hand = new THREE.Mesh(handGeo, playerChar.palette.skin);
+  hand.position.set(x, -.10, -.05); viewHands.add(hand);
+}
+viewHands.add(firstWeapon.group);
+viewHands.rotation.y = Math.PI;
+camera.add(viewHands); scene.add(camera);
+equipCharacter(playerChar, 0);
 const rockets = [];
 
 // the extended-mag mod (workbench.js) tightens the cooldown between shots
@@ -778,6 +795,9 @@ function weaponRate() {
 
 function switchWeapon(i) {
   weaponIdx = i;
+  equipCharacter(player.ch, i);
+  firstWeapon.group.removeFromParent();
+  firstWeapon = createWeaponModel(i); viewHands.add(firstWeapon.group);
   const w = WEAPONS[i];
   showToast(w.ammo ? `${w.name} — ${ammo[w.ammo]} AMMO` : w.name);
 }
@@ -860,12 +880,18 @@ let camPitch = 0.12;
 const camPos = new THREE.Vector3(0, 4, -10);
 const _camTarget = new THREE.Vector3();
 const _camDesired = new THREE.Vector3();
+const _cameraRay = new THREE.Vector3();
+const _muzzle = new THREE.Vector3();
+const _aimPoint = new THREE.Vector3();
+
+function onFootView() { return !player.inCar && !player.inHeli && !player.inBoat && !player.inPlane; }
+function aiming() { return !!(keys.ControlLeft || keys.ControlRight || mouse.down || recoilT > 0); }
 
 function updateCamera(dt) {
   const sens = world.settings.sens || 1;
   const inv = world.settings.invertY ? -1 : 1;
   camYaw -= mouse.dx * 0.0024 * sens;
-  camPitch = Math.max(-0.35, Math.min(0.75, camPitch + mouse.dy * 0.0018 * sens * inv));
+  camPitch = Math.max(firstPerson ? -1.35 : -0.35, Math.min(firstPerson ? 1.35 : 0.75, camPitch + mouse.dy * 0.0018 * sens * inv));
   if (keys['ArrowLeft']) camYaw += 1.8 * dt;
   if (keys['ArrowRight']) camYaw -= 1.8 * dt;
 
@@ -941,22 +967,40 @@ function updateCamera(dt) {
     camera.lookAt(_camTarget);
   } else {
     if (web.attached) focusSpeed = player.vel.length();
-    const dist = web.attached ? 7.6 : 5.6;
+    const dist = web.attached ? 7.6 : aiming() ? 3.2 : 5.6;
+    const shoulder = .72;
+    _camTarget.set(player.pos.x - Math.cos(camYaw)*shoulder, player.pos.y + 1.65, player.pos.z + Math.sin(camYaw)*shoulder);
     _camDesired.set(
-      player.pos.x - Math.sin(camYaw) * dist * Math.cos(camPitch),
-      player.pos.y + 2.1 + Math.sin(camPitch) * dist,
-      player.pos.z - Math.cos(camYaw) * dist * Math.cos(camPitch)
+      _camTarget.x - Math.sin(camYaw) * dist * Math.cos(camPitch),
+      _camTarget.y + Math.sin(camPitch) * dist,
+      _camTarget.z - Math.cos(camYaw) * dist * Math.cos(camPitch)
     );
-    camPos.lerp(_camDesired, Math.min(1, 11 * dt));
-    camera.position.copy(camPos);
-    _camTarget.set(player.pos.x, player.pos.y + 1.55, player.pos.z);
-    camera.lookAt(_camTarget);
+    if (firstPerson) {
+      camPos.copy(player.pos); camPos.y += 1.68;
+      camera.position.copy(camPos);
+      _camTarget.copy(camPos).add(_cameraRay.set(Math.sin(camYaw)*Math.cos(camPitch), -Math.sin(camPitch), Math.cos(camYaw)*Math.cos(camPitch)));
+      camera.lookAt(_camTarget);
+    } else {
+      camPos.lerp(_camDesired, 1 - Math.exp(-11 * dt));
+      const anchor = _muzzle.copy(player.pos); anchor.y += 1.65;
+      _cameraRay.copy(camPos).sub(anchor);
+      const length = _cameraRay.length(); _cameraRay.normalize();
+      const clear = solidDistance(anchor, _cameraRay, city.colliders, length, .18);
+      camPos.copy(anchor).addScaledVector(_cameraRay, Math.max(0, clear - .06));
+      camera.position.copy(camPos); camera.lookAt(_camTarget);
+    }
   }
+
+  if (onFootView()) player.mesh.visible = !firstPerson;
+  viewHands.visible = firstPerson && onFootView() && gameState === 'play';
+  viewHands.position.set(aiming() ? .12 : .24, -.24 - recoilT*.15, -.47 + recoilT*.20);
+  firstWeapon.flash.visible = recoilT > .075;
+  world.aiming = onFootView() && (aiming() || mouse.rdown || web.attached);
 
   // sense of speed: widen FOV as you go faster — unless scoping the sniper
   let targetFov = Math.min(84, 70 + focusSpeed * 0.32);
   if (!player.inCar && !player.inHeli && !player.inBoat && !web.attached &&
-      WEAPONS[weaponIdx].zoom && gameState === 'play') {
+      WEAPONS[weaponIdx].zoom && aiming() && gameState === 'play') {
     targetFov = 42;
   }
   if (Math.abs(camera.fov - targetFov) > 0.1) {
@@ -965,12 +1009,13 @@ function updateCamera(dt) {
   }
 
   // impact shake
-  if (world.shake > 0.001) {
+  if (world.settings.cameraShake && world.shake > 0.001) {
     camera.position.x += (Math.random() - 0.5) * world.shake;
     camera.position.y += (Math.random() - 0.5) * world.shake;
     camera.position.z += (Math.random() - 0.5) * world.shake;
     world.shake *= Math.max(0, 1 - 7 * dt);
   }
+  if (!world.settings.cameraShake) world.shake = 0;
 
   const focus = player.inHeli ? player.inHeli.pos : player.inCar ? player.inCar.pos : player.pos;
   sun.position.copy(focus).addScaledVector(world.sunDir, 180);
@@ -1271,6 +1316,16 @@ function updateOnFoot(dt) {
     }
   }
   if (pressed['KeyX']) switchWeapon((weaponIdx + 1) % WEAPONS.length);
+  weaponWheelT = Math.max(0, weaponWheelT - dt);
+  if (mouse.wheel && !world.nearKiosk && weaponWheelT === 0) {
+    switchWeapon((weaponIdx + mouse.wheel + WEAPONS.length) % WEAPONS.length);
+    weaponWheelT = .12;
+  }
+  if (pressed.F2) {
+    firstPerson = !firstPerson;
+    camPitch = Math.max(-.35, Math.min(.75, camPitch));
+    showToast(firstPerson ? 'FIRST PERSON — Ctrl aim · wheel weapons · F2 camera' : 'THIRD PERSON — Ctrl aim · wheel weapons · F2 camera');
+  }
 
   // enter vehicle, helicopter or boat
   const nearVeh = findNearestVehicle(3.8);
@@ -1842,10 +1897,12 @@ function tryStartSwing() {
   sfxWeb();
   addFlash(web.anchor.clone(), 0xeeeeee, 0.45);
   setHint(null);
-  web.attachT = 0;
-  if (!player.onGround) addStyle(15); // mid-air catch
-  player.onGround = false;
-  player.vel.y = player.vy;
+    web.attachT = 0;
+    const launchedFromGround = player.onGround;
+    if (!player.onGround) addStyle(15); // mid-air catch
+    player.onGround = false;
+    // Lift a standing launch before gravity can immediately count it as a landing.
+    player.vel.y = launchedFromGround ? Math.max(player.vy, 5) : player.vy;
   // launch assist so a standing thwip still turns into a real swing
   const sp = Math.hypot(player.vel.x, player.vel.z);
   if (sp < 12) {
@@ -2330,6 +2387,11 @@ function shoot() {
   }
   camera.getWorldDirection(_rayDir);
   sfxShot(w.sfx);
+  player.mesh.rotation.y = camYaw;
+  poseWeapon(player.ch, true);
+  recoilT = .12;
+  muzzlePosition(player.ch, _muzzle);
+  addFlash(_muzzle.clone(), 0xffd080, .22);
   world.lastShot = { pos: player.pos.clone(), t: world.time };
   if (world.wanted === 0 && !world.gunMods?.silencer) addCrime(world, 1);
 
@@ -2356,7 +2418,12 @@ function fireBullet(w) {
   _rayOrigin.copy(camera.position);
 
   const RANGE = 80;
-  let bestT = RANGE;
+  const aimDistance = solidDistance(_rayOrigin, _rayDir, city.colliders, RANGE);
+  _aimPoint.copy(_rayOrigin).addScaledVector(_rayDir, aimDistance);
+  if (firstPerson) { camera.updateWorldMatrix(true, true); firstWeapon.muzzle.getWorldPosition(_rayOrigin); }
+  else muzzlePosition(player.ch, _rayOrigin);
+  _rayDir.copy(_aimPoint).sub(_rayOrigin).normalize();
+  let bestT = solidDistance(_rayOrigin, _rayDir, city.colliders, RANGE);
   let hitPed = null;
   let hitGang = null;
   let hitVeh = null;
@@ -2395,8 +2462,7 @@ function fireBullet(w) {
   }
 
   _hitPoint.copy(_rayOrigin).addScaledVector(_rayDir, bestT);
-  const muzzle = player.pos.clone();
-  muzzle.y += 1.4;
+  const muzzle = _rayOrigin.clone();
   addTracer(muzzle, _hitPoint.clone());
   addFlash(_hitPoint.clone(), 0xffd080, 0.35);
 
@@ -2764,7 +2830,7 @@ document.getElementById('playbtn').addEventListener('click', () => {
   showTouchUI(true);
 });
 document.addEventListener('pointerlockchange', () => {
-  if (!document.pointerLockElement && !isTouch && gameState === 'play') pauseGame();
+  if (!document.pointerLockElement && !isTouch && gameState === 'play' && !world.bankUiOpen) pauseGame();
 });
 
 // ---------- main loop ----------
@@ -2790,6 +2856,7 @@ let prevHealth = 100;
 let saveT = 0;
 
 function update(dt) {
+  if (world.bankUiOpen) { updateBanking(world, dt, keys, pressed); return; }
   world.time += dt;
   city.district?.update(player.pos, world.settings.lowGfx);
   resetArticulation(player.ch);
@@ -3173,6 +3240,11 @@ function update(dt) {
     }
   }
   updateCamera(dt);
+  recoilT = Math.max(0, recoilT - dt);
+  if (onFootView() && aiming()) {
+    player.mesh.rotation.y = camYaw;
+    poseWeapon(player.ch, true, recoilT * 8);
+  }
   updateSiren();
   updateHUD(world);
 
@@ -3222,6 +3294,10 @@ function animate() {
     camera.rotation.x += Math.sin(t * 0.0013) * 0.04;
   }
   renderer.info.reset();
+  if (gameState !== 'play') {
+    viewHands.visible = false;
+    document.getElementById('crosshair').style.display = 'none';
+  }
   composer.render();
   if (world.captureNext) {
     world.captureNext = false;
@@ -3236,6 +3312,10 @@ animate();
 
 // debug handle for automated testing
 window.__debug = {
+  camera,
+  getView: () => ({ firstPerson, weaponIdx, aiming: world.aiming }),
+  switchWeapon,
+  shoot,
   renderInfo: () => ({ calls: renderer.info.render.calls, triangles: renderer.info.render.triangles, geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures }),
   world,
   player,

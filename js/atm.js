@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { CASH_CAP } from './wallet.js';
+import { placeStreetSite } from './site-layout.js';
 import { blockStart, pointBlocked } from './city.js';
 import { showToast, showNews } from './hud.js';
 import { sfxPickup, sfxMissionPass } from './sound.js';
@@ -20,6 +22,7 @@ export function initAtms(scene, world, save) {
     const probe = new THREE.Vector3(pos.x, 1, pos.z);
     if (pointBlocked(probe, world.city.colliders, 1.2)) pos = new THREE.Vector3(blockStart(bi) + 14, 0, blockStart(bj) - 2.2);
 
+    placeStreetSite(world.city, pos, 1, 'atm');
     const body = new THREE.Mesh(
       new THREE.BoxGeometry(0.9, 1.7, 0.6),
       new THREE.MeshStandardMaterial({ color: 0x2a3a52, metalness: 0.6, roughness: 0.4 })
@@ -102,6 +105,7 @@ export function updateAtms(world, dt, pressed) {
     }
     if (pressed['Digit2']) {
       if (bk.balance < 500) showToast('Balance too low');
+      else if (world.money + 500 > CASH_CAP) showToast('Cash limit reached — spend or deposit cash first');
       else { bk.balance -= 500; world.money += 500; sfxPickup(); showToast(`Withdrew $500 — balance $${bk.balance}`); world.onSave?.(); }
     }
     if (pressed['Digit3']) {

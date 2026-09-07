@@ -69,7 +69,7 @@ export function animateWalk(ch, t, amp) {
   ch.lArm.rotation.z = 0.08;
   ch.rArm.rotation.z = -0.08;
   const g = ch.group;
-  g.position.y = (g.userData.baseY || 0) + Math.abs(c) * 0.06 * amp;
+  if (!g.userData.stableRoot) g.position.y = (g.userData.baseY || 0) + Math.abs(c) * 0.06 * amp;
   g.rotation.z = Math.sin(t) * 0.04 * amp; // slight torso sway
 }
 
@@ -86,7 +86,7 @@ export function animateIdle(ch) {
   ch.lArm.rotation.z = 0.06;
   ch.rArm.rotation.z = -0.06;
   g.rotation.z = Math.sin(t * 0.8) * 0.012;
-  g.position.y = (g.userData.baseY || 0) + Math.sin(t * 1.6) * 0.015;
+  if (!g.userData.stableRoot) g.position.y = (g.userData.baseY || 0) + Math.sin(t * 1.6) * 0.015;
 }
 
 // Landing crouch: absorb impact, spring back. p goes 0 (deep) -> 1 (stood).
@@ -100,5 +100,5 @@ export function animateLand(ch, p) {
     ch.lKnee.rotation.x = ch.rKnee.rotation.x = dip * 1.5;
     ch.lElbow.rotation.x = ch.rElbow.rotation.x = -.25;
   }
-  ch.group.position.y = (ch.group.userData.baseY || 0) - dip * 0.35;
+  if (!ch.group.userData.stableRoot) ch.group.position.y = (ch.group.userData.baseY || 0) - dip * 0.35;
 }

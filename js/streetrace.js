@@ -1,3 +1,4 @@
+import { availableFunds, spendMoney } from './wallet.js';
 import * as THREE from 'three';
 import { roadCenter } from './city.js';
 import { showToast, showNews, showMissionMsg, setHint } from './hud.js';
@@ -114,8 +115,8 @@ export function updateStreetRace(world, dt, pressed) {
       }
       world.streetRaceHint = `${def.name} — press <b>E</b> to race (buy-in $${def.stake})`;
       if (pressed['KeyE']) {
-        if (world.money < def.stake) { showToast('Not enough cash for the buy-in'); break; }
-        world.money -= def.stake;
+        if (availableFunds(world, def.stake) < def.stake) { showToast('Not enough cash for the buy-in'); break; }
+        spendMoney(world, def.stake);
         sr.active = def;
         sr.idx = 0;
         sr.t = 0;

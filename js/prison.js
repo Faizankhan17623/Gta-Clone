@@ -170,7 +170,7 @@ export function updatePrison(world, dt) {
   if (_pv.length() > 60) {
     pr.inside = false;
     world.prisonHint = null;
-    addCrime(world, 2);
+    addCrime(world, 2, { witnessed: true }); // the prison reports its own escapees
     if (world.stats) world.stats.jailbreaks = (world.stats.jailbreaks || 0) + 1;
     sfxMissionPass();
     showMissionMsg('JAILBREAK', 'Nobody has ever escaped Harbor Island. Until tonight.', '#ffd24a');

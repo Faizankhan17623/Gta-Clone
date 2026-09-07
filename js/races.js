@@ -57,8 +57,9 @@ export function initRaces(scene, world, save) {
   world.raceBest = { ...(save.races || {}) };
   const defs = [];
   for (const def of RACES) {
-    const start = ringMesh(def.color, def.water ? 6 : 4.5, 1.2);
-    start.position.set(def.start[0], (def.water ? WATER_Y : 0) + 0.7, def.start[1]);
+    // Road race markers are flush paint-like rings, not waist-high barriers.
+    const start = ringMesh(def.color, def.water ? 6 : 4.5, def.water ? 1.2 : .035);
+    start.position.set(def.start[0], def.water ? WATER_Y + .7 : .14, def.start[1]);
     scene.add(start);
     defs.push({ def, start });
   }

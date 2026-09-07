@@ -26,40 +26,6 @@
       <div class="card wide"><div class="label">Recent failures</div><div id="errors"><span class="muted">No errors recorded.</span></div></div>
     </section>
   </main>
-  <script>
-    const $=id=>document.getElementById(id), token=$('token'), dash=$('dashboard');
-    function fmt(sec){const h=Math.floor(sec/3600),m=Math.floor(sec%3600/60),s=sec%60;return `${h}h ${m}m ${s}s`}
-    function set(id,v){$(id).textContent=v}
-    async function refresh(){
-      const res=await fetch('/admin/metrics',{credentials:'same-origin'});
-      if(!res.ok) throw new Error(res.status===401?'Invalid admin token':'Admin endpoint unavailable');
-      const d=await res.json(); set('players',d.playersOnline);set('connections',d.connections);set('requests',d.requests);set('memory',`${d.memoryMb} MB`);set('latency',`${d.averageLatencyMs} ms`);set('four',d.responses4xx);set('five',d.responses5xx);set('uptime',fmt(d.uptimeSec));set('queue',d.matchmakingQueue);set('suspicious',d.suspiciousInputs);
-      $('events').innerHTML=Object.entries(d.socketEvents).sort((a,b)=>b[1]-a[1]).slice(0,12).map(([k,v])=>`<tr><td>${k}</td><td>${v}</td></tr>`).join('')||'<tr><td class="muted">No events yet</td></tr>';
-      const pr=await fetch('/admin/players',{credentials:'same-origin'}); const players=await pr.json(); $('playerRows').innerHTML=players.map(p=>`<tr><td>${p.name}</td><td>${p.room||'—'}</td><td>${p.kills}/${p.deaths}</td><td><button onclick="moderate('${p.id}',${p.bannedUntil?'true':'false'})">${p.bannedUntil?'UNBAN':'BAN 1H'}</button></td></tr>`).join('')||'<tr><td class="muted" colspan="4">No players online</td></tr>';
-      $('errors').innerHTML=d.recentErrors.length?d.recentErrors.slice(0,12).map(e=>`<div class="error"><b>${e.context}</b> · ${e.message}<br><span class="muted">${e.at}</span></div>`).join(''):'<span class="ok">No errors recorded.</span>';
-      $('status').textContent=`Live · updated ${new Date().toLocaleTimeString()}`;$('status').className='ok';dash.classList.remove('hidden');
-    }
-    $('send').onclick=async()=>{
-      const btn=$('send'),label=btn.textContent;
-      btn.disabled=true;$('connect').disabled=true;
-      btn.innerHTML='<span class="spinner"></span> Sending…';
-      $('status').textContent='Sending admin token to the configured email…';$('status').className='muted';
-      try{
-        const res=await fetch('/admin/send-token',{method:'POST'});
-        const d=await res.json().catch(()=>({}));
-        if(res.ok&&d.inline&&d.token){
-          token.value=d.token;
-          $('status').textContent='✓ Token generated — filled in for you. Click CONNECT.';$('status').className='ok';
-        }else if(res.ok){
-          $('status').textContent=d.message||'✓ Check your email — admin token sent';$('status').className='ok';
-        }else{
-          $('status').textContent=d.error||`Could not send token (${res.status})`;$('status').className='bad';
-        }
-      }catch(e){$('status').textContent='Network error — token not sent';$('status').className='bad';}
-      finally{btn.disabled=false;$('connect').disabled=false;btn.textContent=label;}
-    };
-    window.moderate=async(id,banned)=>{await fetch(`/admin/players/${id}/${banned?'unban':'ban'}`,{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:banned?'{}':'{"minutes":60}'});refresh()};
-    $('connect').onclick=async()=>{const res=await fetch('/admin/auth',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:token.value}),credentials:'same-origin'});const d=await res.json();if(res.status===423){window.location.href=d.redirect||'/';return}if(!res.ok){$('status').textContent=`${d.error} (${d.attemptsRemaining ?? 0} attempt(s) left)`;$('status').className='bad';return}token.value='';try{await refresh();clearInterval(window.timer);window.timer=setInterval(refresh,5000)}catch(e){$('status').textContent=e.message;$('status').className='bad';dash.classList.add('hidden')}};
-  </script>
+  <script src="/admin/ui.js" defer></script>
 </body>
 </html>

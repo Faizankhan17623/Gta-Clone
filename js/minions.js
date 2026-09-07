@@ -1,3 +1,4 @@
+import { availableFunds, spendMoney } from './wallet.js';
 import * as THREE from 'three';
 import { createCharacter, animateWalk, animateIdle } from './characters.js';
 import { showToast, showMissionMsg, showNews } from './hud.js';
@@ -157,7 +158,7 @@ function generateMinionName() {
 // ============================================================================
 
 export function recruitMinion(world, roleKey, customName = null) {
-  if (world.money < 500) {
+  if (availableFunds(world, 500) < 500) {
     showToast('NOT ENOUGH CASH TO RECRUIT');
     return null;
   }
@@ -165,7 +166,7 @@ export function recruitMinion(world, roleKey, customName = null) {
   const roleConfig = MINION_ROLES.find((r) => r.key === roleKey);
   if (!roleConfig) return null;
 
-  world.money -= 500; // Recruitment cost
+  spendMoney(world, 500); // Recruitment cost
   const minion = createMinion(world.scene, { role: roleKey }, world);
   if (customName) minion.name = customName;
 
@@ -322,8 +323,8 @@ export function updateMinionPayroll(world, dt) {
     });
 
     if (totalPayroll > 0) {
-      if (world.money >= totalPayroll) {
-        world.money -= totalPayroll;
+      if (availableFunds(world, totalPayroll) >= totalPayroll) {
+        spendMoney(world, totalPayroll);
         world.minions.forEach((minion) => {
           if (minion.alive) {
             minion.loyalty = Math.min(100, minion.loyalty + 2); // Happy minions

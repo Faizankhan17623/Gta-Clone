@@ -1,3 +1,4 @@
+import { availableFunds, spendMoney } from './wallet.js';
 import * as THREE from 'three';
 import { resolveCircle, groundHeight } from './city.js';
 import { showToast, showNews } from './hud.js';
@@ -41,8 +42,8 @@ export function updateJetpackPad(world, dt, pressed) {
     if (d < 3.4 && onFoot) {
       world.jetHint = `Press <b>E</b> to buy the JETPACK — $${COST} (J to fly, anywhere)`;
       if (pressed['KeyE']) {
-        if (world.money < COST) { showToast('Not enough cash'); return; }
-        world.money -= COST;
+        if (availableFunds(world, COST) < COST) { showToast('Not enough cash'); return; }
+        spendMoney(world, COST);
         jp.owned = true;
         jp.tank.visible = false;
         sfxMissionPass();

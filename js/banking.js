@@ -1,6 +1,8 @@
 import { showToast, showNews } from './hud.js';
 import { sfxPickup, sfxMissionPass } from './sound.js';
 import * as api from './bankapi.js';
+import { CASH_CAP } from './wallet.js';
+import { clearInput, pressedModifiers } from './input.js';
 
 // CITY BANK. Extends world.bank (created in atm.js) with an account number,
 // a cash-in-hand cap and an overlay for deposits, withdrawals and transfers.
@@ -18,7 +20,7 @@ import * as api from './bankapi.js';
 //  - Mission rewards under REWARD_TO_BANK ($15,000) pay cash (subject to the
 //    cap); $15,000 and up wire straight to the bank.
 
-export const CASH_CAP = 10000;
+export { CASH_CAP };
 export const REWARD_TO_BANK = 15000;
 
 function makeAccountNumber() {
@@ -29,6 +31,7 @@ function makeAccountNumber() {
 
 let ui = null;
 let world_ = null;
+let linkIdentity, busy = false;
 
 function buildUI() {
   if (ui) return ui;
@@ -91,9 +94,12 @@ function buildUI() {
 
 function renderLinkRow() {
   if (!ui) return;
+  const identity = api.isLinked() ? api.accountNo() : 'local';
+  if (identity === linkIdentity) return;
+  linkIdentity = identity;
   if (api.isLinked()) {
     ui.link.innerHTML =
-      `<div style="font:700 10px Consolas,monospace;color:#8ea6bb">Linked as <b style="color:#eef4fb">${api.handle()}</b></div>` +
+      '<div style="font:700 10px Consolas,monospace;color:#8ea6bb">Linked as <b id="linked-handle" style="color:#eef4fb"></b></div>' +
       `<button data-act="unlink" style="margin-top:6px;width:100%;background:transparent;color:#ff9a90;box-shadow:inset 0 0 0 1px rgba(255,91,82,.5)">UNLINK ACCOUNT</button>`;
   } else {
     ui.link.innerHTML =
@@ -105,6 +111,8 @@ function renderLinkRow() {
       `<input id="bank-token" placeholder="token (to log in)" style="flex:2;background:#0b1926;color:#eef4fb;border:1px solid #345064;padding:7px;font:700 11px Consolas,monospace">` +
       `<button data-act="lin" style="flex:1">LOG IN</button></div>`;
   }
+  const handleLabel = ui.link.querySelector('#linked-handle');
+  if (handleLabel) handleLabel.textContent = api.handle();
   for (const b of ui.link.querySelectorAll('button')) {
     b.style.cssText += 'cursor:pointer;padding:8px 0;border:none;font:900 11px Consolas,monospace;letter-spacing:.1em;' +
       'clip-path:polygon(5px 0,100% 0,100% calc(100% - 5px),calc(100% - 5px) 100%,0 100%,0 5px)';
@@ -138,6 +146,8 @@ function open(world, reason) {
   buildUI();
   world_ = world;
   world.bankUiOpen = true;
+  clearInput();
+  document.exitPointerLock?.();
   ui.root.style.display = 'flex';
   say(reason || '');
   refresh(world);
@@ -149,6 +159,9 @@ function open(world, reason) {
 async function handleClick(world, e) {
   const act = e.target.dataset?.act;
   if (!act) return;
+  if (act === 'close') return close(world);
+  if (busy) return;
+  busy = true;
   const bk = world.bank;
   const online = api.isOnline() && api.isLinked();
   const amt = Math.max(0, Math.floor(Number(ui.amt.value) || 0));
@@ -223,7 +236,7 @@ async function handleClick(world, e) {
     }
   } catch (err) {
     say(err.message || 'bank error');
-  }
+  } finally { busy = false; }
 }
 
 function done(world, m) {
@@ -236,6 +249,7 @@ function done(world, m) {
 function close(world) {
   world.bankUiOpen = false;
   if (ui) ui.root.style.display = 'none';
+  clearInput();
 }
 
 export function initBanking(world, save) {
@@ -260,7 +274,8 @@ export function awardMoney(world, amount, { alwaysBank = false } = {}) {
   const online = api.isOnline() && api.isLinked();
   const toBank = (n, why) => {
     if (online) {
-      api.deposit(n, why || 'reward').then((r) => { bk.onlineBalance = r.balance; }).catch(() => { bk.balance += n; });
+      api.deposit(n, why || 'reward').then((r) => { bk.onlineBalance = r.balance; world.onSave?.(); })
+        .catch(() => { bk.balance += n; world.onSave?.(); });
     } else {
       bk.balance += n;
     }
@@ -286,7 +301,7 @@ export function updateBanking(world, dt, keys, pressed) {
   const bk = world.bank;
   if (!bk) return;
 
-  if (pressed['KeyK'] && !world.bankUiOpen) open(world);
+  if (pressed['KeyK'] && (pressedModifiers.KeyK?.shift || keys['ShiftLeft']) && !world.bankUiOpen) open(world);
   if (world.bankUiOpen && pressed['Escape']) close(world);
 
   // cash cap: skim overflow into the bank, nag once
@@ -294,12 +309,13 @@ export function updateBanking(world, dt, keys, pressed) {
     const over = Math.round(world.money - CASH_CAP);
     world.money = CASH_CAP;
     if (api.isOnline() && api.isLinked()) {
-      api.deposit(over, 'cash cap overflow').then((r) => { bk.onlineBalance = r.balance; }).catch(() => { bk.balance += over; });
+      api.deposit(over, 'cash cap overflow').then((r) => { bk.onlineBalance = r.balance; world.onSave?.(); })
+        .catch(() => { bk.balance += over; world.onSave?.(); });
     } else {
       bk.balance += over;
     }
     world.onSave?.();
-    if (!world.bankUiOpen) open(world, `Cash is capped at $${CASH_CAP}. $${over} auto-deposited.`);
+    showToast(`$${over} auto-deposited. Shift+K opens City Bank.`);
   }
 
   if (world.bankUiOpen) refresh(world);

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { placeStreetSite } from './site-layout.js';
 import { pointBlocked } from './city.js';
 import { showToast } from './hud.js';
 import { sfxPickup } from './sound.js';
@@ -29,6 +30,7 @@ export function initVendors(scene, world) {
     let pos = world.city.spawn.clone().add(new THREE.Vector3(def.at[0], 0, def.at[1]));
     const probe = new THREE.Vector3(pos.x, 1, pos.z);
     if (pointBlocked(probe, world.city.colliders, 1.6)) pos = world.city.spawn.clone().add(new THREE.Vector3(def.alt[0], 0, def.alt[1]));
+    placeStreetSite(world.city, pos, 2, `${def.key} cart`);
 
     const cart = new THREE.Mesh(
       new THREE.BoxGeometry(1.6, 1.1, 0.9),

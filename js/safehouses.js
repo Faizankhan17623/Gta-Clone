@@ -1,3 +1,4 @@
+import { availableFunds, spendMoney } from './wallet.js';
 import * as THREE from 'three';
 import { blockStart, BLOCK } from './city.js';
 import { showToast, showNews, showMissionMsg } from './hud.js';
@@ -132,8 +133,8 @@ export function updateSafehouses(world, dt, pressed) {
   if (!owned) {
     world.safehouseHint = `${here.def.name} — press <b>E</b> to buy ($${here.def.price.toLocaleString()})`;
     if (pressed['KeyE']) {
-      if (world.money < here.def.price) { showToast('Not enough cash for that safehouse'); return; }
-      world.money -= here.def.price;
+      if (availableFunds(world, here.def.price) < here.def.price) { showToast('Not enough cash for that safehouse'); return; }
+      spendMoney(world, here.def.price);
       sh.owned.add(here.def.key);
       refreshBeams(world);
       sfxMissionPass();

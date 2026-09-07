@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { placeStreetSite } from './site-layout.js';
 import { blockStart, HALF, pointBlocked } from './city.js';
 import { showToast } from './hud.js';
 import { sfxPickup, sfxMissionPass } from './sound.js';
@@ -12,6 +13,7 @@ export function initMall(scene, world, save) {
   let door = new THREE.Vector3(blockStart(5) + 8, 0, blockStart(6) + 8);
   const probe = new THREE.Vector3(door.x, 1, door.z);
   if (pointBlocked(probe, world.city.colliders, 2)) door = new THREE.Vector3(blockStart(5) + 30, 0, blockStart(6) - 3);
+  placeStreetSite(world.city, door, 2, 'mall entrance');
 
   const frame = new THREE.Mesh(
     new THREE.BoxGeometry(3.2, 3.4, 0.5),

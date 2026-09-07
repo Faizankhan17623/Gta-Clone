@@ -390,13 +390,16 @@ export function buildCity(scene) {
 // or out transparently trigger a rebuild.
 const GRID_CELL = 24;              // metres — a touch wider than the widest lot
 const _gridCache = new WeakMap();  // colliders[] -> { len, cells: Map }
+export function invalidateColliderGrid(colliders) { _gridCache.delete(colliders); }
 
 function cellKey(ix, iz) { return ix * 100000 + iz; }
 
 function buildGrid(colliders) {
   const cells = new Map();
+  const dynamic = [];
   for (let i = 0; i < colliders.length; i++) {
     const c = colliders[i];
+    if (c.dynamic) { dynamic.push(c); continue; }
     const x0 = Math.floor(c.x0 / GRID_CELL), x1 = Math.floor(c.x1 / GRID_CELL);
     const z0 = Math.floor(c.z0 / GRID_CELL), z1 = Math.floor(c.z1 / GRID_CELL);
     for (let ix = x0; ix <= x1; ix++) {
@@ -408,7 +411,7 @@ function buildGrid(colliders) {
       }
     }
   }
-  return { len: colliders.length, cells };
+  return { len: colliders.length, cells, dynamic };
 }
 
 // Colliders whose cells the circle (pos, r) touches. Falls back to the full
@@ -423,7 +426,7 @@ function nearbyColliders(pos, r, colliders) {
   const z0 = Math.floor((pos.z - r) / GRID_CELL), z1 = Math.floor((pos.z + r) / GRID_CELL);
   if (x1 - x0 > 6 || z1 - z0 > 6) return colliders; // huge radius: just scan all
   const seen = new Set();
-  const out = [];
+  const out = grid.dynamic.slice();
   for (let ix = x0; ix <= x1; ix++) {
     for (let iz = z0; iz <= z1; iz++) {
       const bucket = grid.cells.get(cellKey(ix, iz));

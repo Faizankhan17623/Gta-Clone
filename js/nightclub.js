@@ -1,3 +1,4 @@
+import { availableFunds, spendMoney } from './wallet.js';
 import * as THREE from 'three';
 import { blockStart, pointBlocked } from './city.js';
 import { createCharacter, animateWalk } from './characters.js';
@@ -136,8 +137,8 @@ export function updateNightclub(world, dt, pressed) {
     if (dDoor < 4 && onFoot) {
       world.clubHint = `Press <b>E</b> to BUY the NEON PALACE — $${CLUB_COST}, $${NIGHT_INCOME}/night, occasional fistfights`;
       if (pressed['KeyE']) {
-        if (world.money < CLUB_COST) { showToast('Not enough cash — the bass drops for no one poor'); return; }
-        world.money -= CLUB_COST;
+        if (availableFunds(world, CLUB_COST) < CLUB_COST) { showToast('Not enough cash — the bass drops for no one poor'); return; }
+        spendMoney(world, CLUB_COST);
         cl.owned = true;
         if (world.stats) world.stats.club = 1;
         sfxMissionPass();

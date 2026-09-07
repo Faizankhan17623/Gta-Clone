@@ -46,6 +46,8 @@ function doPrestige(world) {
   try { old = JSON.parse(localStorage.getItem(world.prestigeState.saveKey) || '{}') || {}; } catch {}
   // what a king keeps: the crown, the closet, the garage, the trophy shelf
   const kept = {
+    money: 0,
+    bank: 0,
     prestige: p,
     crowned: true,
     char: old.char,

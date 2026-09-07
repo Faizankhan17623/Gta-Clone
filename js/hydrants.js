@@ -13,7 +13,7 @@ export function initHydrants(scene, world) {
   const waterMat = new THREE.MeshStandardMaterial({ color: 0x9fd8f7, transparent: true, opacity: 0.55, roughness: 0.2 });
   for (let bi = 1; bi < N; bi += 2) {
     for (let bj = 1; bj < N; bj += 3) {
-      const pos = new THREE.Vector3(blockStart(bi) - 2, 0, blockStart(bj) - 2);
+      const pos = new THREE.Vector3(blockStart(bi) + 1, 0, blockStart(bj) + 1);
       const probe = new THREE.Vector3(pos.x, 0.5, pos.z);
       if (pointBlocked(probe, world.city.colliders, 0.8)) continue;
 

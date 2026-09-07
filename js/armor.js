@@ -1,3 +1,4 @@
+import { availableFunds, spendMoney } from './wallet.js';
 import * as THREE from 'three';
 import { placeStreetSite } from './site-layout.js';
 import { pointBlocked } from './city.js';
@@ -71,8 +72,8 @@ export function updateArmor(world, dt, pressed) {
   if (ar.plate >= MAX) { world.armorHint = 'SURPLUS & SUNDRY — your plate is already full, soldier'; return; }
   world.armorHint = `Press <b>E</b> — BODY ARMOR, $${price} (${Math.ceil(ar.plate)}/${MAX} plate)`;
   if (!pressed['KeyE']) return;
-  if (world.money < price) { showToast('Not enough cash — the vest stays on the rack'); return; }
-  world.money -= price;
+  if (availableFunds(world, price) < price) { showToast('Not enough cash — the vest stays on the rack'); return; }
+  spendMoney(world, price);
   ar.plate = MAX;
   sfxPickup();
   showToast('PLATE ON — half of everything that hits you hits this first');

@@ -1,3 +1,4 @@
+import { availableFunds, spendMoney } from './wallet.js';
 import * as THREE from 'three';
 import { placeStreetSite } from './site-layout.js';
 import { pointBlocked } from './city.js';
@@ -64,8 +65,8 @@ export function updateWorkbench(world, dt, pressed) {
     if (!pressed['Digit' + (i + 1)]) continue;
     const m = MODS[i];
     if (world.gunMods[m.key]) { showToast('Already installed'); continue; }
-    if (world.money < m.cost) { showToast('Not enough cash'); continue; }
-    world.money -= m.cost;
+    if (availableFunds(world, m.cost) < m.cost) { showToast('Not enough cash'); continue; }
+    spendMoney(world, m.cost);
     world.gunMods[m.key] = true;
     sfxMissionPass();
     showToast(`${m.name} INSTALLED — ${m.blurb}`);

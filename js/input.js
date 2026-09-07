@@ -1,12 +1,12 @@
 // Keyboard + mouse input. `keys` is held state, `pressed` is true only on the
 // frame the key went down (cleared by endFrame).
 //
-// Robust to keyboard layouts: a key registers both by physical position
-// (e.code, e.g. 'KeyD') and by the letter it types (e.key 'd' -> 'KeyD'),
-// so WASD works on QWERTY, AZERTY, Dvorak and remapped keyboards alike.
+// Typed WASD letters take priority; physical WASD positions are the fallback
+// for other alphabets. Never activate opposite directions for one remapped key.
 export const keys = Object.create(null);
 export const pressed = Object.create(null);
-export const mouse = { dx: 0, dy: 0, down: false, rdown: false };
+export const pressedModifiers = Object.create(null);
+export const mouse = { dx: 0, dy: 0, down: false, rdown: false, wheel: 0 };
 
 const GAME_KEYS = new Set(['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyW', 'KeyA', 'KeyS', 'KeyD']);
 const sources = new Map();
@@ -17,8 +17,12 @@ export function setInputKey(source, name, down) {
   let held = sources.get(source);
   if (!held) { held = new Set(); sources.set(source, held); }
   if (down) held.add(name); else held.delete(name);
-  const active = [...sources.values()].some(s => s.has(name));
-  if (active && !keys[name]) pressed[name] = true;
+  let active = false;
+  for (const owner of sources.values()) if (owner.has(name)) { active = true; break; }
+  if (active && !keys[name]) {
+    pressed[name] = true;
+    pressedModifiers[name] = { shift: !!(keys.ShiftLeft || keys.ShiftRight) };
+  }
   keys[name] = active;
 }
 
@@ -26,8 +30,9 @@ export function clearInput() {
   sources.clear(); keyboardHeld.clear();
   for (const k in keys) keys[k] = false;
   for (const k in pressed) delete pressed[k];
+  for (const k in pressedModifiers) delete pressedModifiers[k];
   mouse.down = mouse.rdown = false;
-  mouse.dx = mouse.dy = 0;
+  mouse.dx = mouse.dy = mouse.wheel = 0;
 }
 
 export function namesFor(e) {
@@ -60,11 +65,16 @@ export function namesFor(e) {
 }
 
 export function initInput() {
+  window.addEventListener('wheel', e => {
+    if (!document.pointerLockElement || e.ctrlKey || !e.deltaY) return;
+    e.preventDefault();
+    mouse.wheel = Math.sign(e.deltaY);
+  }, { passive: false });
   window.addEventListener('keydown', (e) => {
     const names = namesFor(e);
     if (e.target?.matches?.('input, textarea, select, [contenteditable="true"]')) return;
     // stop the browser acting on game keys (quick-find, scrolling, shortcuts)
-    if (names.some((n) => GAME_KEYS.has(n))) e.preventDefault();
+    if (names.some((n) => GAME_KEYS.has(n) || n === 'F2')) e.preventDefault();
     const id = e.code || String(e.keyCode || e.which || e.key);
     if (!keyboardHeld.has(id)) keyboardHeld.set(id, names);
     for (const n of keyboardHeld.get(id)) setInputKey('keyboard:' + id, n, true);
@@ -106,8 +116,10 @@ export function initInput() {
 
 export function endFrame() {
   for (const k in pressed) delete pressed[k];
+  for (const k in pressedModifiers) delete pressedModifiers[k];
   mouse.dx = 0;
   mouse.dy = 0;
+  mouse.wheel = 0;
 }
 
 // ---------------- gamepad ----------------

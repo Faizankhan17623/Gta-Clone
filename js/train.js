@@ -107,7 +107,7 @@ export function initTrain(scene, world) {
   const kinds = ['loco', 'cargo', 'caboose'];
   const wagons = kinds.map((kind, i) => {
     const mesh = makeWagon(scene, kind);
-    const col = { x0: TRACK_X - 1.5, x1: TRACK_X + 1.5, z0: 0, z1: 0, h: ROOF_TOP + 0.3 };
+    const col = { x0: TRACK_X - 1.5, x1: TRACK_X + 1.5, z0: 0, z1: 0, h: ROOF_TOP + 0.3, dynamic: true };
     world.city.colliders.push(col);
     return { kind, mesh, col, off: -i * (WAGON_LEN + GAP) };
   });

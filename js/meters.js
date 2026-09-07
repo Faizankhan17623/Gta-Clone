@@ -11,7 +11,7 @@ import { sfxPickup } from './sound.js';
 
 export function initMeters(scene, world) {
   const poles = [];
-  const bx = blockStart(5) - 2;
+  const bx = blockStart(5) + 1;
   for (let i = 0; i < 10; i++) {
     const pos = new THREE.Vector3(bx, 0, blockStart(5) + 6 + i * 4);
     const probe = new THREE.Vector3(pos.x, 0.5, pos.z);

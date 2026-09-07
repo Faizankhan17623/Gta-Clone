@@ -1,3 +1,4 @@
+import { invalidateColliderGrid } from './city.js';
 import * as THREE from 'three';
 
 // Original, reusable environment models. Dimensions are in world metres.
@@ -354,6 +355,7 @@ export function buildSpawnDistrict(scene, city, area = { bi: 4, bj: 4, props: tr
   const stats = { buildings: buildings.length, windows: windowCount, trees: crowns.length / 5, detailInstances: counts.instances, detailBatches: counts.drawCalls + 1, seed: 17623 };
   const addedWindows = new Set(city.windowMats.slice(previousWindowCount));
   const addedColliders = new Set(city.colliders.slice(previousColliderCount));
+  invalidateColliderGrid(city.colliders);
   let detailed = true;
   return {
     group, stats,
@@ -386,6 +388,7 @@ export function buildSpawnDistrict(scene, city, area = { bi: 4, bj: 4, props: tr
       for (const tex of textures) tex.dispose();
       for (let i = city.windowMats.length - 1; i >= 0; i--) if (addedWindows.has(city.windowMats[i])) city.windowMats.splice(i, 1);
       for (let i = city.colliders.length - 1; i >= 0; i--) if (addedColliders.has(city.colliders[i])) city.colliders.splice(i, 1);
+      invalidateColliderGrid(city.colliders);
       scene.remove(group);
     },
   };

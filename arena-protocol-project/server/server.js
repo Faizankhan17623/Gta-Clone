@@ -1,6 +1,8 @@
 // game3d server — Node + Express + Socket.io.
 // Phases 6-10. Server-authoritative movement (Phase 7) + combat (Phase 8) +
 // game modes / circle / win condition (Phase 9) + accounts/stats hooks (Phase 10).
+import './env.js';
+import { createAdminTokenSender } from './admin-mail.js';
 import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
@@ -18,6 +20,8 @@ import {
 } from './db.js';
 
 const app = express();
+app.disable('x-powered-by');
+app.use((_req, res, next) => { res.setHeader('X-Content-Type-Options', 'nosniff'); res.setHeader('Referrer-Policy', 'same-origin'); next(); });
 const clientOrigin = process.env.CLIENT_ORIGIN || true;
 app.use(cors({ origin: clientOrigin }));
 app.use(express.json());
@@ -38,7 +42,6 @@ const metrics = {
 const ADMIN_WINDOW_MS = 60 * 60 * 1000;
 let adminTokenHash = process.env.ADMIN_TOKEN ? hashToken(process.env.ADMIN_TOKEN) : null;
 let adminTokenExpiresAt = process.env.ADMIN_TOKEN ? Date.now() + ADMIN_WINDOW_MS : 0;
-let adminTokenSentAt = 0;
 let adminAttempts = 0;
 let adminLockedUntil = 0;
 const adminSessions = new Map();
@@ -47,7 +50,8 @@ function newToken() { return crypto.randomBytes(24).toString('base64url'); }
 function cookieValue(req, name) {
   const raw = req.get('cookie') || '';
   const found = raw.split(';').map((v) => v.trim()).find((v) => v.startsWith(`${name}=`));
-  return found ? decodeURIComponent(found.slice(name.length + 1)) : '';
+  try { return found ? decodeURIComponent(found.slice(name.length + 1)) : ''; }
+  catch { return ''; }
 }
 function validAdminSession(req) {
   const key = cookieValue(req, 'arena_admin_session');
@@ -61,7 +65,7 @@ function validAdminSession(req) {
 async function validAdminSessionAsync(req) {
   if (validAdminSession(req)) return true;
   const key = cookieValue(req, 'arena_admin_session');
-  return key ? adminSessionValid(key).catch(() => false) : false;
+  return key ? adminSessionValid(hashToken(key)).catch(() => false) : false;
 }
 function recordError(error, context = 'server') {
   const entry = { at: new Date().toISOString(), context, message: String(error?.message || error) };
@@ -85,7 +89,11 @@ const SERVER_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_DIR = path.resolve(SERVER_DIR, '../..');
 const FRONTEND_DIR = path.resolve(SERVER_DIR, '../game3d/dist');
 if (fs.existsSync(FRONTEND_DIR)) app.use('/arena-protocol', express.static(FRONTEND_DIR, { index: false }));
-app.use(express.static(REPO_DIR, { index: false }));
+// Serve only runtime assets, never local tests, reports, server source or config.
+for (const dir of ['js', 'assets']) app.use('/' + dir, express.static(path.join(REPO_DIR, dir), { index: false }));
+app.use('/.well-known', express.static(path.join(REPO_DIR, '.well-known'), { dotfiles: 'allow', index: false }));
+for (const name of ['index.html', 'manifest.json', 'sw.js', 'privacy.html', 'icon.svg', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png'])
+  app.get('/' + name, (_req, res) => res.sendFile(path.join(REPO_DIR, name)));
 app.get('/arena-protocol/', (_req, res) => {
   const index = path.join(FRONTEND_DIR, 'index.html');
   if (fs.existsSync(index)) return res.sendFile(index);
@@ -111,66 +119,24 @@ function requireAdmin(req, res, next) {
     .then((ok) => ok ? next() : res.status(401).json({ error: 'Admin authorization required' }))
     .catch(() => res.status(401).json({ error: 'Admin authorization required' }));
 }
+app.use('/admin', (_req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
+  next();
+});
 app.get('/admin', (_req, res) => res.sendFile(path.join(SERVER_DIR, 'admin.html')));
-app.post('/admin/send-token', async (_req, res) => {
-  if (adminTokenSentAt && Date.now() - adminTokenSentAt < ADMIN_WINDOW_MS) {
-    return res.status(429).json({ error: 'A new admin token can be sent once per hour' });
-  }
-  const { SMTP_HOST, SMTP_PORT = '587', SMTP_USER, ADMIN_EMAIL, ADMIN_TOKEN_INLINE } = process.env;
-  // Gmail shows app passwords as "xxxx xxxx xxxx xxxx"; the spaces are display
-  // only and break auth if sent literally.
-  const SMTP_PASS = (process.env.SMTP_PASS || '').replace(/\s+/g, '');
-  const token = newToken();
-  const expiresAt = Date.now() + ADMIN_WINDOW_MS;
-  const armToken = async () => {
+app.get('/admin/ui.js', (_req, res) => res.type('js').sendFile(path.join(SERVER_DIR, 'admin-ui.js')));
+app.post('/admin/send-token', createAdminTokenSender({
+  recordError,
+  armToken: async (token, expiresAt) => {
     adminTokenHash = hashToken(token);
     adminTokenExpiresAt = expiresAt;
-    adminTokenSentAt = Date.now();
     adminAttempts = 0;
     adminLockedUntil = 0;
-    // persist so a restart within the hour doesn't invalidate it
-    await saveAdminToken(adminTokenHash, expiresAt).catch((e) => recordError(e, 'admin-token-save'));
-  };
-
-  const smtpReady = SMTP_HOST && SMTP_USER && SMTP_PASS && ADMIN_EMAIL;
-  if (!smtpReady) {
-    // No mail configured. If the operator opted in with ADMIN_TOKEN_INLINE=1,
-    // return the fresh token directly (trusted-deploy convenience). Otherwise
-    // say clearly which SMTP variables are missing.
-    if (String(ADMIN_TOKEN_INLINE) === '1') {
-      await armToken();
-      return res.json({ ok: true, inline: true, token, message: 'Email is off — here is your one-hour admin token' });
-    }
-    const missing = ['SMTP_HOST', 'SMTP_USER', 'SMTP_PASS', 'ADMIN_EMAIL'].filter((k) => !process.env[k]);
-    return res.status(503).json({
-      error: `Email delivery not configured — missing ${missing.join(', ')}. Or set ADMIN_TOKEN_INLINE=1 to receive the token here.`,
-    });
-  }
-
-  try {
-    const { default: nodemailer } = await import('nodemailer');
-    const transporter = nodemailer.createTransport({
-      host: SMTP_HOST,
-      port: Number(SMTP_PORT),
-      secure: String(SMTP_PORT) === '465',
-      auth: { user: SMTP_USER, pass: SMTP_PASS },
-    });
-    await transporter.verify().catch((e) => { throw new Error(`SMTP connection failed: ${e.message}`); });
-    await transporter.sendMail({
-      from: SMTP_USER,
-      to: ADMIN_EMAIL,
-      subject: 'Arena Protocol admin token',
-      text: `Your admin token is ${token}. It expires in one hour.`,
-    });
-    await armToken();
-    res.json({ ok: true, message: `Admin token sent to ${ADMIN_EMAIL}` });
-  } catch (error) {
-    recordError(error, 'admin-email');
-    res.status(502).json({ error: `Could not send token: ${String(error.message || error).slice(0, 160)}` });
-  }
-});
+    await saveAdminToken(adminTokenHash, expiresAt).catch(e => recordError(e, 'admin-token-save'));
+  },
+}));
 app.post('/admin/auth', async (req, res) => {
-  if (Date.now() < adminLockedUntil) return res.status(423).json({ error: 'Admin access is locked for one hour', redirect: '/' });
   const supplied = typeof req.body?.token === 'string' ? req.body.token : '';
   const suppliedHash = supplied ? hashToken(supplied) : '';
 
@@ -189,16 +155,20 @@ app.post('/admin/auth', async (req, res) => {
   }
 
   if (!matches) {
+    if (Date.now() < adminLockedUntil) return res.status(429).json({ error: 'Too many invalid attempts. Check your token or request a new one. Valid tokens can still connect.' });
     adminAttempts++;
-    if (adminAttempts >= 2) { adminLockedUntil = Date.now() + ADMIN_WINDOW_MS; return res.status(423).json({ error: 'Two invalid attempts used. Admin access is locked for one hour.', redirect: '/' }); }
-    return res.status(401).json({ error: 'Invalid token', attemptsRemaining: 2 - adminAttempts });
+    if (adminAttempts >= 10) adminLockedUntil = Date.now() + 60000;
+    return res.status(401).json({ error: 'Invalid or expired token. Request a new token or use the configured ADMIN_TOKEN.' });
   }
   adminAttempts = 0;
+  adminLockedUntil = 0;
   const session = crypto.randomBytes(24).toString('base64url');
   const sessionExpires = Date.now() + ADMIN_WINDOW_MS;
   adminSessions.set(session, sessionExpires);
-  await saveAdminSession(session, sessionExpires).catch((e) => recordError(e, 'admin-session-save'));
-  res.setHeader('Set-Cookie', `arena_admin_session=${encodeURIComponent(session)}; HttpOnly; SameSite=Strict; Path=/admin; Max-Age=3600`);
+  for (const [key, expiry] of adminSessions) if (expiry <= Date.now()) adminSessions.delete(key);
+  await saveAdminSession(hashToken(session), sessionExpires).catch((e) => recordError(e, 'admin-session-save'));
+  const secure = req.secure || process.env.NODE_ENV === 'production';
+  res.setHeader('Set-Cookie', `arena_admin_session=${encodeURIComponent(session)}; HttpOnly; SameSite=Strict; Path=/admin; Max-Age=3600${secure ? '; Secure' : ''}`);
   res.json({ ok: true });
 });
 app.get('/admin/metrics', requireAdmin, (_req, res) => {
@@ -221,14 +191,25 @@ app.get('/admin/metrics', requireAdmin, (_req, res) => {
   });
 });
 app.get('/admin/errors', requireAdmin, (_req, res) => res.json(metrics.recentErrors));
-app.get('/admin/players', requireAdmin, (_req, res) => res.json(Array.from(players.values()).map((p) => ({ id: p.id, name: p.name, team: p.team, room: p.room || null, kills: p.kills, deaths: p.deaths, alive: p.alive, bannedUntil: bannedPlayers.get(p.id) || 0 }))));
+app.get('/admin/players', requireAdmin, (_req, res) => {
+  const list = Array.from(players.values()).map(p => ({ id: p.id, name: p.name, team: p.team, room: p.room || null, kills: p.kills, deaths: p.deaths, alive: p.alive, bannedUntil: bannedPlayers.get(p.id) || 0 }));
+  for (const [id, target] of bannedTargets) if (target.until > Date.now() && !players.has(id))
+    list.push({ id, name: target.name, team: target.team, room: null, kills: 0, deaths: 0, alive: false, bannedUntil: target.until });
+  res.json(list);
+});
 app.post('/admin/players/:id/ban', requireAdmin, (req, res) => {
   const id = req.params.id; const minutes = Math.max(1, Math.min(1440, Number(req.body?.minutes) || 60));
   if (!players.has(id)) return res.status(404).json({ error: 'Player not found' });
-  bannedPlayers.set(id, Date.now() + minutes * 60000); io.sockets.sockets.get(id)?.disconnect(true);
+  const socket = io.sockets.sockets.get(id), until = Date.now() + minutes * 60000;
+  const p = players.get(id);
+  bannedPlayers.set(id, until);
+  // Best-effort connection ban, not a verified account ban. Shared-IP caveat is
+  // explicit in the UI; never trust a client-supplied player/user identifier.
+  bannedTargets.set(id, { address: socket?.handshake.address, name: p.name, team: p.team, until });
+  socket?.disconnect(true);
   res.json({ ok: true, bannedUntil: bannedPlayers.get(id) });
 });
-app.post('/admin/players/:id/unban', requireAdmin, (_req, res) => { bannedPlayers.delete(req.params.id); res.json({ ok: true }); });
+app.post('/admin/players/:id/unban', requireAdmin, (req, res) => { bannedPlayers.delete(req.params.id); bannedTargets.delete(req.params.id); res.json({ ok: true }); });
 app.get('/admin/matchmaking', requireAdmin, (_req, res) => res.json({ queued: matchmakingQueue.size, queuedPlayerIds: [...matchmakingQueue] }));
 app.post('/admin/broadcast', requireAdmin, (req, res) => { const message = String(req.body?.message || '').trim(); if (!message) return res.status(400).json({ error: 'Message required' }); announce(message, 'admin'); res.json({ ok: true }); });
 app.post('/admin/rotate-map', requireAdmin, (_req, res) => { rotateMap(); res.json({ ok: true, map: round.maps[round.map] }); });
@@ -240,11 +221,17 @@ try { persistentLeaderboard = JSON.parse(fs.readFileSync(LEADERBOARD_FILE, 'utf8
 app.get('/leaderboard', (_req, res) => res.json(persistentLeaderboard.slice(0, 100)));
 
 const httpServer = createServer(app);
-const io = new Server(httpServer, { cors: { origin: process.env.CLIENT_ORIGIN || '*', methods: ['GET', 'POST'] } });
+const io = new Server(httpServer, { maxHttpBufferSize: 16384, cors: { origin: process.env.CLIENT_ORIGIN || '*', methods: ['GET', 'POST'] } });
 
 // --- In-memory state ---
 const players = new Map(); // id -> player
 const bannedPlayers = new Map();
+const bannedTargets = new Map();
+io.use((socket, next) => {
+  for (const target of bannedTargets.values()) if (target.until > Date.now() && target.address === socket.handshake.address)
+    return next(new Error('This connection is temporarily banned'));
+  next();
+});
 const matchmakingQueue = new Set();
 let suspiciousInputs = 0;
 const mutedPlayers = new Set();
@@ -320,8 +307,18 @@ io.on('connection', (socket) => {
   player.team = balancedTeam();
   players.set(id, player);
   socket.emit('connection-ready', { id, reconnectable: true });
-  socket.emit('connection-ready', { id, reconnectable: true });
-  socket.onAny((event) => { metrics.socketEvents[event] = (metrics.socketEvents[event] || 0) + 1; });
+  let bucketTime = Date.now(), packetCount = 0;
+  socket.use(([event, data], next) => {
+    if (Date.now() - bucketTime >= 1000) { bucketTime = Date.now(); packetCount = 0; }
+    if (++packetCount > 200) { suspiciousInputs++; return; }
+    if (event !== 'ping-check' && data !== undefined &&
+        (data === null || typeof data !== 'object' || Array.isArray(data))) { suspiciousInputs++; return; }
+    next();
+  });
+  socket.onAny((event) => {
+    const key = Object.hasOwn(metrics.socketEvents, event) || Object.keys(metrics.socketEvents).length < 64 ? String(event).slice(0, 64) : 'other';
+    metrics.socketEvents[key] = (metrics.socketEvents[key] || 0) + 1;
+  });
   console.log(`[connect] ${id} (${players.size} online)`);
 
   socket.emit('init', {
@@ -336,7 +333,7 @@ io.on('connection', (socket) => {
   // Phase 10: optional identity (name) supplied by an authenticated client.
   socket.on('identify', ({ name, userId } = {}) => {
     if (typeof name === 'string' && name.trim()) player.name = name.trim().slice(0, 16);
-    if (typeof userId === 'string') player.userId = userId;
+    // A client-provided userId is not proof of identity.
     io.emit('scoreboard', scoreboard());
     io.emit('player-renamed', { id, name: player.name }); // Step 88
   });
@@ -346,6 +343,7 @@ io.on('connection', (socket) => {
   socket.on('join-room', ({ code } = {}) => {
     if (typeof code !== 'string' || !code.trim()) return;
     const room = code.trim().toUpperCase().slice(0, 8);
+    if (player.room) socket.leave(player.room);
     socket.join(room); player.room = room; socket.emit('room-joined', { room });
   });
   socket.on('set-mode', ({ mode } = {}) => {
@@ -376,9 +374,14 @@ io.on('connection', (socket) => {
   socket.on('input', (cmd) => {
     const p = players.get(id);
     if (!p || !p.alive) return;
-    if (typeof cmd.seq !== 'number' || cmd.seq <= p.lastSeq) { suspiciousInputs++; return; }
+    if (!cmd || !Number.isSafeInteger(cmd.seq) || cmd.seq <= p.lastSeq) { suspiciousInputs++; return; }
     if (!Number.isFinite(cmd.yaw) || !Number.isFinite(cmd.dt) || cmd.dt < 0 || cmd.dt > 0.1) { suspiciousInputs++; return; }
-    const dt = Math.max(0, Math.min(cmd.dt, 0.1));
+    const now = performance.now();
+    p.inputBudget = Math.min(0.15, (p.inputBudget ?? 0.1) + (now - (p.inputAt ?? now)) / 1000);
+    p.inputAt = now;
+    const dt = Math.min(cmd.dt, p.inputBudget);
+    p.inputBudget -= dt;
+    if (dt < cmd.dt - 0.001) suspiciousInputs++;
 
     const next = applyInput(p, {
       forward: !!cmd.forward, back: !!cmd.back, left: !!cmd.left, right: !!cmd.right,
@@ -393,8 +396,14 @@ io.on('connection', (socket) => {
   socket.on('shot', (shot) => {
     const shooter = players.get(id);
     if (!shooter || !shooter.alive) return;
+    if (!shot || typeof shot !== 'object') return;
     const { origin, dir, fireTime } = shot;
     if (!validVec(origin) || !validVec(dir)) return;
+    if (Math.hypot(origin.x - shooter.x, origin.z - shooter.z) > 6 ||
+        origin.y < 0 || origin.y > 14 || Math.hypot(dir.x, dir.y, dir.z) < 0.001 ||
+        Date.now() < (shooter.nextShotAt || 0)) { suspiciousInputs++; return; }
+    const intervals = { pistol: 280, rifle: 95, shotgun: 750, sniper: 1050 };
+    shooter.nextShotAt = Date.now() + (intervals[shot.weapon] || 280) - 10;
 
     // Normalize direction defensively.
     const len = Math.hypot(dir.x, dir.y, dir.z) || 1;
@@ -470,7 +479,7 @@ function matchPlayers() {
     const room = `match-${Date.now()}-${ids[0].slice(0, 4)}`;
     ids.forEach((queuedId) => {
       const socket = io.sockets.sockets.get(queuedId); const player = players.get(queuedId);
-      if (socket && player) { socket.join(room); player.room = room; socket.emit('match-found', { room, opponentCount: 1 }); }
+      if (socket && player) { if (player.room) socket.leave(player.room); socket.join(room); player.room = room; socket.emit('match-found', { room, opponentCount: 1 }); }
     });
   }
 }
@@ -484,6 +493,7 @@ process.on('unhandledRejection', (error) => recordError(error, 'unhandledRejecti
 
 // Keep abandoned room/player state bounded on long-lived hosted servers.
 setInterval(() => {
+  for (const [id, target] of bannedTargets) if (target.until <= Date.now()) { bannedTargets.delete(id); bannedPlayers.delete(id); }
   for (const p of players.values()) {
     if (!Number.isFinite(p.x) || !Number.isFinite(p.z)) { p.x = 0; p.z = 10; }
     if (p.history.length > 40) p.history.splice(0, p.history.length - 40);
@@ -550,7 +560,7 @@ const PORT = process.env.PORT || 3001;
 // persistence just stay off.
 await initSchema().catch((e) => console.error('[db] initSchema failed:', e.message));
 
-httpServer.listen(PORT, () => console.log(`game3d server listening on http://localhost:${PORT}`));
+httpServer.listen(PORT, process.env.HOST || undefined, () => console.log(`game3d server listening on http://localhost:${httpServer.address().port}`));
 
 // ---------------------------------------------------------------------------
 // Phase 9 game mode lives here (kept in one file for simplicity).

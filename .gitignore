@@ -3,3 +3,18 @@ node_modules/
 test/shot-*.png
 .claude/
 artifacts/
+# New local QA helpers and generated deployment staging stay off the host.
+scripts/check-*.mjs
+scripts/audit-*.mjs
+scripts/inspect-*.mjs
+**/*.test.js
+**/*.test.mjs
+**/*.spec.js
+**/*.spec.mjs
+**/tests/
+**/test/
+**/test-results/
+**/playwright-report/
+.env
+.env.*
+!.env.example

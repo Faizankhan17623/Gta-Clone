@@ -84,6 +84,9 @@ export function initMenu(h) {
   const fuel = document.createElement('input');
   fuel.type = 'checkbox'; fuel.checked = !!s.fuel;
   fuel.onchange = () => { s.fuel = fuel.checked; hooks.onSettings(); };
+  const shake = document.createElement('input');
+  shake.type = 'checkbox'; shake.checked = !!s.cameraShake;
+  shake.onchange = () => { s.cameraShake = shake.checked; hooks.onSettings(); };
 
   const box = document.createElement('div');
   box.style.cssText = 'margin-top:16px;padding:14px 22px;background:rgba(8,15,24,0.72);border:1px solid rgba(85,230,255,0.3);' + CLIP;
@@ -93,6 +96,7 @@ export function initMenu(h) {
     row('INVERT Y', inv),
     row('LOW GRAPHICS', qual),
     row('VEHICLE FUEL', fuel),
+    row('IMPACT CAMERA SHAKE', shake),
   );
   menuEl.appendChild(box);
 

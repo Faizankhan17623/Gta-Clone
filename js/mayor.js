@@ -1,3 +1,4 @@
+import { availableFunds, spendMoney } from './wallet.js';
 import * as THREE from 'three';
 import { placeStreetSite } from './site-layout.js';
 import { pointBlocked } from './city.js';
@@ -103,8 +104,8 @@ export function updateMayor(world, dt, pressed) {
     }
     world.mayorHint = `Press <b>E</b> to RUN FOR MAYOR — $${CAMPAIGN_COST} campaign, landslide guaranteed`;
     if (pressed['KeyE']) {
-      if (world.money < CAMPAIGN_COST) { showToast('The campaign chest is light'); return; }
-      world.money -= CAMPAIGN_COST;
+      if (availableFunds(world, CAMPAIGN_COST) < CAMPAIGN_COST) { showToast('The campaign chest is light'); return; }
+      spendMoney(world, CAMPAIGN_COST);
       m.elected = true;
       world.fwT = 4; // fireworks, naturally
       if (world.stats) world.stats.mayor = 1;

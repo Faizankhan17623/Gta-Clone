@@ -1,3 +1,4 @@
+import { availableFunds, spendMoney } from './wallet.js';
 import * as THREE from 'three';
 import { blockStart, BLOCK, N } from './city.js';
 import { showToast, showNews } from './hud.js';
@@ -261,8 +262,8 @@ export function updateShops(state, world, dt, keys, pressed) {
       if (!pressed['Digit' + (i + 1)] || state.casinoCd > 0) continue;
       state.casinoCd = 1.2;
       const bet = bets[i];
-      if (world.money < bet) { showToast('Not enough cash'); continue; }
-      world.money -= bet;
+      if (availableFunds(world, bet) < bet) { showToast('Not enough cash'); continue; }
+      spendMoney(world, bet);
       // mayoral casino regulation: HOUSE RULES / NORMAL / LOOSE SLOTS
       const odds = [0, 1, 2][world.policy?.casino ?? 1];
       const jackpotAt = 0.02 + odds * 0.03; // 2% / 5% / 8%
@@ -300,8 +301,8 @@ export function updateShops(state, world, dt, keys, pressed) {
     for (let i = 0; i < deals.length; i++) {
       if (!pressed['Digit' + (i + 1)]) continue;
       const deal = deals[i];
-      if (world.money < deal.cost) { showToast('Not enough cash'); continue; }
-      world.money -= deal.cost;
+      if (availableFunds(world, deal.cost) < deal.cost) { showToast('Not enough cash'); continue; }
+      spendMoney(world, deal.cost);
       const v = makeVehicle(world.scene, state.dealerPos.x + 7, state.dealerPos.z, 0, deal.color, deal.opts);
       world.parked.push(v);
       sfxMissionPass();
@@ -334,9 +335,9 @@ export function updateShops(state, world, dt, keys, pressed) {
         { key: 'neon', cost: 300, name: 'NEON UNDERGLOW' },
       ];
       if (pressed['Digit1']) {
-        if (world.money < 200) showToast('Not enough cash');
+        if (availableFunds(world, 200) < 200) showToast('Not enough cash');
         else {
-          world.money -= 200;
+          spendMoney(world, 200);
           m.paint = m.paint == null ? 0 : (m.paint + 1) % GARAGE_PAINTS.length;
           applyGarageMods(world, state.garageVeh);
           sfxPickup();
@@ -348,9 +349,9 @@ export function updateShops(state, world, dt, keys, pressed) {
         if (!pressed['Digit' + (i + 2)]) continue;
         const u = mods[i];
         if (m[u.key]) showToast('Already fitted');
-        else if (world.money < u.cost) showToast('Not enough cash');
+        else if (availableFunds(world, u.cost) < u.cost) showToast('Not enough cash');
         else {
-          world.money -= u.cost;
+          spendMoney(world, u.cost);
           m[u.key] = true;
           applyGarageMods(world, state.garageVeh);
           sfxMissionPass();
@@ -374,10 +375,10 @@ export function updateShops(state, world, dt, keys, pressed) {
       const u = SUITS[i];
       if (world.suitsOwned[u.key]) {
         wearSuit(world, u.key);
-      } else if (world.money < u.cost) {
+      } else if (availableFunds(world, u.cost) < u.cost) {
         showToast('Not enough cash');
       } else {
-        world.money -= u.cost;
+        spendMoney(world, u.cost);
         world.suitsOwned[u.key] = true;
         wearSuit(world, u.key);
         sfxMissionPass();
@@ -399,9 +400,9 @@ export function updateShops(state, world, dt, keys, pressed) {
       if (!pressed['Digit' + (i + 1)]) continue;
       const u = UPG[i];
       if (world.upgrades[u.key]) showToast('Already owned');
-      else if (world.money < u.cost) showToast('Not enough cash');
+      else if (availableFunds(world, u.cost) < u.cost) showToast('Not enough cash');
       else {
-        world.money -= u.cost;
+        spendMoney(world, u.cost);
         world.upgrades[u.key] = true;
         applyUpgrades(world);
         if (u.key === 'armor') player.health = world.maxHealth;

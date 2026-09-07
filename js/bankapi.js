@@ -6,7 +6,14 @@
 // and can be overridden with ?bankapi=<url> for local testing against 3099.
 
 const params = new URLSearchParams(location.search);
-const BASE = (params.get('bankapi') || '').replace(/\/$/, '') + '/api/bank';
+// A shared URL must never redirect stored bearer credentials to another host.
+let override = '';
+if (['localhost', '127.0.0.1'].includes(location.hostname) && params.get('bankapi')) {
+  const candidate = new URL(params.get('bankapi'), location.origin);
+  if (['localhost', '127.0.0.1'].includes(candidate.hostname) && ['http:', 'https:'].includes(candidate.protocol))
+    override = candidate.origin;
+}
+const BASE = override + '/api/bank';
 const LS_KEY = 'opencity-bank-cred-v1';
 
 let cred = null;   // { account_no, handle, token }
@@ -21,6 +28,7 @@ async function call(path, { method = 'GET', body, auth = true } = {}) {
     method,
     headers,
     body: body ? JSON.stringify(body) : undefined,
+    signal: AbortSignal.timeout(10000),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw Object.assign(new Error(data.error || res.statusText), { status: res.status, data });
@@ -39,7 +47,7 @@ function persist() {
 // Ping the server; returns true if the bank API is up.
 export async function probe() {
   try {
-    const r = await fetch(BASE.replace('/api/bank', '/health'));
+    const r = await fetch(BASE.replace('/api/bank', '/health'), { signal: AbortSignal.timeout(5000) });
     const j = await r.json();
     online = !!j.bank;
   } catch { online = false; }
