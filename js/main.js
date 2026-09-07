@@ -154,63 +154,66 @@ import { initArmor, updateArmor } from './armor.js';
 import { initFishing, updateFishing } from './fishing.js';
 import { initNightclub, updateNightclub } from './nightclub.js';
 import { initSkateboard, updateSkateboard } from './skateboard.js';
-import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { resolveTier, tierSpec, createEnvironment, createShadowRig, createPostChain } from './graphics.js';
 
 // ---------- renderer / scene ----------
 
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+// Graphics tier is decided once from the saved settings + a device probe.
+// `gfx` (the spec) gates every heavy feature from here on.
+const gfxTier = resolveTier((() => {
+  try { return JSON.parse(localStorage.getItem('opencity-save-v1') || '{}').settings || {}; }
+  catch { return {}; }
+})());
+let gfx = tierSpec(gfxTier);
+
+const renderer = new THREE.WebGLRenderer({ antialias: gfxTier !== 'low', powerPreference: 'high-performance' });
 // Count the whole post-processing frame, rather than only its final screen pass.
 renderer.info.autoReset = false;
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(('ontouchstart' in window || navigator.maxTouchPoints > 0)
-  ? 1 : Math.min(window.devicePixelRatio, 2)); // phones render lighter
+renderer.setPixelRatio(gfx.dpr);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping; // film-grade color response
-renderer.toneMappingExposure = 1.1;
+renderer.toneMappingExposure = 1.05;
 renderer.domElement.id = 'game';
 document.body.prepend(renderer.domElement);
 
 const scene = new THREE.Scene();
 scene.fog = new THREE.Fog(0x9db8d2, 150, 520);
 
-// soft studio reflections for car paint and glass
-const pmrem = new THREE.PMREMGenerator(renderer);
-scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-
 const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1900);
 
-// post-processing: subtle bloom makes lit windows, lamps and explosions glow
-const composer = new EffectComposer(renderer);
-composer.addPass(new RenderPass(scene, camera));
-const bloom = new UnrealBloomPass(
-  new THREE.Vector2(window.innerWidth, window.innerHeight), 0.28, 0.55, 0.82
-);
-composer.addPass(bloom);
-composer.addPass(new OutputPass());
+// Real outdoor environment map (procedural sky bake) drives reflections on car
+// paint, glass and metal. Refreshed by the day/night code as the sun moves.
+const env = createEnvironment(renderer, gfxTier);
+scene.environment = env.texture;
 
 const hemi = new THREE.HemisphereLight(0xd5e4f2, 0x4a463c, 0.9);
 scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xfff0d0, 1.3);
-sun.castShadow = true;
-sun.shadow.mapSize.set(...(('ontouchstart' in window || navigator.maxTouchPoints > 0) ? [1024, 1024] : [2048, 2048]));
-sun.shadow.camera.left = -90;
-sun.shadow.camera.right = 90;
-sun.shadow.camera.top = 90;
-sun.shadow.camera.bottom = -90;
-sun.shadow.camera.far = 600;
 scene.add(sun);
 scene.add(sun.target);
+
+// Wide, camera-facing sun shadow (see graphics.js). Owns the sun's position.
+const shadowRig = createShadowRig(scene, camera, sun, gfxTier);
+
+// Post-processing chain, built per tier: RenderPass + (GTAO high only) + bloom
+// + SMAA + (colour-grade LUT high only). `bloom` is exposed so the day/night
+// code can breathe its strength with the city lights.
+const post = createPostChain(renderer, scene, camera, gfxTier, {
+  ao: (() => {
+    try { return !!JSON.parse(localStorage.getItem('opencity-save-v1') || '{}').settings?.ao; }
+    catch { return false; }
+  })(),
+});
+const composer = post.composer;
+const bloom = post.bloom;
 
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
-  composer.setSize(window.innerWidth, window.innerHeight);
+  post.setSize(window.innerWidth, window.innerHeight);
 });
 
 // ---------- world ----------
@@ -234,6 +237,7 @@ for (const child of scene.children) {
 const sky = createSkyDome(scene);
 const weather = initWeather(scene);
 initEffects(scene);
+
 initHUD();
 initInput();
 initTouch(); // phones get a joystick + buttons
@@ -303,6 +307,8 @@ const world = {
   wantedTimer: 0,
   bustedT: 0,
   busted: false,
+  roadWet: 0, // 0 dry .. 1 soaked; driven by weather, decays after rain
+
   money: isNewPlayer ? STARTING_CASH : (save.money || 0),
   damageFlash: 0,
   time: 0,
@@ -326,7 +332,7 @@ const world = {
   ach: { ...(save.ach || {}) },
   suitSaved: save.suit || 'street',
   suitsOwnedSaved: save.suits || {},
-  settings: { volume: 1, sens: 1, invertY: false, lowGfx: false, ...(save.settings || {}) },
+  settings: { volume: 1, sens: 1, invertY: false, lowGfx: false, ao: false, ...(save.settings || {}) },
   perks: { style: 1, melee: 1, webDur: 6, decay: 24, busted: 1.6 },
   waypoint: null,
   barks: [],
@@ -559,9 +565,10 @@ const wpMarker = new THREE.Group();
 function applySettings() {
   const st = world.settings;
   setMasterVolume(st.volume);
-  sun.castShadow = !st.lowGfx;
-  renderer.setPixelRatio(st.lowGfx ? 1 : (isTouch ? 1 : Math.min(window.devicePixelRatio, 2)));
-  composer.setPixelRatio(renderer.getPixelRatio());
+  // The shadow rig and post chain (including the AO pass) are built once at
+  // startup, so a tier change (lowGfx) or an AO toggle takes effect on the
+  // next reload. Flag it so the menu can show the hint.
+  world._tierChangePending = resolveTier(st) !== gfxTier || !!st.ao !== !!post.gtao;
   saveGame();
 }
 
@@ -1018,8 +1025,10 @@ function updateCamera(dt) {
   if (!world.settings.cameraShake) world.shake = 0;
 
   const focus = player.inHeli ? player.inHeli.pos : player.inCar ? player.inCar.pos : player.pos;
-  sun.position.copy(focus).addScaledVector(world.sunDir, 180);
-  sun.target.position.set(focus.x, 0, focus.z);
+  // The shadow rig owns the sun's position/target: it centres the shadow box on
+  // a point ahead of the camera and texel-snaps it. `world.sunDir` still drives
+  // the direction (set by applyDayNight -> shadowRig.setSunDir).
+  shadowRig.update(focus);
 }
 
 // ---------- player on foot ----------
@@ -2863,7 +2872,7 @@ function update(dt) {
 
   // day/night cycle: 1 real minute = 1 game hour
   world.clock = (world.clock + dt / 60) % 24;
-  const dn = applyDayNight(world.clock, { scene, sun, hemi, sky, camera, city });
+  const dn = applyDayNight(world.clock, { scene, sun, hemi, sky, camera, city, shadowRig, env });
   world.sunDir.copy(dn.sunDir);
 
   // weather: rain dims the sky and thickens the fog; lightning washes the scene
@@ -2886,6 +2895,21 @@ function update(dt) {
   world.rainI = wx.intensity; // myths check the weather too
   world.lightningFlash = wx.flash; // storm chaser watches for the strike window
 
+  // Wet roads: wetness chases the rain up quickly and dries off over ~40 s.
+  // A wet road is smoother and mirrors the sky/lights far more.
+  const wetTarget = Math.min(1, wx.intensity * 1.4);
+  world.roadWet += (wetTarget - world.roadWet) * Math.min(1, dt * (wetTarget > world.roadWet ? 1.5 : 0.025));
+  if (Math.abs(world.roadWet - (world._roadWetApplied ?? -1)) > 0.01) {
+    world._roadWetApplied = world.roadWet;
+    const w = world.roadWet;
+    for (const m of city.roadMats) {
+      m.roughness = m.userData.dryRoughness * (1 - w * 0.72);
+      m.metalness = w * 0.12;
+      m.envMapIntensity = 0.35 + w * 1.1;
+      m.needsUpdate = true;
+    }
+  }
+
   // outbreak nights close in: thicker fog, dimmer sky
   if (world.zombies?.active) {
     scene.fog.near *= 0.55;
@@ -2903,8 +2927,8 @@ function update(dt) {
   }
 
   // bloom breathes with the night: stronger glow when the city lights are on
-  bloom.strength = world.settings.lowGfx ? 0 : 0.22 + dn.glow * 0.33;
-  bloom.enabled = !world.settings.lowGfx;
+  // (null on the low tier, where the pass isn't in the chain at all)
+  if (bloom) bloom.strength = 0.2 + dn.glow * 0.32;
 
   // headlights when driving after dark
   const pcar = player.inCar;

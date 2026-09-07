@@ -22,8 +22,14 @@ export function createCarMesh(color, opts = {}) {
   }
   const group = new THREE.Group();
   // metallic paint that picks up environment reflections
-  const mat = (c, e) => new THREE.MeshStandardMaterial({ color: c, emissive: e || 0x000000, metalness: 0.7, roughness: 0.32 });
-  const glassMat = (c) => new THREE.MeshStandardMaterial({ color: c, metalness: 0.9, roughness: 0.12 });
+  const mat = (c, e) => new THREE.MeshPhysicalMaterial({
+    color: c, emissive: e || 0x000000, metalness: 0.55, roughness: 0.4,
+    clearcoat: 0.7, clearcoatRoughness: 0.2, envMapIntensity: 1.1,
+  });
+  const glassMat = (c) => new THREE.MeshPhysicalMaterial({
+    color: c, metalness: 0, roughness: 0.09,
+    clearcoat: 1, clearcoatRoughness: 0.06, envMapIntensity: 1.5, reflectivity: 0.6,
+  });
 
   const bodyColor = opts.police ? '#f2f2f2' : color;
   const body = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.55, 4.4), mat(bodyColor));

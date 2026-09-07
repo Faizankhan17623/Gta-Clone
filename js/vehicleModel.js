@@ -80,10 +80,22 @@ const plateParts = partsGeometry([[0, .51, 2.21, .4, .105, .02], [0, .6, -2.225,
 
 export function createSedanMesh(color, { police = false } = {}) {
   const group = new THREE.Group(); group.name = 'Open City sedan';
-  const paint = new THREE.MeshStandardMaterial({ color: police ? '#e0e2df' : color, metalness: .62, roughness: .3 });
-  const glass = new THREE.MeshStandardMaterial({ color: '#283f4b', metalness: .55, roughness: .16 });
+  // Automotive clearcoat: a coloured metallic base under a thin glossy lacquer.
+  // Keeps `.color` (garage respray) and metalness/roughness (damage darkening).
+  const paint = new THREE.MeshPhysicalMaterial({
+    color: police ? '#e0e2df' : color, metalness: .5, roughness: .38,
+    clearcoat: 1, clearcoatRoughness: .12, envMapIntensity: 1.15,
+  });
+  // Windscreen glass: dark, low-roughness, strongly reflective. True
+  // transmission needs its own render pass (too costly for city traffic), so
+  // this fakes depth with a tinted reflective dielectric.
+  const glass = new THREE.MeshPhysicalMaterial({
+    color: '#1b2a33', metalness: 0, roughness: .08,
+    clearcoat: 1, clearcoatRoughness: .05, envMapIntensity: 1.6,
+    reflectivity: .6,
+  });
   const trim = new THREE.MeshStandardMaterial({ color: '#22282b', roughness: .75 });
-  const chrome = new THREE.MeshStandardMaterial({ color: '#9ba6ab', metalness: .88, roughness: .24 });
+  const chrome = new THREE.MeshStandardMaterial({ color: '#9ba6ab', metalness: .88, roughness: .24, envMapIntensity: 1.3 });
   const rubber = new THREE.MeshStandardMaterial({ color: '#191b1d', roughness: .95 });
   const add = (geometry, mat, parent = group) => {
     const mesh = new THREE.Mesh(geometry, mat); mesh.castShadow = true; mesh.receiveShadow = true;

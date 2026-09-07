@@ -2,40 +2,72 @@ import * as THREE from 'three';
 
 // Procedural articulated human. The old shoulder/hip handles and the first
 // three root children are retained for gameplay, wardrobe and character swaps.
-const sphere = new THREE.SphereGeometry(1, 12, 8);
+//
+// Limbs are capsules (rounded ends) rather than hard cylinders so joints read
+// as anatomy; the torso tapers from shoulders to waist; the head has a slight
+// jaw. Same rig groups (lArm/rArm/lLeg/rLeg + elbow/knee), same first three
+// root children (torso -> head -> hair), so wardrobe and swaps are unchanged.
+const sphere = new THREE.SphereGeometry(1, 16, 12);
 const cylinder = new THREE.CylinderGeometry(1, .88, 1, 10);
-const torsoGeometry = new THREE.CylinderGeometry(.27, .205, .62, 10);
-const hairGeometry = new THREE.SphereGeometry(1, 12, 6, 0, Math.PI * 2, 0, Math.PI * .55);
+const capsule = new THREE.CapsuleGeometry(1, 1.1, 4, 12); // r=1, straight section 1.1
+const torsoGeometry = (() => {
+  // Lathe a rounded torso: narrow waist, broader chest, soft shoulders.
+  const pts = [
+    new THREE.Vector2(0.001, -0.34),
+    new THREE.Vector2(0.19, -0.33),
+    new THREE.Vector2(0.205, -0.12),
+    new THREE.Vector2(0.235, 0.10),
+    new THREE.Vector2(0.27, 0.24),
+    new THREE.Vector2(0.255, 0.30),
+    new THREE.Vector2(0.001, 0.31),
+  ];
+  const g = new THREE.LatheGeometry(pts, 16);
+  g.computeVertexNormals();
+  return g;
+})();
+const hairGeometry = new THREE.SphereGeometry(1, 14, 8, 0, Math.PI * 2, 0, Math.PI * .58);
 const box = new THREE.BoxGeometry(1, 1, 1);
+const shoeGeometry = (() => {
+  const g = new THREE.CapsuleGeometry(0.5, 1.0, 3, 8);
+  g.rotateX(Math.PI / 2);
+  g.scale(1, 0.62, 1);
+  return g;
+})();
 
 export function createHumanRig({ shirt = '#ffffff', pants = '#2c3e66', skin = '#c98e63', hair = '#221a14' } = {}) {
   const group = new THREE.Group(); group.name = 'Open City articulated character';
   const makeMat = (color, roughness = .85) => new THREE.MeshStandardMaterial({ color, roughness });
-  const palette = { shirt: makeMat(shirt), pants: makeMat(pants), skin: makeMat(skin, .72), hair: makeMat(hair), shoes: makeMat('#24272a'), eyes: makeMat('#1c1b19'), whites: makeMat('#c8c3b6') };
+  const palette = { shirt: makeMat(shirt), pants: makeMat(pants), skin: makeMat(skin, .68), hair: makeMat(hair), shoes: makeMat('#24272a', .6), eyes: makeMat('#1c1b19'), whites: makeMat('#c8c3b6') };
   const add = (parent, geo, mat, x, y, z, sx = 1, sy = 1, sz = 1) => {
     const mesh = new THREE.Mesh(geo, mat); mesh.position.set(x, y, z); mesh.scale.set(sx, sy, sz);
     mesh.castShadow = true; mesh.receiveShadow = true; parent.add(mesh); return mesh;
   };
-  const torso = add(group, torsoGeometry, palette.shirt, 0, 1.2, 0, 1, 1, .72);
-  const head = add(group, sphere, palette.skin, 0, 1.74, .015, .155, .215, .17);
-  const hairMesh = add(group, hairGeometry, palette.hair, 0, 1.755, .008, .163, .217, .179);
+  const torso = add(group, torsoGeometry, palette.shirt, 0, 1.24, 0, 1, 1, .74);
+  const head = add(group, sphere, palette.skin, 0, 1.75, .015, .143, .175, .152);
+  const hairMesh = add(group, hairGeometry, palette.hair, 0, 1.762, .006, .152, .181, .166);
   torso.name = 'shirt'; head.name = 'head'; hairMesh.name = 'hair';
+  // slight jaw / chin under the head sphere
+  add(group, sphere, palette.skin, 0, 1.688, .028, .112, .10, .123);
 
   function arm(side) {
     const pivot = new THREE.Group(); pivot.position.set(side * .315, 1.46, 0); group.add(pivot);
-    add(pivot, cylinder, palette.skin, 0, -.15, 0, .085, .3, .085);
-    add(pivot, cylinder, palette.shirt, 0, -.07, 0, .101, .17, .101);
+    // child[0] is the skin part (applySuit recolors it); the sleeve sits over it.
+    add(pivot, capsule, palette.skin, 0, -.19, 0, .07, .085, .07);
+    add(pivot, capsule, palette.shirt, 0, -.1, 0, .088, .12, .088); // sleeve
     const elbow = new THREE.Group(); elbow.position.y = -.3; pivot.add(elbow);
-    add(elbow, cylinder, palette.skin, 0, -.14, 0, .072, .28, .072);
-    add(elbow, sphere, palette.skin, 0, -.3, .012, .068, .095, .05);
+    add(elbow, capsule, palette.skin, 0, -.13, 0, .062, .11, .062);
+    // hand
+    add(elbow, sphere, palette.skin, 0, -.31, .01, .062, .078, .05);
+    add(elbow, box, palette.skin, 0, -.34, .012, .09, .09, .055);
     return { pivot, elbow };
   }
   function leg(side) {
     const pivot = new THREE.Group(); pivot.position.set(side * .135, .9, 0); group.add(pivot);
-    add(pivot, cylinder, palette.pants, 0, -.21, 0, .115, .42, .12);
+    // child[0] is the thigh (applySuit recolors it to the trouser colour).
+    add(pivot, capsule, palette.pants, 0, -.2, 0, .108, .16, .112);
     const knee = new THREE.Group(); knee.position.y = -.42; pivot.add(knee);
-    add(knee, cylinder, palette.pants, 0, -.19, 0, .092, .38, .096);
-    add(knee, box, palette.shoes, 0, -.42, .055, .19, .12, .31);
+    add(knee, capsule, palette.pants, 0, -.18, 0, .088, .15, .092);
+    add(knee, shoeGeometry, palette.shoes, 0, -.4, .07, .12, .12, .19);
     return { pivot, knee };
   }
   const leftArm = arm(-1), rightArm = arm(1), leftLeg = leg(-1), rightLeg = leg(1);

@@ -102,10 +102,16 @@ export function createSkyDome(scene) {
 }
 
 const _sunDir = new THREE.Vector3();
+const _envGround = new THREE.Color(0x54524a);
+const _envScratch = new THREE.Color();
+
+// How often the baked environment map is refreshed as the sun moves. The bake
+// is a few ms, so we only redo it when the sun has swung noticeably.
+let _lastEnvHour = -99;
 
 // Apply time-of-day to the whole scene. Returns the glow factor (1 = full night).
 export function applyDayNight(hours, ctx) {
-  const { scene, sun, hemi, sky, camera, city } = ctx;
+  const { scene, sun, hemi, sky, camera, city, shadowRig, env } = ctx;
   const s = sample(hours);
 
   // sun travels east -> west between 06:00 and 18:00; otherwise a dim "moon"
@@ -119,6 +125,11 @@ export function applyDayNight(hours, ctx) {
 
   sun.color.copy(s.sun);
   sun.intensity = s.sunI;
+  // CSM (when present) owns the shadow-casting lights; keep them in step.
+  if (shadowRig) {
+    shadowRig.setSunDir(_sunDir);
+    shadowRig.setColor(s.sun, s.sunI);
+  }
   hemi.intensity = s.hemiI;
   hemi.color.copy(s.top).lerp(_a.setHex(0xd5e4f2), 0.35);
   hemi.groundColor.setHex(0x4a463c).multiplyScalar(0.4 + (1 - s.glow) * 0.6);
@@ -135,7 +146,21 @@ export function applyDayNight(hours, ctx) {
   scene.fog.color.copy(s.hor);
   scene.fog.near = 150 - s.glow * 40;
   scene.fog.far = 520 - s.glow * 140;
-  if ('environmentIntensity' in scene) scene.environmentIntensity = 0.25 + (1 - s.glow) * 0.75;
+  if ('environmentIntensity' in scene) scene.environmentIntensity = 0.32 + (1 - s.glow) * 0.9;
+
+  // Rebake the environment map when the sky has shifted enough (~every 20 game
+  // minutes) so reflections track dawn/dusk/night colour instead of staying noon.
+  if (env && Math.abs(hours - _lastEnvHour) > 0.33) {
+    _lastEnvHour = hours;
+    scene.environment = env.refresh({
+      top: s.top,
+      horizon: s.hor,
+      ground: _envGround.setHex(0x54524a).lerp(_envScratch.copy(s.hor), 0.3 * s.glow),
+      sunDir: _sunDir,
+      sunColor: s.sun,
+      sunI: 0.35 + s.sunI * (1 - s.glow),
+    });
+  }
 
   // city lights up at night
   for (const m of city.windowMats) m.emissiveIntensity = 0.06 + s.glow * 1.15;
