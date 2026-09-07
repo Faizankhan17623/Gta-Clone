@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { seededRandom, buildRoadDetails, createDistrictManager } from './district.js';
+import { asphaltPBR } from './textures.js';
 
 // City layout: N x N blocks separated by roads, surrounded by a perimeter road.
 export const BLOCK = 60;
@@ -83,29 +84,7 @@ function windowTextures(base) {
   return { map, emissive };
 }
 
-function roadTexture() {
-  const random = seededRandom(104);
-  const c = document.createElement('canvas');
-  c.width = 512; c.height = 512;
-  const g = c.getContext('2d');
-  g.fillStyle = '#55575a';
-  g.fillRect(0, 0, 512, 512);
-  for (let i = 0; i < 22000; i++) {
-    g.fillStyle = random() > .5 ? '#ffffff15' : '#0000001c';
-    g.fillRect(random() * 512, random() * 512, 1 + random(), 1 + random());
-  }
-  // Subtle tyre wear. Markings are separate geometry so junctions stay clear.
-  for (const x of [110, 146, 366, 402]) {
-    const wear = g.createLinearGradient(x - 12, 0, x + 12, 0);
-    wear.addColorStop(0, '#00000000'); wear.addColorStop(.5, '#00000017'); wear.addColorStop(1, '#00000000');
-    g.fillStyle = wear; g.fillRect(x - 12, 0, 24, 512);
-  }
-  const t = new THREE.CanvasTexture(c);
-  t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.anisotropy = 4;
-  return t;
-}
+// Road surface is now a procedural PBR set - see asphaltPBR() in textures.js.
 
 function billboardTexture() {
   const words = ['VICE 24H', 'CLUCKIN', 'OPEN CITY', 'SPRUNK', 'LIQUOR', 'MOTEL', 'CASINO', 'BURGER'];
@@ -179,37 +158,44 @@ export function buildCity(scene) {
   slab.receiveShadow = true;
   scene.add(slab);
 
-  // roads. Materials are collected in `roadMats` so the weather code can wet
-  // them down (drop roughness, lift reflections) during and after rain.
+  // roads. One procedural asphalt PBR set (colour + normal + roughness) drives
+  // every segment; all segments are ROAD x CITY planes with the same UV scale,
+  // so a single shared material per orientation is enough. Materials are kept
+  // in `roadMats` so the weather code can wet them down (drop roughness, lift
+  // reflections) during and after rain. The normal map means real asphalt grain
+  // now catches the low sun and the wet-road reflections.
   const roadMats = [];
-  const roadTex = roadTexture();
+  const asphalt = asphaltPBR({ size: 256, anisotropy: 8 });
+  const repY = CITY / ROAD;
+  for (const t of [asphalt.map, asphalt.normalMap, asphalt.roughnessMap]) {
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.repeat.set(3, repY * 0.5);
+  }
   const roadGeo = new THREE.PlaneGeometry(ROAD, CITY);
   roadGeo.rotateX(-Math.PI / 2);
+  const makeRoadMat = () => {
+    const m = new THREE.MeshStandardMaterial({
+      map: asphalt.map, normalMap: asphalt.normalMap, roughnessMap: asphalt.roughnessMap,
+      roughness: 1, metalness: 0, envMapIntensity: .35,
+    });
+    m.normalScale.set(0.8, 0.8);
+    m.userData.dryRoughness = 1;
+    roadMats.push(m);
+    return m;
+  };
+  const roadMatV = makeRoadMat();
+  const roadMatH = makeRoadMat();
   for (let i = 0; i <= N; i++) {
     const cx = roadCenter(i);
     roadXs.push(cx);
     roadZs.push(cx);
 
-    const tv = roadTex.clone();
-    tv.needsUpdate = true;
-    tv.wrapT = THREE.RepeatWrapping;
-    tv.repeat.set(1, CITY / ROAD);
-    const mv = new THREE.MeshStandardMaterial({ map: tv, roughness: .92, metalness: .0, envMapIntensity: .35 });
-    mv.userData.dryRoughness = .92;
-    roadMats.push(mv);
-    const v = new THREE.Mesh(roadGeo, mv);
+    const v = new THREE.Mesh(roadGeo, roadMatV);
     v.position.set(cx, 0.04, 0);
     v.receiveShadow = true;
     scene.add(v);
 
-    const th = roadTex.clone();
-    th.needsUpdate = true;
-    th.wrapT = THREE.RepeatWrapping;
-    th.repeat.set(1, CITY / ROAD);
-    const mh = new THREE.MeshStandardMaterial({ map: th, roughness: .92, metalness: .0, envMapIntensity: .35 });
-    mh.userData.dryRoughness = .92;
-    roadMats.push(mh);
-    const h = new THREE.Mesh(roadGeo, mh);
+    const h = new THREE.Mesh(roadGeo, roadMatH);
     h.position.set(0, 0.08, cx);
     h.rotation.y = Math.PI / 2;
     h.receiveShadow = true;
@@ -384,7 +370,7 @@ export function buildCity(scene) {
   const spawn = new THREE.Vector3(roadCenter(mid), 0, roadCenter(mid));
 
   const city = { colliders, pedRects, roadXs, roadZs, spawn, helipads, windowMats, lampGlowMat: glowMat, bulbMat, buildings, walks, roadMats };
-  city.roads = buildRoadDetails(scene, { roadXs, roadZs, roadWidth: ROAD, blockSize: BLOCK, surfaceMap: roadTex });
+  city.roads = buildRoadDetails(scene, { roadXs, roadZs, roadWidth: ROAD, blockSize: BLOCK, surfaceMap: asphalt.map });
   city.district = createDistrictManager(scene, city);
   return city;
 }

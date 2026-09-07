@@ -1,5 +1,14 @@
 import { invalidateColliderGrid } from './city.js';
 import * as THREE from 'three';
+import { concretePBR } from './textures.js';
+
+// One shared concrete PBR set for every district's pavement (built lazily so
+// the module import stays side-effect free until a district is constructed).
+let _concrete = null;
+function concreteSet() {
+  if (!_concrete) _concrete = concretePBR({ size: 256, anisotropy: 8 });
+  return _concrete;
+}
 
 // Original, reusable environment models. Dimensions are in world metres.
 // Building bounds stay authoritative for collision, landing and web anchors.
@@ -280,8 +289,16 @@ export function buildSpawnDistrict(scene, city, area = { bi: 4, bj: 4, props: tr
     }
   });
 
+  // Pavement: the existing canvas paving as colour + slab seams, plus a shared
+  // concrete normal/roughness set so the surface has grain that catches light.
   const paving = makePavingTexture(); paving.repeat.set(30, 30);
-  const pavingMat = material('#ffffff', .94); pavingMat.map = paving;
+  const cc = concreteSet();
+  for (const t of [cc.normalMap, cc.roughnessMap]) t.repeat.set(30, 30);
+  const pavingMat = new THREE.MeshStandardMaterial({
+    color: '#ffffff', map: paving, normalMap: cc.normalMap, roughnessMap: cc.roughnessMap,
+    roughness: 1, metalness: 0,
+  });
+  pavingMat.normalScale.set(0.5, 0.5);
   const crowns = [];
   const walks = city.walks.filter(inArea);
   const originalWalkMaterials = walks.map(w => w.mesh.material);
