@@ -204,6 +204,31 @@ player can restore on another device. No deployment or push by this session.
 `server/.env`). Nothing else — no keys, no new services. Without it the cloud
 routes just 503 and the game is unchanged.
 
+## Mobile touch UI declutter — local only
+
+The phone HUD showed ~24 on-screen buttons at once. `js/touch.js` reworked:
+
+- **Core set only, ~9 buttons on foot:** WEB, FIRE, F (punch), JUMP, ▼, E, Q,
+  WPN, and the ⋯ tray toggle. Verified no overlaps and nothing off-screen on
+  an 844×390 landscape phone.
+- **Buttons swap with player state.** `setTouchMode('foot'|'vehicle')` (called
+  from the main loop when `player.inCar/inHeli/inBoat/inPlane` changes) hides
+  the on-foot buttons in a vehicle and shows FIRE, ⏸ BRK, E, 📻 — ~5 buttons
+  while driving.
+- **⋯ tray** holds the 8 rare buttons (MAP, pause, 📸, 🎬 replay, JET, REX,
+  VIG, 👑 legend) in a 2-col grid; collapsed by default, one-shot buttons
+  auto-close it. `showTouchUI(true)` resets it closed.
+- Dropped from the permanent HUD: VIEW/AIM (first/third-person + aim toggle —
+  niche on mobile; holding FIRE already aims), and the second utility row.
+  Everything is still reachable (tray, or the keyboard on a hybrid device).
+- Start-screen mobile hint updated.
+
+Verification: `node --check`; `mobiletest` browser suite 10/10 (joystick, jump,
+web, fire, kiosk digits, FIGHT/BUY context, boat) 0 errors; `fulltest` still
+all PASS (desktop path unaffected — `initTouch` early-returns when not touch);
+new emulated-phone test — 9 buttons on foot / 5 in vehicle / +8 with the tray
+open, zero overlaps, none off a 844×390 viewport.
+
 Verification: `node --check` on all touched files; `node --test
 test/input.test.mjs test/wallet.test.mjs` (7/7); browser suites fulltest
 (all PASS, 0 runtime errors), newfeatures (18/18, 0 errors), keytest

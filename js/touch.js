@@ -30,6 +30,10 @@ const BTN =
 let uiRoot = null;
 const kioskBtns = [];
 const ctxBtns = {};
+const groups = { foot: [], vehicle: [], tray: [] }; // buttons tagged by when they're relevant
+let trayOpen = false;
+let trayToggleBtn = null;
+let lastMode = 'foot';
 
 // Digit buttons shown while the player stands at a shop kiosk.
 export function showKioskButtons(on) {
@@ -43,9 +47,31 @@ export function showContextButtons(states) {
   }
 }
 
+// Swap the always-on button set between on-foot and in-vehicle so the screen
+// only ever shows controls that do something right now. Called from main.js.
+export function setTouchMode(mode) {
+  if (!uiRoot || mode === lastMode) return;
+  lastMode = mode;
+  for (const b of groups.foot) b.style.display = mode === 'foot' ? 'flex' : 'none';
+  for (const b of groups.vehicle) b.style.display = mode === 'vehicle' ? 'flex' : 'none';
+}
+
+// The "⋯" tray holds the rare buttons (map, photo, jetpack, REX, legend...).
+// Collapsed by default so the HUD isn't a wall of circles.
+function applyTray() {
+  for (const b of groups.tray) b.style.display = trayOpen ? 'flex' : 'none';
+  if (trayToggleBtn) trayToggleBtn.textContent = trayOpen ? '✕' : '⋯';
+}
+
 // Hidden until the game actually starts, so the menu stays tappable.
 export function showTouchUI(on) {
   if (uiRoot) uiRoot.style.display = on ? 'block' : 'none';
+  if (on) {
+    trayOpen = false;
+    applyTray();
+    // re-assert the current mode's visibility (buttons may have been toggled)
+    const m = lastMode; lastMode = null; setTouchMode(m);
+  }
 }
 
 export function initTouch() {
@@ -147,8 +173,11 @@ export function initTouch() {
 
   // ---- buttons ----
   let downHeld = false;
-  function button(label, css, onDown, onUp) {
-    const b = el(BTN + 'pointer-events:auto;' + css, label);
+  // `group`: 'foot' | 'vehicle' | 'tray' | 'always'. Foot/vehicle swap with the
+  // player's state; tray buttons hide behind the ⋯ toggle.
+  function button(label, css, onDown, onUp, group = 'always') {
+    const hidden = group === 'tray' ? 'display:none;' : '';
+    const b = el(BTN + 'pointer-events:auto;' + hidden + css, label);
     b.addEventListener('touchstart', (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -163,56 +192,75 @@ export function initTouch() {
     b.addEventListener('touchend', up);
     b.addEventListener('touchcancel', up);
     ui.appendChild(b);
+    if (groups[group]) groups[group].push(b);
     return b;
   }
 
   const press = (k) => { setInputKey('touch-button', k, true); };
   const release = (k) => { setInputKey('touch-button', k, false); };
+  // a tray button that fires a one-shot key and auto-closes the tray
+  const trayTap = (k) => { press(k); setTimeout(() => { release(k); trayOpen = false; applyTray(); }, 90); };
 
-  // right-hand cluster
-  button('WEB', 'right:24px;bottom:96px;width:86px;height:86px;font-size:16px;',
-    () => { mouse.rdown = true; }, () => { mouse.rdown = false; }).id = 'btn-web';
-  button('FIRE', 'right:124px;bottom:40px;width:64px;height:64px;',
+  // ================= CORE — always on screen =================
+
+  // right-hand action cluster (thumb reach)
+  button('WEB', 'right:22px;bottom:92px;width:88px;height:88px;font-size:15px;',
+    () => { mouse.rdown = true; }, () => { mouse.rdown = false; }, 'foot').id = 'btn-web';
+  button('FIRE', 'right:120px;bottom:34px;width:66px;height:66px;',
     () => { mouse.down = true; }, () => { mouse.down = false; }).id = 'btn-fire';
-  button('JUMP', 'right:34px;bottom:12px;width:64px;height:64px;',
-    () => press('Space'), () => release('Space')).id = 'btn-jump';
-  button('▼', 'right:124px;bottom:120px;width:52px;height:52px;',
+  button('F', 'right:118px;bottom:110px;width:56px;height:56px;font-size:16px;',
+    () => press('KeyF'), () => release('KeyF'), 'foot').id = 'btn-punch';
+
+  // JUMP / brake — same spot, on foot it's Space, in a car it's the handbrake
+  button('JUMP', 'right:30px;bottom:10px;width:66px;height:66px;',
+    () => press('Space'), () => release('Space'), 'foot').id = 'btn-jump';
+  button('⏸ BRK', 'right:30px;bottom:10px;width:66px;height:66px;font-size:12px;',
+    () => press('Space'), () => release('Space'), 'vehicle').id = 'btn-brake';
+
+  // slow / reverse — foot: sprint-down modifier; vehicle: it's just brake+back (S via stick)
+  button('▼', 'right:198px;bottom:66px;width:50px;height:50px;',
     () => { downHeld = true; setInputKey('touch-button', 'ShiftLeft', true); },
-    () => { downHeld = false; setInputKey('touch-button', 'ShiftLeft', false); });
-  // actions in an arc to the right of the joystick (the minimap sits above it)
-  button('E', 'left:170px;bottom:104px;width:56px;height:56px;font-size:16px;',
+    () => { downHeld = false; setInputKey('touch-button', 'ShiftLeft', false); }, 'foot');
+
+  // E — enter/exit vehicle, interact. Relevant in BOTH modes.
+  button('E', 'left:168px;bottom:100px;width:58px;height:58px;font-size:16px;',
     () => press('KeyE'), () => release('KeyE'));
-  button('Q', 'left:238px;bottom:128px;width:50px;height:50px;',
-    () => press('KeyQ'), () => release('KeyQ'));
-  button('R', 'left:300px;bottom:104px;width:44px;height:44px;',
-    () => press('KeyR'), () => release('KeyR'));
-  button('F', 'right:210px;bottom:80px;width:56px;height:56px;font-size:16px;',
-    () => press('KeyF'), () => release('KeyF')).id = 'btn-punch';
-  button('WPN', 'right:286px;bottom:36px;width:50px;height:50px;font-size:11px;',
-    () => press('KeyX'), () => release('KeyX')).id = 'btn-wpn'; // cycle weapons
-  button('VIEW', 'right:24px;top:120px;width:42px;height:42px;font-size:9px;',
-    () => press('F2'), () => release('F2')).id = 'btn-view';
-  button('AIM', 'right:76px;top:120px;width:42px;height:42px;font-size:9px;',
-    () => press('ControlLeft'), () => release('ControlLeft')).id = 'btn-aim';
-  // utilities below the stars, pulled left so they never touch the WEB cluster
-  button('II', 'right:170px;top:120px;width:42px;height:42px;',
-    () => press('KeyP'), () => release('KeyP'));
-  button('M', 'right:222px;top:120px;width:42px;height:42px;',
-    () => press('KeyM'), () => release('KeyM'));
-  button('📸', 'right:274px;top:120px;width:42px;height:42px;font-size:18px;',
-    () => press('KeyG'), () => release('KeyG')); // snap a screenshot
-  // second utility row: jetpack toggle, REX attack, vigilante start
-  button('JET', 'right:170px;top:172px;width:42px;height:42px;font-size:10px;',
-    () => press('KeyJ'), () => release('KeyJ'));
-  button('REX', 'right:222px;top:172px;width:42px;height:42px;font-size:10px;',
-    () => press('KeyZ'), () => release('KeyZ'));
-  button('VIG', 'right:274px;top:172px;width:42px;height:42px;font-size:10px;',
-    () => press('KeyV'), () => release('KeyV'));
-  button('👑', 'right:326px;top:172px;width:42px;height:42px;font-size:16px;',
-    () => press('KeyL'), () => release('KeyL')); // the legend board
+  // Q — web-shot, on foot only
+  button('Q', 'left:234px;bottom:122px;width:48px;height:48px;',
+    () => press('KeyQ'), () => release('KeyQ'), 'foot');
+  // WPN — cycle weapon, on foot (combat needs it handy, not in the tray)
+  button('WPN', 'right:198px;bottom:120px;width:48px;height:48px;font-size:10px;',
+    () => press('KeyX'), () => release('KeyX'), 'foot').id = 'btn-wpn';
+  // radio — vehicle only
+  button('📻', 'left:168px;bottom:100px;width:52px;height:52px;font-size:18px;',
+    () => press('KeyR'), () => release('KeyR'), 'vehicle');
+
+  // ================= TRAY — behind the ⋯ toggle =================
+  // 8 rare buttons in a 2-col grid on the right edge, below the ⋯ toggle.
+  // 48px cells x 4 rows = 192px, fits a short landscape phone.
+  const trayCell = (n) => {
+    const col = n % 2, rowN = (n / 2) | 0;
+    return `right:${16 + col * 52}px;top:${168 + rowN * 50}px;width:44px;height:44px;`;
+  };
+  button('MAP', trayCell(0) + 'font-size:11px;', () => trayTap('KeyM'), null, 'tray');
+  button('II',  trayCell(1), () => trayTap('KeyP'), null, 'tray');           // pause
+  button('📸',  trayCell(2) + 'font-size:17px;', () => trayTap('KeyG'), null, 'tray');
+  button('🎬',  trayCell(3) + 'font-size:15px;', () => trayTap('KeyO'), null, 'tray'); // replay
+  button('JET', trayCell(4) + 'font-size:10px;', () => trayTap('KeyJ'), null, 'tray');
+  button('REX', trayCell(5) + 'font-size:10px;', () => trayTap('KeyZ'), null, 'tray');
+  button('VIG', trayCell(6) + 'font-size:10px;', () => trayTap('KeyV'), null, 'tray');
+  button('👑',  trayCell(7) + 'font-size:15px;', () => trayTap('KeyL'), null, 'tray'); // legend board
+
+  // the ⋯ toggle itself (always visible, top-right)
+  trayToggleBtn = el(BTN + 'pointer-events:auto;right:16px;top:112px;width:46px;height:46px;font-size:20px;', '⋯');
+  trayToggleBtn.addEventListener('touchstart', (e) => {
+    e.preventDefault(); e.stopPropagation();
+    trayOpen = !trayOpen;
+    applyTray();
+  }, { passive: false });
+  ui.appendChild(trayToggleBtn);
 
   // 1-4 digit row: appears only while standing at a kiosk (casino, wardrobe...)
-  // sits below the relocated hint bar at the top of the screen
   for (let i = 1; i <= 4; i++) {
     const b = button(String(i),
       `left:calc(50% + ${(i - 2.5) * 58}px);top:118px;width:48px;height:48px;font-size:17px;display:none;`,
@@ -230,5 +278,6 @@ export function initTouch() {
     () => press('KeyB'), () => release('KeyB'));
   ctxBtns.buy.id = 'btn-buy';
 
+  setTouchMode('foot');
   return true;
 }

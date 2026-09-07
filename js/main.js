@@ -16,7 +16,7 @@ import { initWeather, updateWeather } from './weather.js';
 import { buildLandmarks, updateLandmarks } from './landmarks.js';
 import { initWeb, fireWeb, releaseWeb, swingStep, updateWebVisual, poseSwing, poseFall } from './web.js';
 import { initShops, updateShops, ensureGarageVehicle, garageCheck } from './shops.js';
-import { initTouch, isTouch, showTouchUI, showKioskButtons, showContextButtons } from './touch.js';
+import { initTouch, isTouch, showTouchUI, showKioskButtons, showContextButtons, setTouchMode } from './touch.js';
 import { initMenu, openMenu, closeMenu, openMap, closeMap, drawBigMap } from './menu.js';
 import { vibrate, goFullscreen, keepAwake, grabCanvas, saveOrShare, openCamera, closeCamera, cameraSupported } from './device.js';
 import { initStunts, updateStunts, placeTrampoline, tryBounce, checkRamp, bounceFx } from './stunts.js';
@@ -3389,6 +3389,12 @@ function update(dt) {
     openLegend(world);
   }
   if (pressed['KeyG']) world.captureNext = true;
+
+  // phones: swap the on-foot / in-vehicle button sets so only useful controls show
+  if (isTouch) {
+    const mode = (player.inCar || player.inHeli || player.inBoat || player.inPlane) ? 'vehicle' : 'foot';
+    setTouchMode(mode);
+  }
 
   // phones get 1-4 buttons while standing at a kiosk
   if (isTouch && world.nearKiosk !== world._kioskUi) {

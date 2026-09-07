@@ -1,6 +1,6 @@
 // OPEN CITY service worker: network-first with cache fallback, so the game
 // stays fresh while you're online and still runs offline once visited.
-const CACHE = 'opencity-v6-cloudsave';
+const CACHE = 'opencity-v7-mobile-declutter';
 
 self.addEventListener('install', (e) => {
   self.skipWaiting();
