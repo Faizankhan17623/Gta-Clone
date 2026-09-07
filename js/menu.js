@@ -81,6 +81,9 @@ export function initMenu(h) {
   const qual = document.createElement('input');
   qual.type = 'checkbox'; qual.checked = !!s.lowGfx;
   qual.onchange = () => { s.lowGfx = qual.checked; hooks.onSettings(); };
+  const ao = document.createElement('input');
+  ao.type = 'checkbox'; ao.checked = !!s.ao;
+  ao.onchange = () => { s.ao = ao.checked; hooks.onSettings(); };
   const fuel = document.createElement('input');
   fuel.type = 'checkbox'; fuel.checked = !!s.fuel;
   fuel.onchange = () => { s.fuel = fuel.checked; hooks.onSettings(); };
@@ -95,6 +98,7 @@ export function initMenu(h) {
     row('SENSITIVITY', sens),
     row('INVERT Y', inv),
     row('LOW GRAPHICS', qual),
+    row('AMBIENT OCCLUSION (RELOAD)', ao),
     row('VEHICLE FUEL', fuel),
     row('IMPACT CAMERA SHAKE', shake),
   );

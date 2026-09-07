@@ -9,6 +9,54 @@ characters while preserving driving, swinging and missions. Work is in
 The delivered art direction is semi-realistic procedural 3D. This is not a claim
 that every legacy asset has become photorealistic.
 
+## Realism pass (branch `visual-realism`) - phases 1-6 implemented
+
+A second pass on the `visual-realism` branch (not yet merged to `main`) adds a
+real lighting/rendering foundation while keeping the game a small, offline-safe
+PWA that holds 60 FPS on both a desktop and a phone-sized viewport. No binary
+texture or model files were added - every new surface and shape is generated in
+code.
+
+- **Phase 1 - foundation** (`js/graphics.js`). Low/medium/high quality tiers,
+  auto-detected from GPU string + core count + touch, with the legacy `lowGfx`
+  toggle mapping to `low`. A procedural sky bake replaces the indoor studio
+  environment probe so car paint, glass and metal reflect the real sky, and it
+  re-bakes as the sun moves. A single wide, camera-facing, texel-snapped sun
+  shadow (110/200/300 m per tier) replaces the old 180 m player-centred box, so
+  shadows now reach across the whole visible street. CSM was built and rejected
+  (tripled draw calls on the streamed city).
+- **Phase 2 - post-processing.** Per-tier composer: SMAA (medium+), bloom
+  (medium+), a code-generated 16^3 film colour-grade LUT (high). GTAO contact
+  ambient occlusion exists but is opt-in only (settings: AMBIENT OCCLUSION),
+  because it renders a full extra normal pass over the city and roughly halves
+  the frame rate on a mid GPU.
+- **Phase 3 - materials.** Clearcoat automotive paint (`MeshPhysicalMaterial`)
+  on sedans, tanks and monster trucks; dark reflective windscreen glass; wet
+  roads - `world.roadWet` chases rain up fast and dries over ~40 s, dropping
+  road roughness ~70% and tripling reflections while wet. Garage respray and
+  damage-darkening still work.
+- **Phase 4 - PBR surfaces** (`js/textures.js`). One tileable value-noise
+  height field produces a coherent colour + Sobel normal + roughness set.
+  Applied to the road (real asphalt aggregate grain that catches the low sun
+  and wet reflections) and to district pavement (concrete grain). Zero
+  downloads.
+- **Phase 5 - character model** (`js/characterModel.js`). The player and
+  pedestrian rig rebuilt with capsule limbs (rounded joints), a lathed torso
+  (narrow waist, broader chest), a jaw, modelled hands and rounded shoes. The
+  rig contract (limb/joint groups, first three root children) is unchanged, so
+  animation, wardrobe suits and character swaps are untouched.
+- **Phase 6 - performance + review.** GTAO moved to opt-in after it was seen
+  halving desktop frame rate. Final headless samples: desktop high tier
+  16.7 ms median / ~17-33 ms p95; phone-sized low tier 16.7 ms median /
+  ~17 ms p95. Full gameplay smoke suite passes (the one pre-existing
+  `web attack (Q)` failure is present on `main` and unrelated). No runtime
+  errors, no failed asset requests, all collision/model contracts pass.
+
+Not done: merge to `main` and deploy (a deliberately separate user-approved
+step); real GLB hero assets (rejected for this pass - would add repo weight and
+a mobile perf cliff for little gain over the improved procedural geometry);
+Mixamo skeletal animation.
+
 ## 1. Baseline and repeatable local testing - implemented
 
 Local-only server, seeded building layout, camera-based screenshot checks,

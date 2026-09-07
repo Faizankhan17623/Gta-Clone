@@ -200,7 +200,12 @@ const shadowRig = createShadowRig(scene, camera, sun, gfxTier);
 // Post-processing chain, built per tier: RenderPass + (GTAO high only) + bloom
 // + SMAA + (colour-grade LUT high only). `bloom` is exposed so the day/night
 // code can breathe its strength with the city lights.
-const post = createPostChain(renderer, scene, camera, gfxTier);
+const post = createPostChain(renderer, scene, camera, gfxTier, {
+  ao: (() => {
+    try { return !!JSON.parse(localStorage.getItem('opencity-save-v1') || '{}').settings?.ao; }
+    catch { return false; }
+  })(),
+});
 const composer = post.composer;
 const bloom = post.bloom;
 
@@ -327,7 +332,7 @@ const world = {
   ach: { ...(save.ach || {}) },
   suitSaved: save.suit || 'street',
   suitsOwnedSaved: save.suits || {},
-  settings: { volume: 1, sens: 1, invertY: false, lowGfx: false, ...(save.settings || {}) },
+  settings: { volume: 1, sens: 1, invertY: false, lowGfx: false, ao: false, ...(save.settings || {}) },
   perks: { style: 1, melee: 1, webDur: 6, decay: 24, busted: 1.6 },
   waypoint: null,
   barks: [],
@@ -560,10 +565,10 @@ const wpMarker = new THREE.Group();
 function applySettings() {
   const st = world.settings;
   setMasterVolume(st.volume);
-  // The shadow rig and post chain are built once per tier at startup, so a
-  // tier change (via the lowGfx toggle) takes effect on the next reload. Flag
-  // it so the menu can show a hint.
-  world._tierChangePending = resolveTier(st) !== gfxTier;
+  // The shadow rig and post chain (including the AO pass) are built once at
+  // startup, so a tier change (lowGfx) or an AO toggle takes effect on the
+  // next reload. Flag it so the menu can show the hint.
+  world._tierChangePending = resolveTier(st) !== gfxTier || !!st.ao !== !!post.gtao;
   saveGame();
 }
 

@@ -15,7 +15,12 @@ import { LUTPass } from 'three/addons/postprocessing/LUTPass.js';
 //
 //   low    - phones, weak laptops. No AO, no SMAA, no bloom, thin crowd, dpr 1.
 //   medium - default. SMAA + bloom, wider shadow, half crowd on touch.
-//   high   - desktop with headroom. GTAO + SMAA + bloom + colour-grade LUT.
+//   high   - desktop with headroom. SMAA + bloom + colour-grade LUT.
+//
+// GTAO (contact ambient occlusion) is a separate opt-in: it renders a full
+// extra normal pass over the streamed city, which halves the frame rate on
+// mid GPUs, so it is off by default even on high and enabled only by the
+// settings.ao flag.
 //
 // `lowGfx` in the saved settings still works: true => low, false => auto.
 // ---------------------------------------------------------------------------
@@ -51,7 +56,7 @@ const TIER_SPEC = {
     dpr: Math.min((typeof devicePixelRatio === 'number' ? devicePixelRatio : 1), 2),
     shadowMap: 3072,
     shadowDistance: 300,
-    gtao: true,
+    gtao: false, // opt-in via settings.ao (see createPostChain)
     smaa: true,
     bloom: true,
     lut: true,
@@ -292,15 +297,17 @@ function filmLUT(size = 16) {
   return tex;
 }
 
-export function createPostChain(renderer, scene, camera, tier) {
+export function createPostChain(renderer, scene, camera, tier, opts = {}) {
   const spec = tierSpec(tier);
   const w = window.innerWidth, h = window.innerHeight;
   const composer = new EffectComposer(renderer);
   composer.setPixelRatio(renderer.getPixelRatio());
   composer.addPass(new RenderPass(scene, camera));
 
+  // GTAO: tier default OR the explicit settings.ao opt-in, but never below high.
+  const wantAO = (spec.gtao || opts.ao) && tier === 'high';
   let gtao = null;
-  if (spec.gtao) {
+  if (wantAO) {
     gtao = new GTAOPass(scene, camera, w, h);
     gtao.output = GTAOPass.OUTPUT.Default;
     gtao.blendIntensity = 0.9;
