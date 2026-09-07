@@ -1,14 +1,21 @@
 import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
+import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
+import { LUTPass } from 'three/addons/postprocessing/LUTPass.js';
 
 // ---------------------------------------------------------------------------
-// Graphics quality tiers + realism rig (environment lighting, cascaded shadows)
+// Graphics quality tiers + realism rig (environment lighting, sun shadow, post)
 //
 // One place decides how heavy the renderer is allowed to be. Everything that
 // used to branch on `settings.lowGfx` (a single on/off) now reads a tier:
 //
-//   low    - phones, weak laptops. No CSM, no AO, no bloom, thin crowd, dpr 1.
-//   medium - default. CSM (2 cascades), SMAA, bloom, half crowd on touch.
-//   high   - desktop with headroom. CSM (3 cascades), GTAO, SMAA, bloom, LUT.
+//   low    - phones, weak laptops. No AO, no SMAA, no bloom, thin crowd, dpr 1.
+//   medium - default. SMAA + bloom, wider shadow, half crowd on touch.
+//   high   - desktop with headroom. GTAO + SMAA + bloom + colour-grade LUT.
 //
 // `lowGfx` in the saved settings still works: true => low, false => auto.
 // ---------------------------------------------------------------------------
@@ -233,5 +240,114 @@ export function createShadowRig(scene, camera, sun, tier) {
       sun.target.updateMatrixWorld();
     },
     dispose() {},
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Post-processing chain. Built per tier:
+//
+//   low    - RenderPass -> Output. (No composer cost beyond the copy.)
+//   medium - RenderPass -> Bloom -> SMAA -> Output.
+//   high   - RenderPass -> GTAO -> Bloom -> SMAA -> LUT (colour grade) -> Output.
+//
+// GTAO renders its own normal+depth pass (~a second scene draw) so it is high
+// only. The LUT is a small neutral-warm film grade baked in code (no download).
+// ---------------------------------------------------------------------------
+
+// A small 3D colour LUT generated in code: gentle S-curve contrast, a touch of
+// warmth in the mids, cooler shadows. 16^3 is plenty for a subtle grade and
+// costs 16 KB. Returns a Data3DTexture ready for LUTPass.
+function filmLUT(size = 16) {
+  const data = new Uint8Array(size * size * size * 4);
+  const clamp01 = (x) => (x < 0 ? 0 : x > 1 ? 1 : x);
+  let i = 0;
+  for (let b = 0; b < size; b++) {
+    for (let g = 0; g < size; g++) {
+      for (let r = 0; r < size; r++) {
+        let rr = r / (size - 1);
+        let gg = g / (size - 1);
+        let bb = b / (size - 1);
+        // S-curve contrast around 0.5
+        const s = (x) => clamp01(x + (x - 0.5) * 0.12 * (1 - Math.abs(x - 0.5) * 2));
+        rr = s(rr); gg = s(gg); bb = s(bb);
+        // warm mids, cool shadows
+        const lum = rr * 0.299 + gg * 0.587 + bb * 0.114;
+        const warm = (1 - Math.abs(lum - 0.55) * 1.6);
+        rr = clamp01(rr + warm * 0.03);
+        bb = clamp01(bb - warm * 0.02 + (0.5 - lum) * 0.03);
+        data[i++] = Math.round(clamp01(rr) * 255);
+        data[i++] = Math.round(clamp01(gg) * 255);
+        data[i++] = Math.round(clamp01(bb) * 255);
+        data[i++] = 255;
+      }
+    }
+  }
+  const tex = new THREE.Data3DTexture(data, size, size, size);
+  tex.format = THREE.RGBAFormat;
+  tex.type = THREE.UnsignedByteType;
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.wrapS = tex.wrapT = tex.wrapR = THREE.ClampToEdgeWrapping;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+export function createPostChain(renderer, scene, camera, tier) {
+  const spec = tierSpec(tier);
+  const w = window.innerWidth, h = window.innerHeight;
+  const composer = new EffectComposer(renderer);
+  composer.setPixelRatio(renderer.getPixelRatio());
+  composer.addPass(new RenderPass(scene, camera));
+
+  let gtao = null;
+  if (spec.gtao) {
+    gtao = new GTAOPass(scene, camera, w, h);
+    gtao.output = GTAOPass.OUTPUT.Default;
+    gtao.blendIntensity = 0.9;
+    gtao.updateGtaoMaterial({
+      radius: 0.35,
+      distanceExponent: 1.2,
+      thickness: 1.0,
+      scale: 1.0,
+      samples: 16,
+    });
+    composer.addPass(gtao);
+  }
+
+  let bloom = null;
+  if (spec.bloom) {
+    bloom = new UnrealBloomPass(new THREE.Vector2(w, h), 0.24, 0.5, 0.85);
+    composer.addPass(bloom);
+  }
+
+  let smaa = null;
+  if (spec.smaa) {
+    smaa = new SMAAPass(w * renderer.getPixelRatio(), h * renderer.getPixelRatio());
+    composer.addPass(smaa);
+  }
+
+  let lut = null;
+  if (spec.lut) {
+    lut = new LUTPass({ lut: filmLUT(16), intensity: 0.85 });
+    composer.addPass(lut);
+  }
+
+  composer.addPass(new OutputPass());
+
+  return {
+    composer,
+    bloom,
+    gtao,
+    render() { composer.render(); },
+    setSize(width, height) {
+      composer.setSize(width, height);
+      gtao?.setSize(width, height);
+    },
+    setPixelRatio(r) { composer.setPixelRatio(r); },
+    dispose() {
+      composer.passes.forEach((p) => p.dispose?.());
+      composer.dispose?.();
+      lut?.lut?.dispose?.();
+    },
   };
 }

@@ -154,11 +154,7 @@ import { initArmor, updateArmor } from './armor.js';
 import { initFishing, updateFishing } from './fishing.js';
 import { initNightclub, updateNightclub } from './nightclub.js';
 import { initSkateboard, updateSkateboard } from './skateboard.js';
-import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { resolveTier, tierSpec, createEnvironment, createShadowRig } from './graphics.js';
+import { resolveTier, tierSpec, createEnvironment, createShadowRig, createPostChain } from './graphics.js';
 
 // ---------- renderer / scene ----------
 
@@ -192,31 +188,27 @@ const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerH
 const env = createEnvironment(renderer, gfxTier);
 scene.environment = env.texture;
 
-// post-processing: subtle bloom makes lit windows, lamps and explosions glow
-const composer = new EffectComposer(renderer);
-composer.addPass(new RenderPass(scene, camera));
-const bloom = new UnrealBloomPass(
-  new THREE.Vector2(window.innerWidth, window.innerHeight), 0.28, 0.55, 0.82
-);
-bloom.enabled = gfx.bloom;
-composer.addPass(bloom);
-composer.addPass(new OutputPass());
-
 const hemi = new THREE.HemisphereLight(0xd5e4f2, 0x4a463c, 0.9);
 scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xfff0d0, 1.3);
 scene.add(sun);
 scene.add(sun.target);
 
-// Cascaded shadow maps (or a tightened single shadow on low tier). `shadowRig`
-// owns the sun's shadow behaviour from here; main.js just tells it the sun dir.
+// Wide, camera-facing sun shadow (see graphics.js). Owns the sun's position.
 const shadowRig = createShadowRig(scene, camera, sun, gfxTier);
+
+// Post-processing chain, built per tier: RenderPass + (GTAO high only) + bloom
+// + SMAA + (colour-grade LUT high only). `bloom` is exposed so the day/night
+// code can breathe its strength with the city lights.
+const post = createPostChain(renderer, scene, camera, gfxTier);
+const composer = post.composer;
+const bloom = post.bloom;
 
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
-  composer.setSize(window.innerWidth, window.innerHeight);
+  post.setSize(window.innerWidth, window.innerHeight);
 });
 
 // ---------- world ----------
@@ -566,18 +558,10 @@ const wpMarker = new THREE.Group();
 function applySettings() {
   const st = world.settings;
   setMasterVolume(st.volume);
-  // Changing the graphics tier live would mean rebuilding the CSM rig and the
-  // post chain, so a tier switch asks for a reload. Until then, only the cheap
-  // knobs (pixel ratio floor on low) are applied here.
-  const st2 = resolveTier(st);
-  if (st2 !== gfxTier) {
-    world._tierChangePending = true;
-  } else {
-    world._tierChangePending = false;
-  }
-  if (!shadowRig.csm) sun.castShadow = !st.lowGfx;
-  renderer.setPixelRatio(gfx.dpr);
-  composer.setPixelRatio(renderer.getPixelRatio());
+  // The shadow rig and post chain are built once per tier at startup, so a
+  // tier change (via the lowGfx toggle) takes effect on the next reload. Flag
+  // it so the menu can show a hint.
+  world._tierChangePending = resolveTier(st) !== gfxTier;
   saveGame();
 }
 
@@ -2921,8 +2905,8 @@ function update(dt) {
   }
 
   // bloom breathes with the night: stronger glow when the city lights are on
-  bloom.strength = world.settings.lowGfx ? 0 : 0.22 + dn.glow * 0.33;
-  bloom.enabled = !world.settings.lowGfx;
+  // (null on the low tier, where the pass isn't in the chain at all)
+  if (bloom) bloom.strength = 0.2 + dn.glow * 0.32;
 
   // headlights when driving after dark
   const pcar = player.inCar;
