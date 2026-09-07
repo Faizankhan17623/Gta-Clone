@@ -1,5 +1,6 @@
 import { showToast } from './hud.js';
 import { sfxPickup } from './sound.js';
+import { isTouch } from './touch.js';
 
 // STREET BRIBES: while wanted, stop near a cruiser, press Y, and $500 a
 // star makes the paperwork disappear — the whole wanted level clears.
@@ -29,7 +30,9 @@ export function updateBribe(world, dt, pressed) {
   if (!near) return;
 
   const price = world.wanted * 500;
-  world.bribeHint = `Press <b>Y</b> — slip the officer <b>$${price}</b> and this never happened`;
+  world.bribeHint = isTouch
+    ? `Tap <b>💵 BRIBE</b> — slip the officer <b>$${price}</b> and this never happened`
+    : `Press <b>Y</b> — slip the officer <b>$${price}</b> and this never happened`;
   if (pressed['KeyY']) {
     if (world.money < price) { showToast('The officer inspects your empty wallet. Insulting.'); br.cd = 3; return; }
     world.money -= price;

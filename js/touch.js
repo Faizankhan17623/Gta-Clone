@@ -34,6 +34,7 @@ const groups = { foot: [], vehicle: [], tray: [] }; // buttons tagged by when th
 let trayOpen = false;
 let trayToggleBtn = null;
 let lastMode = 'foot';
+let runReset = () => {}; // clears the on-foot sprint toggle
 
 // Digit buttons shown while the player stands at a shop kiosk.
 export function showKioskButtons(on) {
@@ -54,6 +55,7 @@ export function setTouchMode(mode) {
   lastMode = mode;
   for (const b of groups.foot) b.style.display = mode === 'foot' ? 'flex' : 'none';
   for (const b of groups.vehicle) b.style.display = mode === 'vehicle' ? 'flex' : 'none';
+  if (mode !== 'foot') runReset(); // don't leave sprint stuck on when you get in a car
 }
 
 // The "⋯" tray holds the rare buttons (map, photo, jetpack, REX, legend...).
@@ -71,6 +73,8 @@ export function showTouchUI(on) {
     applyTray();
     // re-assert the current mode's visibility (buttons may have been toggled)
     const m = lastMode; lastMode = null; setTouchMode(m);
+  } else {
+    runReset(); // menu/pause opened — don't keep the player sprinting
   }
 }
 
@@ -101,16 +105,18 @@ export function initTouch() {
   const stickOrigin = { x: 0, y: 0 };
 
   function setStick(dx, dy) {
-    const R = 48;
+    const R = 52;
     const len = Math.hypot(dx, dy) || 1;
     const cx = (Math.abs(dx) > len * 0.38 ? Math.sign(dx) : 0);
     const cy = (Math.abs(dy) > len * 0.38 ? Math.sign(dy) : 0);
-    setInputKey('touch-stick', 'KeyW', cy < 0 && len > 14);
-    setInputKey('touch-stick', 'KeyS', cy > 0 && len > 14);
-    setInputKey('touch-stick', 'KeyA', cx < 0 && len > 14);
-    setInputKey('touch-stick', 'KeyD', cx > 0 && len > 14);
-    // sprint when the stick is pushed to the rim
-    setInputKey('touch-stick', 'ShiftLeft', len > 44 && !downHeld);
+    // Deadzone so a resting thumb doesn't drift the player.
+    const moving = len > 20;
+    setInputKey('touch-stick', 'KeyW', moving && cy < 0);
+    setInputKey('touch-stick', 'KeyS', moving && cy > 0);
+    setInputKey('touch-stick', 'KeyA', moving && cx < 0);
+    setInputKey('touch-stick', 'KeyD', moving && cx > 0);
+    // NO auto-sprint from the stick — it made the player run flat-out almost
+    // all the time. Sprint is the dedicated RUN toggle button now.
     const nx = Math.max(-R, Math.min(R, dx));
     const ny = Math.max(-R, Math.min(R, dy));
     nub.style.transform = `translate(calc(-50% + ${nx}px), calc(-50% + ${ny}px))`;
@@ -118,7 +124,6 @@ export function initTouch() {
 
   function clearStick() {
     for (const k of STICK_KEYS) setInputKey('touch-stick', k, false);
-    if (!downHeld) setInputKey('touch-stick', 'ShiftLeft', false);
     nub.style.transform = 'translate(-50%,-50%)';
   }
 
@@ -172,7 +177,6 @@ export function initTouch() {
   look.addEventListener('touchcancel', endLook);
 
   // ---- buttons ----
-  let downHeld = false;
   // `group`: 'foot' | 'vehicle' | 'tray' | 'always'. Foot/vehicle swap with the
   // player's state; tray buttons hide behind the ⋯ toggle.
   function button(label, css, onDown, onUp, group = 'always') {
@@ -217,10 +221,32 @@ export function initTouch() {
   button('⏸ BRK', 'right:30px;bottom:10px;width:66px;height:66px;font-size:12px;',
     () => press('Space'), () => release('Space'), 'vehicle').id = 'btn-brake';
 
-  // slow / reverse — foot: sprint-down modifier; vehicle: it's just brake+back (S via stick)
+  // RUN — a sprint TOGGLE on foot (the joystick no longer auto-sprints).
+  // Tap to lock sprint on, tap again to walk. Turns cyan while active.
+  {
+    let running = false;
+    const runBtn = el(BTN + 'pointer-events:auto;left:168px;bottom:170px;width:52px;height:52px;font-size:12px;', 'RUN');
+    const paint = () => {
+      runBtn.style.background = running ? 'rgba(85,230,255,0.75)' : 'rgba(20,26,36,0.55)';
+      runBtn.style.borderColor = running ? '#55e6ff' : 'rgba(255,255,255,0.35)';
+      runBtn.style.color = running ? '#06131a' : '#fff';
+    };
+    runBtn.addEventListener('touchstart', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      running = !running;
+      setInputKey('touch-run', 'ShiftLeft', running);
+      paint();
+    }, { passive: false });
+    ui.appendChild(runBtn);
+    groups.foot.push(runBtn);
+    // clear sprint when leaving foot mode / hiding the UI
+    runReset = () => { running = false; setInputKey('touch-run', 'ShiftLeft', false); paint(); };
+  }
+
+  // heli descend — vehicle mode only (was the old "down" button)
   button('▼', 'right:198px;bottom:66px;width:50px;height:50px;',
-    () => { downHeld = true; setInputKey('touch-button', 'ShiftLeft', true); },
-    () => { downHeld = false; setInputKey('touch-button', 'ShiftLeft', false); }, 'foot');
+    () => setInputKey('touch-button', 'ShiftLeft', true),
+    () => setInputKey('touch-button', 'ShiftLeft', false), 'vehicle');
 
   // E — enter/exit vehicle, interact. Relevant in BOTH modes.
   button('E', 'left:168px;bottom:100px;width:58px;height:58px;font-size:16px;',
@@ -269,14 +295,18 @@ export function initTouch() {
     kioskBtns.push(b);
   }
 
-  // contextual actions in the freed-up bottom centre:
-  // FIGHT at the arena ring, BUY under a property beam
+  // contextual actions in the freed-up bottom centre — shown only when the
+  // action is actually in reach (driven from main.js via showContextButtons):
+  // FIGHT at the arena ring, BUY under a property beam, BRIBE next to a cop.
   ctxBtns.arena = button('FIGHT', 'left:calc(50% - 34px);bottom:14px;width:68px;height:68px;font-size:14px;display:none;background:rgba(160,40,30,0.6);',
     () => press('KeyH'), () => release('KeyH'));
   ctxBtns.arena.id = 'btn-arena';
   ctxBtns.buy = button('BUY', 'left:calc(50% - 30px);bottom:16px;width:60px;height:60px;font-size:15px;display:none;background:rgba(30,120,60,0.6);',
     () => press('KeyB'), () => release('KeyB'));
   ctxBtns.buy.id = 'btn-buy';
+  ctxBtns.bribe = button('💵 BRIBE', 'left:calc(50% - 38px);bottom:14px;width:76px;height:68px;font-size:12px;display:none;background:rgba(200,150,30,0.7);',
+    () => press('KeyY'), () => release('KeyY'));
+  ctxBtns.bribe.id = 'btn-bribe';
 
   setTouchMode('foot');
   return true;

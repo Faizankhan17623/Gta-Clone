@@ -229,6 +229,22 @@ all PASS (desktop path unaffected — `initTouch` early-returns when not touch);
 new emulated-phone test — 9 buttons on foot / 5 in vehicle / +8 with the tray
 open, zero overlaps, none off a 844×390 viewport.
 
+### Mobile follow-up fixes
+
+- **Joystick no longer auto-sprints.** `setStick` used to hold `ShiftLeft`
+  whenever the stick passed `len > 44` (of a 48px radius) — so the player ran
+  flat-out almost always. Removed; added a 20px deadzone.
+- **RUN toggle button** (on-foot) replaces the old ambiguous `▼`. Tap to lock
+  sprint on (turns cyan), tap to walk; auto-clears when entering a vehicle or
+  opening a menu (`runReset` from `setTouchMode`/`showTouchUI`). `▼` is now
+  vehicle-only (helicopter descend).
+- **💵 BRIBE now reachable on mobile.** Bribing a cop needs `KeyY`, which had
+  no touch button — the hint appeared but couldn't be acted on. Added a BRIBE
+  context button (shown via `showContextButtons` when `world.bribeHint` is
+  set, same pattern as FIGHT/BUY); `bribe.js` shows "Tap 💵 BRIBE" instead of
+  "Press Y" on touch. Verified: button appears next to a cop while wanted,
+  tapping it clears 3 stars for $1500.
+
 Verification: `node --check` on all touched files; `node --test
 test/input.test.mjs test/wallet.test.mjs` (7/7); browser suites fulltest
 (all PASS, 0 runtime errors), newfeatures (18/18, 0 errors), keytest

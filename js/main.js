@@ -3401,14 +3401,16 @@ function update(dt) {
     world._kioskUi = world.nearKiosk;
     showKioskButtons(world.nearKiosk);
   }
-  // ...and FIGHT / BUY buttons when those actions are in reach
+  // ...and FIGHT / BUY / BRIBE buttons when those actions are in reach
   if (isTouch) {
     const wantArena = !!world.arenaHint && !world.arena.active;
-    const wantBuy = !!world.propHint && !wantArena;
-    if (wantArena !== world._ctxArena || wantBuy !== world._ctxBuy) {
+    const wantBribe = !!world.bribeHint && !wantArena;
+    const wantBuy = !!world.propHint && !wantArena && !wantBribe;
+    if (wantArena !== world._ctxArena || wantBuy !== world._ctxBuy || wantBribe !== world._ctxBribe) {
       world._ctxArena = wantArena;
       world._ctxBuy = wantBuy;
-      showContextButtons({ arena: wantArena, buy: wantBuy });
+      world._ctxBribe = wantBribe;
+      showContextButtons({ arena: wantArena, buy: wantBuy, bribe: wantBribe });
     }
   }
   updateCamera(dt);
