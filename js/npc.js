@@ -118,6 +118,11 @@ export function updatePeds(world, dt) {
     if (!threat && world.lastShot && world.time - world.lastShot.t < 4 && p.pos.distanceTo(world.lastShot.pos) < 26) {
       threat = world.lastShot.pos;
     }
+    // npcmemory.js: a ped who has seen you be violent flees on sight (no gun
+    // needed). `p.mem` is set by that module; 'friendly' peds are handled there.
+    if (!threat && p.mem === 'afraid' && !p.far && p.pos.distanceTo(player.pos) < 12) {
+      threat = player.pos;
+    }
 
     let speed;
     if (threat) {

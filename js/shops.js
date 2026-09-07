@@ -1,4 +1,5 @@
 import { availableFunds, spendMoney } from './wallet.js';
+import { placeStreetSite } from './site-layout.js';
 import * as THREE from 'three';
 import { blockStart, BLOCK, N } from './city.js';
 import { showToast, showNews } from './hud.js';
@@ -64,28 +65,34 @@ export function initShops(scene, world, savedUpgrades, savedMods) {
   const picks = [[0, 0], [3, 1], [6, 2], [1, 5], [4, 6], [7, 7]];
   for (const [bi, bj] of picks) {
     const pos = new THREE.Vector3(blockStart(bi) + 2.5, 0, blockStart(bj) + 2.5);
+    placeStreetSite(world.city, pos, 2.4, 'corner-shop');
     const mesh = kiosk(scene, pos, '#3a2f28', '#5fe07a', 'CORNER $HOP');
     shops.push({ pos, mesh, cd: 0, robT: 0 });
   }
 
   // upgrade den near spawn — purple neon
   const denPos = world.city.spawn.clone().add(new THREE.Vector3(14, 0, -10));
+  placeStreetSite(world.city, denPos, 2.4, 'web-den');
   const den = kiosk(scene, denPos, '#241a30', '#c95aff', 'WEB DEN');
 
   // wardrobe — pink, beside the den
   const wardrobePos = world.city.spawn.clone().add(new THREE.Vector3(14, 0, 12));
+  placeStreetSite(world.city, wardrobePos, 2.4, 'wardrobe');
   kiosk(scene, wardrobePos, '#301a2a', '#ff6ab0', 'WARDROBE');
 
   // casino — gold, a block over
   const casinoPos = world.city.spawn.clone().add(new THREE.Vector3(-16, 0, 12));
+  placeStreetSite(world.city, casinoPos, 2.4, 'casino');
   kiosk(scene, casinoPos, '#2e2410', '#ffd24a', 'LUCKY 7 CASINO');
 
   // dealership — cyan
   const dealerPos = world.city.spawn.clone().add(new THREE.Vector3(-16, 0, -12));
+  placeStreetSite(world.city, dealerPos, 2.4, 'dealership');
   kiosk(scene, dealerPos, '#102a2e', '#3dd2ff', 'AUTO PALACE');
 
   // garage pad — park any vehicle here and it's yours forever
   const garagePos = world.city.spawn.clone().add(new THREE.Vector3(16, 0, 14));
+  placeStreetSite(world.city, garagePos, 4.3, 'garage');
   const pad = new THREE.Mesh(
     new THREE.CylinderGeometry(4.2, 4.2, 0.22, 24),
     new THREE.MeshLambertMaterial({ color: 0x1a2a45 })

@@ -155,6 +155,17 @@ import { initFishing, updateFishing } from './fishing.js';
 import { initNightclub, updateNightclub } from './nightclub.js';
 import { initSkateboard, updateSkateboard } from './skateboard.js';
 import { resolveTier, tierSpec, createEnvironment, createShadowRig, createPostChain } from './graphics.js';
+import { bootActiveSlot, mirrorActiveSlot, buildSlotPicker } from './saveslots.js';
+import { initReplay, recordReplay, updateReplay, openReplay, replayActive } from './replay.js';
+import { initAccessibility, openAccessibility } from './accessibility.js';
+import { initPerf, updatePerf } from './perf.js';
+import { initScars, updateScars } from './scars.js';
+import { initCityNews, updateCityNews } from './citynews.js';
+import { initNpcMemory, updateNpcMemory } from './npcmemory.js';
+import { initPhotoBounty, updatePhotoBounty, photoBountySave } from './photobounty.js';
+
+// Point the game's single save key at the active slot before anything reads it.
+bootActiveSlot();
 
 // ---------- renderer / scene ----------
 
@@ -497,6 +508,19 @@ initBossrush(scene, world, save);
 initPerks(scene, world, save);
 initExplorer(world, save);
 initArmor(scene, world, save);
+initScars(scene, world);
+initCityNews(world);
+initNpcMemory(world);
+initPhotoBounty(scene, world, camera, save, landmarks);
+initPerf(world, renderer);
+initAccessibility(world, {
+  onSave: saveGame,
+  onClose: () => { if (gameState === 'pause') openMenu(world); },
+});
+initReplay(world, camera, renderer, {
+  onEnter: () => { gameState = 'replay'; showTouchUI(false); document.exitPointerLock?.(); },
+  onExit: () => { gameState = 'play'; showTouchUI(isTouch); if (!isTouch) renderer.domElement.requestPointerLock?.(); },
+});
 initCheats({
   cash: () => { world.money += 10000; },
   clear: () => { world.wanted = 0; world.wantedTimer = 0; clearCops(world); },
@@ -578,6 +602,7 @@ initMenu({
   onResume: resumeGame,
   onRestart: () => { closeMenu(); respawn(); gameState = 'play'; showTouchUI(isTouch); },
   onPhoto: enterPhotoMode,
+  onAccessibility: () => { closeMenu(); openAccessibility(); },
   onCamera: () => {
     closeMenu();
     openCamera(() => { if (gameState === 'pause') openMenu(world); }).then((r) => {
@@ -753,7 +778,9 @@ function saveGame() {
       streetRaces: world.streetRaceWins,
       bhuntDay: world.bhunt?.caughtDay,
       ...rideHailSave(world),
+      ...photoBountySave(world),
     }));
+    mirrorActiveSlot(); // keep the active save slot in sync with the live save
   } catch {}
 }
 world.onSave = saveGame;
@@ -790,6 +817,7 @@ for (const x of [.02, -.1]) {
 }
 viewHands.add(firstWeapon.group);
 viewHands.rotation.y = Math.PI;
+viewHands.scale.setScalar(.72);
 camera.add(viewHands); scene.add(camera);
 equipCharacter(playerChar, 0);
 const rockets = [];
@@ -890,6 +918,21 @@ const _camDesired = new THREE.Vector3();
 const _cameraRay = new THREE.Vector3();
 const _muzzle = new THREE.Vector3();
 const _aimPoint = new THREE.Vector3();
+const _muzzleAnchor = new THREE.Vector3();
+const _muzzleSweep = new THREE.Vector3();
+
+function playerMuzzle(out) {
+  if (firstPerson && onFootView()) {
+    camera.updateWorldMatrix(true, true); firstWeapon.muzzle.getWorldPosition(out);
+  } else muzzlePosition(player.ch, out);
+  // A model may poke through a wall; its projectile must never spawn beyond it.
+  _muzzleAnchor.copy(player.pos); _muzzleAnchor.y += 1.46;
+  _muzzleSweep.copy(out).sub(_muzzleAnchor);
+  const length = _muzzleSweep.length(); _muzzleSweep.normalize();
+  const clear = solidDistance(_muzzleAnchor,_muzzleSweep,city.colliders,length);
+  if (clear < length) out.copy(_muzzleAnchor).addScaledVector(_muzzleSweep,Math.max(0,clear-.02));
+  return out;
+}
 
 function onFootView() { return !player.inCar && !player.inHeli && !player.inBoat && !player.inPlane; }
 function aiming() { return !!(keys.ControlLeft || keys.ControlRight || mouse.down || recoilT > 0); }
@@ -1004,8 +1047,10 @@ function updateCamera(dt) {
   firstWeapon.flash.visible = recoilT > .075;
   world.aiming = onFootView() && (aiming() || mouse.rdown || web.attached);
 
-  // sense of speed: widen FOV as you go faster — unless scoping the sniper
-  let targetFov = Math.min(84, 70 + focusSpeed * 0.32);
+  // sense of speed: widen FOV as you go faster — unless scoping the sniper.
+  // Reduced-motion trims the swing to keep the horizon steadier.
+  const fovSwing = world.a11y?.reduceMotion() ? 0.12 : 0.32;
+  let targetFov = Math.min(world.a11y?.reduceMotion() ? 76 : 84, 70 + focusSpeed * fovSwing);
   if (!player.inCar && !player.inHeli && !player.inBoat && !web.attached &&
       WEAPONS[weaponIdx].zoom && aiming() && gameState === 'play') {
     targetFov = 42;
@@ -1015,7 +1060,8 @@ function updateCamera(dt) {
     camera.updateProjectionMatrix();
   }
 
-  // impact shake
+  // impact shake (also suppressed by reduced-motion)
+  if (world.a11y?.reduceMotion()) world.shake = 0;
   if (world.settings.cameraShake && world.shake > 0.001) {
     camera.position.x += (Math.random() - 0.5) * world.shake;
     camera.position.y += (Math.random() - 0.5) * world.shake;
@@ -1806,7 +1852,10 @@ function webAttack() {
   for (const group of [world.peds, world.gangPeds]) {
     for (const p of group) {
       if (p.dead) continue;
-      const t = raySphere(_rayOrigin, _rayDir, _sphere.set(p.pos.x, 1.1, p.pos.z), 1.0);
+      // Third-person camera centers on the shoulders, while pedestrians aim at
+      // their chest. Use a forgiving body capsule so the reticle and Q/web ray
+      // agree without making targets selectable from outside the street view.
+      const t = raySphere(_rayOrigin, _rayDir, _sphere.set(p.pos.x, 1.25, p.pos.z), 1.55);
       if (t < bestT) { bestT = t; hitPed = p; hitVeh = null; }
     }
   }
@@ -2352,6 +2401,7 @@ function explodeVehicle(v) {
   v.ai = null;
   v.vel.set(0, 0, 0);
   addExplosion(v.pos);
+  world.scars?.boom(v.pos);
   darkenCar(v);
   trackDaily(world, 'wrecked');
   addChaos(world, 15);
@@ -2377,6 +2427,7 @@ const _sphere = new THREE.Vector3();
 
 function raySphere(origin, dir, center, radius) {
   _toTarget.subVectors(center, origin);
+  if (_toTarget.lengthSq() <= radius * radius) return 0;
   const t = _toTarget.dot(dir);
   if (t < 0) return Infinity;
   const d2 = _toTarget.lengthSq() - t * t;
@@ -2397,9 +2448,9 @@ function shoot() {
   camera.getWorldDirection(_rayDir);
   sfxShot(w.sfx);
   player.mesh.rotation.y = camYaw;
-  poseWeapon(player.ch, true);
+  poseWeapon(player.ch, true, 0, camPitch);
   recoilT = .12;
-  muzzlePosition(player.ch, _muzzle);
+  playerMuzzle(_muzzle);
   addFlash(_muzzle.clone(), 0xffd080, .22);
   world.lastShot = { pos: player.pos.clone(), t: world.time };
   if (world.wanted === 0 && !world.gunMods?.silencer) addCrime(world, 1);
@@ -2417,8 +2468,30 @@ function shoot() {
   for (let p = (w.pellets || 1); p > 0; p--) fireBullet(w);
 }
 
+const _aaTo = new THREE.Vector3();
+// Accessibility aim assist: bend the shot a few degrees toward the nearest
+// hostile that's already close to the crosshair. Opt-in, gentle, never a lock.
+function applyAimAssist() {
+  if (!world.a11y?.aimAssist()) return;
+  _rayOrigin.copy(camera.position);
+  let best = null, bestDot = 0.985; // ~10° cone
+  for (const group of [world.gangPeds, world.cops, world.targets, world.tanks]) {
+    for (const t of group || []) {
+      if (!t || t.dead) continue;
+      _aaTo.set(t.pos.x, t.pos.y + (t.aimY ?? 1.1), t.pos.z).sub(_rayOrigin);
+      const d = _aaTo.length();
+      if (d < 2 || d > 70) continue;
+      _aaTo.divideScalar(d);
+      const dot = _aaTo.dot(_rayDir);
+      if (dot > bestDot) { bestDot = dot; best = _aaTo.clone(); }
+    }
+  }
+  if (best) _rayDir.lerp(best, 0.5).normalize();
+}
+
 function fireBullet(w) {
   camera.getWorldDirection(_rayDir);
+  applyAimAssist();
   const spread = world.gunMods?.scope ? w.spread * 0.55 : w.spread;
   _rayDir.x += (Math.random() - 0.5) * spread * 2;
   _rayDir.y += (Math.random() - 0.5) * spread * 2;
@@ -2427,10 +2500,22 @@ function fireBullet(w) {
   _rayOrigin.copy(camera.position);
 
   const RANGE = 80;
-  const aimDistance = solidDistance(_rayOrigin, _rayDir, city.colliders, RANGE);
+  let aimDistance = solidDistance(_rayOrigin, _rayDir, city.colliders, RANGE);
+  // Resolve crosshair parallax at the nearest entity, not a point behind it.
+  for (const group of [world.peds, world.gangPeds, world.cops, world.traffic, world.parked, world.tanks, world.policeHelis, world.helis, world.targets]) {
+    for (const target of group) {
+      if (target.dead) continue;
+      const human = group === world.peds || group === world.gangPeds;
+      const air = group === world.policeHelis || group === world.helis;
+      const extra = group === world.targets;
+      const height = human ? 1.1 : air ? 1.8 : extra ? (target.aimY ?? 0) : .8;
+      const radius = human ? .85 : air ? 3.2 : extra ? (target.r ?? 1) : target.tank ? 2.8 : 2;
+      const t = raySphere(_rayOrigin, _rayDir, _sphere.copy(target.pos).addScaledVector(THREE.Object3D.DEFAULT_UP, height), radius);
+      if (t > 0 && t < aimDistance) aimDistance = t;
+    }
+  }
   _aimPoint.copy(_rayOrigin).addScaledVector(_rayDir, aimDistance);
-  if (firstPerson) { camera.updateWorldMatrix(true, true); firstWeapon.muzzle.getWorldPosition(_rayOrigin); }
-  else muzzlePosition(player.ch, _rayOrigin);
+  playerMuzzle(_rayOrigin);
   _rayDir.copy(_aimPoint).sub(_rayOrigin).normalize();
   let bestT = solidDistance(_rayOrigin, _rayDir, city.colliders, RANGE);
   let hitPed = null;
@@ -2493,6 +2578,9 @@ function fireBullet(w) {
     if (hitHeli.health <= 0) explodeHeli(world, hitHeli, true);
   } else if (hitTarget) {
     hitTarget.hit(world);
+  } else if (_hitPoint.y < 1.2 && bestT < 55) {
+    // round hit the ground close by — chance of a lingering graze mark
+    world._scarShotAt = { x: _hitPoint.x, z: _hitPoint.z };
   }
 }
 
@@ -2513,9 +2601,8 @@ function fireRocket(origin) {
   mesh.add(tip);
 
   const dir = _rayDir.clone();
-  const pos = origin ? origin.clone() : player.pos.clone();
-  if (!origin) pos.y = player.pos.y + 1.5;
-  pos.addScaledVector(dir, origin ? 3.2 : 1.4);
+  const pos = origin ? origin.clone() : playerMuzzle(new THREE.Vector3());
+  if (origin) pos.addScaledVector(dir, 3.2);
   mesh.position.copy(pos);
   mesh.lookAt(pos.clone().add(dir));
   scene.add(mesh);
@@ -2569,8 +2656,7 @@ const grenMat = new THREE.MeshLambertMaterial({ color: 0x2f4a2a });
 
 function throwGrenade() {
   const mesh = new THREE.Mesh(grenGeo, grenMat);
-  const pos = player.pos.clone();
-  pos.y += 1.5;
+  const pos = playerMuzzle(new THREE.Vector3());
   mesh.position.copy(pos);
   scene.add(mesh);
   const vel = _rayDir.clone().multiplyScalar(19);
@@ -2595,6 +2681,7 @@ function updateGrenades(dt) {
 
 function explodeRocket(pos) {
   addExplosion(pos);
+  world.scars?.boom(pos);
   world.shake = 0.5;
 
   for (const group of [world.cops, world.traffic, world.parked, world.tanks]) {
@@ -2778,6 +2865,12 @@ function respawn() {
 // ---------- start screen / pointer lock ----------
 
 const startEl = document.getElementById('start');
+
+// save-slot picker: a row of slot cards above the character picker
+(function buildSlots() {
+  const charpick = document.getElementById('charpick');
+  if (charpick) buildSlotPicker(charpick);
+})();
 
 // character picker: cards on the start screen, choice saved for next time
 let chosenChar = charDef.key;
@@ -2983,8 +3076,12 @@ function update(dt) {
 
   updatePeds(world, dt);
   updateCharacterDetail(player.ch, player.pos, world.settings.lowGfx);
-  for (const ped of world.peds) {
-    if (ped.mesh.visible) updateCharacterDetail(ped.ch, player.pos, world.settings.lowGfx);
+  // Pedestrian close-up detail is staggered under load (perf governor): the
+  // player rig always updates; the crowd updates on 1/2 or 1/3 of frames.
+  if (world.perf.detailTick(0)) {
+    for (const ped of world.peds) {
+      if (ped.mesh.visible) updateCharacterDetail(ped.ch, player.pos, world.settings.lowGfx);
+    }
   }
   updateTraffic(world, dt);
   updatePolice(world, dt);
@@ -2993,8 +3090,10 @@ function update(dt) {
   {
     const focus = player.inCar ? player.inCar.pos : player.pos;
     const low = world.settings.lowGfx;
-    for (const group of [world.traffic, world.parked, world.cops]) {
-      for (const v of group) updateVehicleDetail(v, focus, low);
+    if (world.perf.detailTick(1)) {
+      for (const group of [world.traffic, world.parked, world.cops]) {
+        for (const v of group) updateVehicleDetail(v, focus, low);
+      }
     }
     if (player.inCar) updateVehicleDetail(player.inCar, focus, low, !!(keys['KeyS'] || keys['Space']));
   }
@@ -3140,6 +3239,9 @@ function update(dt) {
   updatePerks(world, dt, pressed);
   updateExplorer(world, dt);
   updateArmor(world, dt, pressed);
+  updateScars(dt);
+  updateCityNews(dt);
+  updateNpcMemory(dt);
 
   // season-9 buff & cheat clocks
   world.buffs.speedT = Math.max(0, world.buffs.speedT - dt);
@@ -3237,9 +3339,12 @@ function update(dt) {
 
   checkAchievements(dt);
 
-  // pause / big map / screenshot / legend board
+  recordReplay(dt); // passive rolling buffer of the last ~20s
+
+  // pause / big map / screenshot / legend board / instant replay
   if (pressed['KeyP']) pauseGame();
   if (pressed['KeyM']) openBigMap();
+  if (pressed['KeyO'] && !replayActive()) openReplay();
   if (pressed['KeyL']) {
     gameState = 'cards'; // same frozen-overlay state the casino uses
     showTouchUI(false);
@@ -3264,12 +3369,14 @@ function update(dt) {
     }
   }
   updateCamera(dt);
+  updatePhotoBounty(dt); // after the camera moves — frustum must match the shot
   recoilT = Math.max(0, recoilT - dt);
   if (onFootView() && aiming()) {
     player.mesh.rotation.y = camYaw;
-    poseWeapon(player.ch, true, recoilT * 8);
+    poseWeapon(player.ch, true, recoilT * 8, camPitch);
   }
   updateSiren();
+  if (world.photoBoardHint && !world.mission?.active) setHint(world.photoBoardHint);
   updateHUD(world);
 
   if (player.health <= 0) triggerOver('WASTED', '#c0392b');
@@ -3284,6 +3391,7 @@ function animate() {
   requestAnimationFrame(animate);
   pollGamepad();
   let dt = Math.min(clock.getDelta(), 0.05);
+  updatePerf(dt); // rolling frame-time governor + FPS meter (real, unscaled dt)
 
   // dramatic slow-mo: dying, or the level-6 airborne aim skill
   if (world.slowmoT > 0) {
@@ -3303,6 +3411,8 @@ function animate() {
     camera.lookAt(city.spawn.x, 8, city.spawn.z);
   } else if (gameState === 'photo') {
     updatePhoto(dt);
+  } else if (gameState === 'replay') {
+    updateReplay(dt, { keys, pressed, mouse });
   } else if (gameState === 'map') {
     drawBigMap(world);
     if (pressed['KeyM'] || pressed['Escape']) closeBigMap();
@@ -3318,7 +3428,7 @@ function animate() {
     camera.rotation.x += Math.sin(t * 0.0013) * 0.04;
   }
   renderer.info.reset();
-  if (gameState !== 'play') {
+  if (gameState !== 'play' || world.bankUiOpen) {
     viewHands.visible = false;
     document.getElementById('crosshair').style.display = 'none';
   }

@@ -33,8 +33,9 @@ export function initMenu(h) {
   menuEl.id = 'pausemenu';
   menuEl.style.cssText =
     'position:fixed;inset:0;z-index:40;display:none;flex-direction:column;align-items:center;' +
-    'justify-content:center;background:radial-gradient(ellipse at 50% 35%,rgba(22,52,79,.6),rgba(6,11,18,.94));' +
-    'color:#eef4fb;text-align:center;overflow-y:auto;font-family:Segoe UI,Inter,Arial,sans-serif;';
+    'justify-content:safe center;background:radial-gradient(ellipse at 50% 35%,rgba(22,52,79,.6),rgba(6,11,18,.94));' +
+    'color:#eef4fb;text-align:center;overflow-y:auto;padding:24px 10px;box-sizing:border-box;' +
+    'font-family:Segoe UI,Inter,Arial,sans-serif;';
   const h1 = document.createElement('div');
   h1.textContent = 'PAUSED';
   h1.style.cssText = 'font:900 40px Segoe UI,Inter,sans-serif;letter-spacing:.28em;color:#55e6ff;' +
@@ -52,6 +53,14 @@ export function initMenu(h) {
   photo.style.cssText = BTN + 'background:transparent;color:#eef4fb;box-shadow:inset 0 0 0 1px rgba(85,230,255,.5);';
   photo.onclick = () => hooks.onPhoto();
   menuEl.appendChild(photo);
+
+  if (hooks.onAccessibility) {
+    const a11y = document.createElement('button');
+    a11y.textContent = '♿ ACCESSIBILITY';
+    a11y.style.cssText = BTN + 'background:transparent;color:#eef4fb;box-shadow:inset 0 0 0 1px rgba(85,230,255,.5);';
+    a11y.onclick = () => hooks.onAccessibility();
+    menuEl.appendChild(a11y);
+  }
 
   if (hooks.cameraSupported) {
     const cam = document.createElement('button');
@@ -90,6 +99,9 @@ export function initMenu(h) {
   const shake = document.createElement('input');
   shake.type = 'checkbox'; shake.checked = !!s.cameraShake;
   shake.onchange = () => { s.cameraShake = shake.checked; hooks.onSettings(); };
+  const fps = document.createElement('input');
+  fps.type = 'checkbox'; fps.checked = !!s.showFps;
+  fps.onchange = () => { s.showFps = fps.checked; hooks.onSettings(); };
 
   const box = document.createElement('div');
   box.style.cssText = 'margin-top:16px;padding:14px 22px;background:rgba(8,15,24,0.72);border:1px solid rgba(85,230,255,0.3);' + CLIP;
@@ -101,6 +113,7 @@ export function initMenu(h) {
     row('AMBIENT OCCLUSION (RELOAD)', ao),
     row('VEHICLE FUEL', fuel),
     row('IMPACT CAMERA SHAKE', shake),
+    row('SHOW FPS METER', fps),
   );
   menuEl.appendChild(box);
 

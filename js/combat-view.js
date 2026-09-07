@@ -5,11 +5,15 @@ export function solidDistance(origin, direction, colliders, range, padding = 0) 
   let nearest = range;
   for (const c of colliders) {
     let lo = 0, hi = nearest;
-    for (const [axis, min, max] of [['x', c.x0 - padding, c.x1 + padding], ['y', (c.y0 ?? 0) - padding, c.h + padding], ['z', c.z0 - padding, c.z1 + padding]]) {
-      if (Math.abs(direction[axis]) < 1e-8) {
-        if (origin[axis] < min || origin[axis] > max) { hi = -1; break; }
+    for (let axis = 0; axis < 3; axis++) {
+      const min = (axis === 0 ? c.x0 : axis === 1 ? (c.y0 ?? 0) : c.z0) - padding;
+      const max = (axis === 0 ? c.x1 : axis === 1 ? (c.h ?? Infinity) : c.z1) + padding;
+      const o = axis === 0 ? origin.x : axis === 1 ? origin.y : origin.z;
+      const d = axis === 0 ? direction.x : axis === 1 ? direction.y : direction.z;
+      if (Math.abs(d) < 1e-8) {
+        if (o < min || o > max) { hi = -1; break; }
       } else {
-        const a = (min - origin[axis]) / direction[axis], b = (max - origin[axis]) / direction[axis];
+        const a = (min - o) / d, b = (max - o) / d;
         lo = Math.max(lo, Math.min(a, b)); hi = Math.min(hi, Math.max(a, b));
       }
     }
@@ -60,10 +64,10 @@ export function equipCharacter(ch, index = 0) {
   return weapon;
 }
 
-export function poseWeapon(ch, raised, recoil = 0) {
+export function poseWeapon(ch, raised, recoil = 0, pitch = 0) {
   if (!ch.weapon) return;
   if (raised) {
-    ch.rArm.rotation.set(-Math.PI / 2 - recoil*.15, 0, 0);
+    ch.rArm.rotation.set(-Math.PI / 2 + pitch - recoil*.15, 0, 0);
     if (ch.rElbow) ch.rElbow.rotation.x = 0;
   }
 }
@@ -74,9 +78,15 @@ export function muzzlePosition(ch, out = new THREE.Vector3()) {
 }
 
 export function enemyShot(ch, aim, city, addTracer, addFlash) {
-  equipCharacter(ch);
-  poseWeapon(ch, true);
+  if (!ch.weapon) equipCharacter(ch);
+  const offset = aim.clone().sub(ch.group.position); offset.y -= 1.46;
+  poseWeapon(ch, true, 0, -Math.atan2(offset.y, Math.hypot(offset.x,offset.z)));
   const from = muzzlePosition(ch), dir = aim.clone().sub(from);
+  const anchor = ch.group.position.clone(); anchor.y += 1.46;
+  const sweep = from.clone().sub(anchor), sweepLength = sweep.length(); sweep.normalize();
+  const clearance = solidDistance(anchor,sweep,city.colliders,sweepLength);
+  if (clearance < sweepLength) from.copy(anchor).addScaledVector(sweep,Math.max(0,clearance-.02));
+  dir.copy(aim).sub(from);
   const length = dir.length(); dir.normalize();
   const distance = solidDistance(from, dir, city.colliders, length);
   addFlash(from, 0xffd080, .2);

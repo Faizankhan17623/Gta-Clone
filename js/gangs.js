@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { equipCharacter, poseWeapon, enemyShot } from './combat-view.js';
 import { createCharacter, animateWalk, animateIdle } from './characters.js';
 import { blockStart, BLOCK, N, resolveCircle } from './city.js';
 import { showToast, showMissionMsg, showNews } from './hud.js';
@@ -42,6 +43,7 @@ export function initGang(scene, world, saved) {
   const members = [];
   for (let i = 0; i < MEMBERS; i++) {
     const ch = createCharacter({ shirt: '#a02020', pants: '#181f28', skin: '#c98e63' });
+    equipCharacter(ch);
     scene.add(ch.group);
     const p = randomZonePoint(zone);
     ch.group.position.set(p.x, 0, p.z);
@@ -201,6 +203,7 @@ function spawnHunters(world) {
   const p = world.player.pos;
   for (let i = 0; i < 2; i++) {
     const ch = createCharacter({ shirt: '#101014', pants: '#101014', skin: '#d9a06e' });
+    equipCharacter(ch);
     world.scene.add(ch.group);
     const a = Math.random() * Math.PI * 2;
     ch.group.position.set(p.x + Math.sin(a) * 28, 0, p.z + Math.cos(a) * 28);
@@ -278,17 +281,15 @@ function updateHunters(world, dt) {
       animateWalk(h.ch, h.animT, 0.7);
     }
     h.ch.rArm.rotation.x = -Math.PI / 2;
+    poseWeapon(h.ch, true);
     h.shootT -= dt;
     if (h.shootT <= 0 && d < 30 && !player.inHeli && player.pos.y < 10) {
       h.shootT = 1.5 + Math.random() * 0.7;
-      const from = h.pos.clone();
-      from.y = 1.4;
       const aim = focus.clone();
       aim.y += 1.1 + (Math.random() - 0.5) * 0.5;
-      addTracer(from, aim);
-      addFlash(aim, 0xffd080, 0.25);
+      const clearShot = enemyShot(h.ch, aim, world.city, addTracer, addFlash);
       sfxShot('pistol');
-      if (Math.random() < 0.5) {
+      if (clearShot && Math.random() < 0.5) {
         if (player.inCar) player.inCar.health -= 5;
         else if (!(player.dodgeT > 0)) player.health -= 6;
       }
@@ -348,19 +349,17 @@ export function updateGang(world, dt) {
       m.ch.rArm.rotation.x = -Math.PI / 2; // aiming
       animateIdle(m.ch);
       m.ch.rArm.rotation.x = -Math.PI / 2;
+      poseWeapon(m.ch, true);
       m.shootT -= dt;
       if (m.shootT <= 0) {
         m.shootT = 1.4 + Math.random() * 0.8;
-        const from = m.pos.clone();
-        from.y = 1.4;
         const aim = focus.clone();
         aim.y = focus.y + 1.2 + (Math.random() - 0.5);
         aim.x += (Math.random() - 0.5) * 3;
         aim.z += (Math.random() - 0.5) * 3;
-        addTracer(from, aim);
-        addFlash(aim, 0xffd080, 0.25);
+        const clearShot = enemyShot(m.ch, aim, world.city, addTracer, addFlash);
         sfxShot('pistol');
-        if (Math.random() < 0.5 && dToPlayer < 30) {
+        if (clearShot && Math.random() < 0.5 && dToPlayer < 30) {
           if (player.inCar) player.inCar.health -= 5;
           else if (!(player.dodgeT > 0)) player.health -= 5;
         }

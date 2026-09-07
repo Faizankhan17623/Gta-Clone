@@ -39,12 +39,12 @@ export function buildLandmarks(scene, city) {
     marks.push({ name: 'THE SPIRE', pos: new THREE.Vector3(bx, 150, bz), beacon });
   }
 
-  // ---- STADIUM: an oval bowl on a two-block footprint ----
+  // ---- STADIUM: an oval bowl inside its reserved block ----
   {
     const cx = blockStart(7) + BLOCK / 2;
     const cz = blockStart(2) + BLOCK / 2;
     const ring = new THREE.Mesh(
-      new THREE.CylinderGeometry(34, 38, 18, 40, 1, true),
+      new THREE.CylinderGeometry(24, 26, 18, 40, 1, true),
       std(0xb8bcc4, 0, 0.2, 0.8)
     );
     ring.position.set(cx, 9, cz);
@@ -52,7 +52,7 @@ export function buildLandmarks(scene, city) {
     ring.castShadow = true;
     scene.add(ring);
     const field = new THREE.Mesh(
-      new THREE.CircleGeometry(26, 32),
+      new THREE.CircleGeometry(22, 32),
       new THREE.MeshLambertMaterial({ color: 0x2e6b34 })
     );
     field.rotation.x = -Math.PI / 2;
@@ -61,8 +61,8 @@ export function buildLandmarks(scene, city) {
     scene.add(field);
     // floodlight pylons
     for (const a of [0.6, 2.0, 4.1, 5.5]) {
-      const px = cx + Math.cos(a) * 30;
-      const pz = cz + Math.sin(a) * 30 * 0.72;
+      const px = cx + Math.cos(a) * 24;
+      const pz = cz + Math.sin(a) * 24 * 0.72;
       const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.7, 26, 6), std(0x2c2c32));
       pole.position.set(px, 13, pz);
       scene.add(pole);
@@ -75,7 +75,7 @@ export function buildLandmarks(scene, city) {
       scene.add(lamp);
     }
     // ring wall collider (approx as a box so you can swing off the rim)
-    city.colliders.push({ x0: cx - 36, z0: cz - 27, x1: cx + 36, z1: cz + 27, h: 18 });
+    city.colliders.push({ x0: cx - 26, z0: cz - 19, x1: cx + 26, z1: cz + 19, h: 18 });
     marks.push({ name: 'THE STADIUM', pos: new THREE.Vector3(cx, 18, cz) });
   }
 

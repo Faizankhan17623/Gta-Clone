@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { equipCharacter, enemyShot } from './combat-view.js';
 import { HALF } from './city.js';
 import { createCharacter } from './characters.js';
 import { showToast, showNews, showMissionMsg } from './hud.js';
@@ -55,6 +56,7 @@ function makeWagon(scene, kind) {
 
 function makeGuard(world, wagonIdx, off) {
   const ch = createCharacter({ shirt: '#20293d', pants: '#141a28', skin: '#c98e63' });
+  equipCharacter(ch, 1);
   world.scene.add(ch.group);
   const guard = { ch, mesh: ch.group, pos: ch.group.position, wagonIdx, off, hp: 60, dead: false, shootT: 1.5 + Math.random() };
   guard.target = {
@@ -215,9 +217,8 @@ export function updateTrain(world, dt, keys, pressed) {
       sfxShot('pistol');
       const aim = focus.clone();
       aim.y += 1 + (Math.random() - 0.5) * 0.7;
-      addTracer(gd.pos.clone().setY(ROOF_TOP + 1.4), aim);
-      addFlash(aim, 0xffd080, 0.2);
-      if (Math.random() < 0.4 && !(player.dodgeT > 0)) {
+      const clearShot = enemyShot(gd.ch, aim, world.city, addTracer, addFlash);
+      if (clearShot && Math.random() < 0.4 && !(player.dodgeT > 0)) {
         if (player.inHeli) player.inHeli.health -= 5;
         else player.health -= 6;
       }

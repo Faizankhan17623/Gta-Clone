@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { blockStart, pointBlocked } from './city.js';
+import { placeStreetSite } from './site-layout.js';
 import { showToast, showMissionMsg } from './hud.js';
 import { sfxMissionPass, sfxMissionFail } from './sound.js';
 import { addCrime } from './police.js';
@@ -15,9 +16,12 @@ export function initStorerob(scene, world) {
   const stores = [];
   for (let i = 0; i < SPOTS.length; i++) {
     const [bi, bj] = SPOTS[i];
-    let pos = new THREE.Vector3(blockStart(bi) + 20, 0, blockStart(bj) - 2.5);
-    const probe = new THREE.Vector3(pos.x, 1, pos.z);
-    if (pointBlocked(probe, world.city.colliders, 1.6)) pos = new THREE.Vector3(blockStart(bi) + 36, 0, blockStart(bj) - 2.5);
+    const pos = placeStreetSite(
+      world.city,
+      new THREE.Vector3(blockStart(bi) + 20, 0, blockStart(bj) - 2.5),
+      1.6,
+      'corner-store'
+    );
 
     const shop = new THREE.Mesh(
       new THREE.BoxGeometry(2.6, 2.4, 2),

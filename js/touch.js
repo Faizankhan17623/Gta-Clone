@@ -190,6 +190,10 @@ export function initTouch() {
     () => press('KeyF'), () => release('KeyF')).id = 'btn-punch';
   button('WPN', 'right:286px;bottom:36px;width:50px;height:50px;font-size:11px;',
     () => press('KeyX'), () => release('KeyX')).id = 'btn-wpn'; // cycle weapons
+  button('VIEW', 'right:24px;top:120px;width:42px;height:42px;font-size:9px;',
+    () => press('F2'), () => release('F2')).id = 'btn-view';
+  button('AIM', 'right:76px;top:120px;width:42px;height:42px;font-size:9px;',
+    () => press('ControlLeft'), () => release('ControlLeft')).id = 'btn-aim';
   // utilities below the stars, pulled left so they never touch the WEB cluster
   button('II', 'right:170px;top:120px;width:42px;height:42px;',
     () => press('KeyP'), () => release('KeyP'));

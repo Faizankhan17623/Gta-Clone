@@ -306,6 +306,11 @@ function drawMinimap(world) {
   }
 
   // ambulance patient / hospital
+  for (const [site, label, color] of [[world.medic?.hospital, 'H', '#68d8de'], [world.armsdealer?.pos, 'G', '#e1b76a']]) {
+    if (!site) continue;
+    const [x,z] = toMap(site.x, site.z);
+    g.fillStyle = color; g.font = 'bold 10px Arial'; g.fillText(label, x-3, z+3);
+  }
   if (world.medBlip) {
     const [mx, mz] = toMap(world.medBlip.x, world.medBlip.z);
     g.fillStyle = '#ffffff';

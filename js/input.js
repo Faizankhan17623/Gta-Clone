@@ -12,6 +12,29 @@ const GAME_KEYS = new Set(['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowR
 const sources = new Map();
 const keyboardHeld = new Map();
 
+// ---------------- key rebinding ----------------
+// `remap` maps a PHYSICAL key name (what the keyboard produced) to a LOGICAL
+// game key name (what the game systems check). Empty by default = identity.
+// accessibility.js loads/saves this; every game module keeps checking the same
+// logical names (`keys.KeyE`, `pressed.KeyM`, ...) and stays untouched.
+export const remap = Object.create(null);
+
+export function setRemap(table) {
+  for (const k in remap) delete remap[k];
+  if (table) for (const k in table) if (table[k] && table[k] !== k) remap[k] = table[k];
+}
+
+function applyRemap(names) {
+  if (!names.length) return names;
+  let changed = false;
+  const out = names.map((n) => {
+    const to = remap[n];
+    if (to && to !== n) { changed = true; return to; }
+    return n;
+  });
+  return changed ? [...new Set(out)] : names;
+}
+
 // Independent owners: releasing a joystick/gamepad must not release a keyboard.
 export function setInputKey(source, name, down) {
   let held = sources.get(source);
@@ -71,7 +94,7 @@ export function initInput() {
     mouse.wheel = Math.sign(e.deltaY);
   }, { passive: false });
   window.addEventListener('keydown', (e) => {
-    const names = namesFor(e);
+    const names = applyRemap(namesFor(e));
     if (e.target?.matches?.('input, textarea, select, [contenteditable="true"]')) return;
     // stop the browser acting on game keys (quick-find, scrolling, shortcuts)
     if (names.some((n) => GAME_KEYS.has(n) || n === 'F2')) e.preventDefault();
@@ -81,7 +104,7 @@ export function initInput() {
   });
   window.addEventListener('keyup', (e) => {
     const id = e.code || String(e.keyCode || e.which || e.key);
-    for (const n of keyboardHeld.get(id) || namesFor(e)) setInputKey('keyboard:' + id, n, false);
+    for (const n of keyboardHeld.get(id) || applyRemap(namesFor(e))) setInputKey('keyboard:' + id, n, false);
     keyboardHeld.delete(id);
   });
   window.addEventListener('mousemove', (e) => {

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { equipCharacter, poseWeapon, enemyShot } from './combat-view.js';
 import { makeVehicle, physStep, separateCars, darkenCar } from './car.js';
 import { addExplosion, addTracer, addFlash, addSparks, addSmoke } from './effects.js';
 import { roadCenter, HALF, N, resolveCircle } from './city.js';
@@ -92,6 +93,7 @@ function unloadSwat(world, van) {
   van.unloaded = true;
   for (let i = 0; i < 4; i++) {
     const ch = createCharacter({ shirt: '#20293d', pants: '#141a28', skin: '#c98e63' });
+    equipCharacter(ch, 1);
     world.scene.add(ch.group);
     const a = (i / 4) * Math.PI * 2;
     ch.group.position.set(van.pos.x + Math.sin(a) * 3, 0, van.pos.z + Math.cos(a) * 3);
@@ -161,16 +163,14 @@ function updateSwat(world, dt) {
       animateWalk(o.ch, o.animT, 0.7);
     }
     o.ch.rArm.rotation.x = -Math.PI / 2; // rifle up
+    poseWeapon(o.ch, true);
     o.shootT -= dt;
     if (o.shootT <= 0 && d < 32 && onFoot && player.pos.y < 10) {
       o.shootT = 1.6 + Math.random() * 0.6;
-      const from = o.pos.clone();
-      from.y = 1.4;
       const aim = player.pos.clone();
       aim.y += 1.1 + (Math.random() - 0.5) * 0.6;
-      addTracer(from, aim);
-      addFlash(aim, 0xffd080, 0.25);
-      if (Math.random() < 0.55 && !(player.dodgeT > 0)) player.health -= 6;
+      const clearShot = enemyShot(o.ch, aim, world.city, addTracer, addFlash);
+      if (clearShot && Math.random() < 0.55 && !(player.dodgeT > 0)) player.health -= 6;
     }
   }
 }

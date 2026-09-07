@@ -1,4 +1,7 @@
 import * as THREE from 'three';
+import { placeStreetSite } from './site-layout.js';
+import { addStorefront } from './storefront.js';
+import { spendMoney } from './wallet.js';
 import { blockStart, BLOCK, N } from './city.js';
 import { showToast, showNews } from './hud.js';
 import { sfxMissionPass, sfxMissionFail, sfxPickup } from './sound.js';
@@ -21,8 +24,10 @@ function sidewalkPoint() {
 
 export function initAmbulance(scene, world) {
   // CITY HOSPITAL: white box + red cross on a block corner
-  const hx = blockStart(3) + 5;
-  const hz = blockStart(3) + 5;
+  const site = new THREE.Vector3(blockStart(3) + 5, 0, blockStart(3) + 5);
+  placeStreetSite(world.city, site, 8, 'hospital');
+  const hx = site.x;
+  const hz = site.z;
   const bldg = new THREE.Mesh(
     new THREE.BoxGeometry(6, 5, 6),
     new THREE.MeshStandardMaterial({ color: 0xe8e8e2, metalness: 0.05, roughness: 0.8 })
@@ -30,7 +35,7 @@ export function initAmbulance(scene, world) {
   bldg.position.set(hx, 2.5, hz);
   bldg.castShadow = true;
   scene.add(bldg);
-  const crossMat = new THREE.MeshBasicMaterial({ color: 0xe03030 });
+  const crossMat = new THREE.MeshBasicMaterial({ color: 0x30a0b0 });
   const barV = new THREE.Mesh(new THREE.BoxGeometry(0.5, 2, 0.15), crossMat);
   barV.position.set(hx, 4, hz + 3.08);
   scene.add(barV);
@@ -38,12 +43,15 @@ export function initAmbulance(scene, world) {
   barH.position.set(hx, 4, hz + 3.08);
   scene.add(barH);
   world.city.colliders.push({ x0: hx - 3, z0: hz - 3, x1: hx + 3, z1: hz + 3, h: 5.2 });
+  addStorefront(scene, new THREE.Vector3(hx, 0, hz + 1.6), 'CITY HOSPITAL', '#68d8de', 5.5);
+  world.city.colliders.push({x0:hx-2.75,x1:hx+2.75,z0:hz+.1,z1:hz+3.1,h:3});
 
   const ring = new THREE.Mesh(
     new THREE.CylinderGeometry(4, 4, 0.5, 20, 1, true),
     new THREE.MeshBasicMaterial({ color: 0xff6a6a, transparent: true, opacity: 0.35, side: THREE.DoubleSide, depthWrite: false })
   );
-  ring.position.set(hx, 0.4, hz + 8);
+  ring.position.set(hx, 0.04, hz + 5);
+  ring.scale.set(.65,.08,.65);
   scene.add(ring);
 
   // the patient: a poor soul lying flat, plus a beacon
@@ -61,7 +69,7 @@ export function initAmbulance(scene, world) {
   scene.add(beacon);
 
   world.medic = {
-    hospital: new THREE.Vector3(hx, 0, hz + 8),
+    hospital: new THREE.Vector3(hx, 0, hz + 5),
     ring, body, beacon,
     spawnT: 70 + Math.random() * 90,
     active: false, loaded: false, t: 0,
@@ -73,6 +81,16 @@ export function updateAmbulance(world, dt, keys, pressed) {
   const md = world.medic;
   const player = world.player;
   world.medHint = null;
+  const nearHospital = player.pos.distanceTo(md.hospital) < 3 && !player.inCar && !player.inHeli && !player.inBoat && !player.inPlane;
+  if (nearHospital && !md.loaded) {
+    world.medHint = 'CITY HOSPITAL · <b>E</b> treatment $100';
+    if (pressed.KeyE) {
+      const max = world.maxHealth;
+      if (player.health >= max) showToast('You are already healthy');
+      else if (spendMoney(world,100)) {player.health=max;sfxPickup();showToast('Treatment complete');world.onSave?.();}
+      else showToast('Treatment costs $100');
+    }
+  }
   md.ring.rotation.y += dt;
 
   if (!md.active) {

@@ -248,6 +248,9 @@ export function buildCity(scene) {
 
       pedRects.push({ x0: sx + 2, z0: sz + 2, x1: sx + BLOCK - 2, z1: sz + BLOCK - 2 });
 
+      // Landmarks own these lots; do not generate apartment towers through them.
+      if ((bi === 2 && bj === 7) || (bi === 7 && bj === 2) || (bi === 5 && bj === 5)) continue;
+
       if (isPark) {
         const hasPad = parkCount < 2;
         parkCount++;

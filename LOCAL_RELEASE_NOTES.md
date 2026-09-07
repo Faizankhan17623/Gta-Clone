@@ -62,3 +62,104 @@ The project already uses Three.js. Better character animation can use rigged GLB
 WebXR is feasible as an optional VR/AR mode. It requires supported browser/device and HTTPS, an XR animation loop, controller input, a player rig, XR-compatible UI/rendering and comfort/performance work. Desktop bloom/composer rendering cannot simply be assumed to work unchanged in VR. Keep the ordinary keyboard/touch game as fallback. https://threejs.org/manual/en/webxr-basics.html
 
 Neither a new animation asset pipeline nor WebXR was implemented in this bug-fix pass. Resolve the security release gates and test normal play before expanding into those features.
+
+## Camera, combat and city follow-up — September 7, 2026
+
+Local implementation only; no deployment or push by this session.
+
+- Player locomotion/landing animations no longer modify the physics-root height. On-foot camera uses exponential smoothing, shoulder offset and a padded wall sweep. Impact shake is off by default, optional in pause settings.
+- F2 switches on-foot first/third person. Hold Ctrl to aim; wheel cycles weapons while pointer-locked (X/digits retained). Right-click retains web-swinging. Touch has VIEW/AIM buttons and the existing WPN control.
+- Exploration hides the centre reticle; aiming, firing and web traversal show it. First-person hides the avatar and displays placeholder hands/weapon. These are NOT production-quality art.
+- Six replaceable procedural weapon silhouettes, basic recoil and muzzle flashes. Player hitscan resolves crosshair parallax and tests walls from the muzzle, including a body-to-muzzle sweep. Gang members, hunters, SWAT and train guards now use attached weapons and wall-checked muzzle shots. Other specialized combat systems still need their own animation/authority review; full reload/weapon animation clips are not implemented.
+- Stadium fits within its block. Spire, stadium and central park lots are reserved before generic buildings are generated. Shop sites and hospital reserve off-road space. Full static building-sized collider audit excludes infrastructure outside the city bounds; it is not a claim that every decorative mesh or mission obstacle is off-road.
+- CITY GUN SUPPLY uses the existing ammo-sale system with a storefront. Hospital has a signed entrance and $100 treatment respecting max health; healthy players are not charged. H/G minimap markers are persistent. Neither is a walk-in authored interior yet.
+- Follow-up inspector fixes: third-person web attack now uses a chest-aligned, forgiving body volume so the camera reticle and Q ray agree; corner-store robbery sites are placed through the off-road site allocator so collision resolution cannot move the player outside the interaction radius.
+
+Verification this pass: 18 Node tests; camera-combat, final-regressions, fulltest, mobiletest, newfeatures, season3test, season4test, season8btest, season9test and season10test browser suites. Reports/screenshots in ignored artifacts/camera-combat/ and artifacts/full-review/. Phone emulation is not physical-device performance certification.
+
+## Save slots, instant replay, accessibility, perf governor — local only
+
+Four self-contained modules, no deployment or push by this session.
+
+- **Save slots** (`js/saveslots.js`). Three independent save files. A pointer
+  (`opencity-active-slot`) picks which slot's blob is copied into the game's
+  single live key (`opencity-save-v1`) at boot; every `saveGame()` mirrors the
+  live key back into the active slot. Start-screen cards show money / level /
+  missions / packages per slot with rename, per-slot export/import and delete.
+  Switching or deleting the active slot reloads (safest way to re-seed 168
+  modules). Players upgrading from the pre-slots single save keep it as slot 1.
+- **Instant replay** (`js/replay.js`, key O). Passive 20-second rolling buffer
+  at 30 Hz of camera + up to ~20 moving-object transforms. O freezes the game
+  into a `replay` state (like the pause overlay) with a scrub bar, play/pause
+  (Space), restart (R), a WASD/mouse free-fly camera, a PNG "still" via the
+  existing capture path, and a full-buffer JSON export
+  (`open-city-replay-v1`). It replays VISUALS only — it does not rewind the
+  simulation. Live transforms are stashed on open and restored on close
+  (`player.pos` is the same reference as the mesh position, so this matters).
+- **Accessibility** (`js/accessibility.js`, pause menu → ♿ ACCESSIBILITY).
+  Rebind 11 non-movement actions — a physical→logical remap table in
+  `input.js` (`setRemap`); every game module keeps checking the same logical
+  names. WASD / Shift / Ctrl / Space are fixed. Also: reduced camera motion
+  (kills shake, trims speed-FOV), colour-blind minimap CSS filters
+  (deuteranopia / protanopia / tritanopia / high-contrast), opt-in gentle aim
+  assist (~10° cone pull, never a lock), HUD size 0.7–1.4×. All in
+  `world.settings`, so autosaved.
+- **Perf governor + FPS meter** (`js/perf.js`). Rolling median frame-time
+  governor: when frames sustain >24 ms it staggers the pedestrian and vehicle
+  close-up detail passes (`world.perf.detailTick(lane)` in the main loop) to
+  1/2 then 1/3 of frames; steps back up under 15 ms. Never changes the
+  graphics tier (that needs a reload). Optional on-screen FPS / frame-time /
+  draw-call readout (settings: SHOW FPS METER).
+
+Pause menu made overflow-safe (`justify-content: safe center` + padding) now
+that it has a fifth button.
+
+## Persistent damage, reactive news, NPC memory, photo bounties — local only
+
+Four more self-contained modules, no deployment or push by this session. All
+four are observer-style: they watch `world` state each frame and touch no other
+system except one 4-line hook in `js/npc.js` (the flee check reads `p.mem`).
+
+- **Persistent damage** (`js/scars.js`). Scorch/oil decals and shattered-glass
+  litter that stay on the street after a fight and fade only once the player
+  gets far (95 m keep radius, 140 m fade). Hard cap 90 decals, oldest recycled.
+  `explodeVehicle` / `explodeRocket` in `js/main.js` call `world.scars.boom()`;
+  dead vehicles leave a one-time oil scorch; ground-hit bullets occasionally
+  leave a graze. Each decal owns a cloned material; all share 2 geometries.
+- **Reactive news** (`js/citynews.js`). The existing `showNews()` ticker now
+  reports the player's own actions: wanted-level escalation ("POLICE
+  HELICOPTER scrambled", "National Guard called in"), store robberies with a
+  rolling per-hour count ("3rd store hit this hour"), big heists, multi-car
+  pileups, rampage/chaos thresholds, and quiet time-of-day colour when nothing
+  else is happening. Rate-limited (7 s + weight), tracks a rolling in-game hour.
+- **NPC memory** (`js/npcmemory.js`). Pedestrians get tagged `afraid` (saw you
+  shoot / drive recklessly nearby — flees on sight for ~150 s) or `friendly`
+  (near you when you shook the cops — waves, and rarely tips you off, adding a
+  few seconds to the wanted decay). Memory decays and is wiped when that ped
+  object respawns. `js/npc.js` gained a 4-line flee-check hook on `p.mem`.
+- **Photo bounties** (`js/photobounty.js`). A camera board near spawn (marker +
+  `world.photoBoardHint`) with 3 rotating targets from a 12-entry catalog
+  (Spire / stadium / park / harbor boat / police chopper / vehicle fire /
+  kaiju / army tank / night 3-star selfie / dawn skyline). On the photo-capture
+  frame (`world.captureNext`, the existing G path) it builds the camera frustum
+  and pays out if a target sphere is in shot. Daily reset; `photoDone` /
+  `photoDay` persist via `photoBountySave()` in the save blob.
+
+Verification: `node --check` all files; `node --test` 7/7; browser suites
+fulltest (all PASS, 0 errors), newfeatures (18/18, 0 errors), season10test
+(25/25, 0 errors); targeted tests — scar decal on `boom()`, news fires on
+wanted change, `npcMemory.afraidCount` rises after shooting near a ped, photo
+bounty pays $300 for a framed park shot and refills the target list.
+
+`sw.js` cache bumped to `opencity-v5-slots-replay-a11y` (covers all 8 new
+modules — the `js/` glob in the fetch handler caches them automatically).
+
+Verification: `node --check` on all touched files; `node --test
+test/input.test.mjs test/wallet.test.mjs` (7/7); browser suites fulltest
+(all PASS, 0 runtime errors), newfeatures (18/18, 0 errors), keytest
+(movement directions correct); targeted replay open/scrub/close + live-pos
+restore, accessibility panel open + rebind + palette filter, perf governor
+detail-shed. The pre-existing `/health` 404 (static server has no health
+route) and the `main`-branch `web attack (Q)` note are unrelated.
+
+Blender handoff: preserve +Z forward and metres for world assets; export GLB with applied scale, hand/weapon sockets and named animation clips. Start with one rigged character, one vehicle and one weapon pack; inspect asset rights and runtime budget before expanding. Asset loading/animation blending and high-quality interiors remain the next asset-integration stage. Existing production security/email release gates above still apply.

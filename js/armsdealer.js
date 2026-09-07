@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { addStorefront } from './storefront.js';
 import { placeStreetSite } from './site-layout.js';
 import { pointBlocked } from './city.js';
 import { showToast, showNews } from './hud.js';
@@ -21,19 +22,12 @@ export function initArmsdealer(scene, world) {
   let pos = world.city.spawn.clone().add(new THREE.Vector3(-32, 0, -8));
   const probe = new THREE.Vector3(pos.x, 1, pos.z);
   if (pointBlocked(probe, world.city.colliders, 2)) pos = world.city.spawn.clone().add(new THREE.Vector3(-34, 0, -14));
-  placeStreetSite(world.city, pos, 2.5, 'armsdealer');
+  placeStreetSite(world.city, pos, 3.5, 'armsdealer');
 
-  const van = new THREE.Mesh(
-    new THREE.BoxGeometry(2.6, 1.8, 4),
-    new THREE.MeshStandardMaterial({ color: 0x2a2a2a, metalness: 0.5, roughness: 0.5 })
-  );
-  van.position.copy(pos).setY(0.9);
-  scene.add(van);
-  const light = new THREE.PointLight(0xff3030, 3, 8);
-  light.position.copy(pos).add(new THREE.Vector3(0, 1.5, 0));
-  scene.add(light);
+  const mesh = addStorefront(scene, pos, 'CITY GUN SUPPLY', '#e1b76a');
+  world.city.colliders.push({x0:pos.x-2,x1:pos.x+2,z0:pos.z-1.5,z1:pos.z+1.5,h:3});
 
-  world.armsdealer = { pos, open: false };
+  world.armsdealer = { pos, mesh, open: false };
 }
 
 export function updateArmsdealer(world, dt, pressed, ammo) {
