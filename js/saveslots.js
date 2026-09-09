@@ -10,10 +10,9 @@
 // This runs BEFORE js/main.js reads its save, so it has to be imported first
 // in index.html (a tiny inline module) or at the very top of main.js.
 
-const LIVE_KEY = 'opencity-save-v1';
-const SLOT_KEY = (i) => `opencity-slot-${i}`;
-const ACTIVE_KEY = 'opencity-active-slot';
-const NAME_KEY = (i) => `opencity-slot-name-${i}`;
+import { runtime } from './runtime.js';
+
+const { live: LIVE_KEY, slot: SLOT_KEY, active: ACTIVE_KEY, name: NAME_KEY } = runtime.saveKeys;
 export const SLOT_COUNT = 3;
 
 function lsGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
@@ -119,7 +118,7 @@ export function importIntoSlot(i, text) {
 // cloudsave.js reads/writes slot blobs and remembers the last synced server
 // revision per slot so it can detect conflicts.
 
-const CLOUD_REV_KEY = (i) => `opencity-slot-cloudrev-${i}`;
+const CLOUD_REV_KEY = runtime.saveKeys.cloudRev;
 
 export function slotBlob(i) {
   const raw = lsGet(SLOT_KEY(i));
@@ -196,6 +195,7 @@ export function buildSlotPicker(container, cloud = null) {
       `<button data-act="export" title="Export to file" style="${MINI}">⬇</button>` +
       `<button data-act="import" title="Import from file" style="${MINI}">⬆</button>` +
       (cloudOn && remote ? `<button data-act="pull" title="Pull this save from the cloud" style="${MINI};color:#7cf78c">☁↓</button>` : '') +
+      (sum && !sum.empty ? `<button data-act="copy" title="Duplicate into a free slot" style="${MINI}">⧉</button>` : '') +
       (sum && !sum.empty ? `<button data-act="delete" title="Delete" style="${MINI};color:#ff8a6a">🗑</button>` : '') +
       `</div>`;
 
@@ -219,6 +219,21 @@ export function buildSlotPicker(container, cloud = null) {
           });
         };
         input.click();
+        return;
+      }
+      if (act === 'copy') {
+        // First empty slot wins; if every slot is full, ask which to overwrite.
+        let target = -1;
+        for (let k = 0; k < SLOT_COUNT; k++) if (k !== i && !slotSummary(k)) { target = k; break; }
+        if (target < 0) {
+          const answer = prompt(`All slots are full. Overwrite which slot? (1-${SLOT_COUNT}, not ${i + 1})`);
+          const n = parseInt(answer, 10) - 1;
+          if (!(n >= 0 && n < SLOT_COUNT && n !== i)) return;
+          if (!confirm(`Overwrite "${slotName(n)}" with a copy of "${slotName(i)}"?`)) return;
+          target = n;
+        }
+        copySlot(i, target);
+        rebuild(container, cloud);
         return;
       }
       if (act === 'delete') {

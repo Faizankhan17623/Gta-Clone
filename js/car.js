@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { resolveCircle, HALF } from './city.js';
 import { createSedanMesh, updateVehicleDetail } from './vehicleModel.js';
+import { initVehicleFuel } from './vehicleFuel.js';
+import { attachVehicleAsset } from './gltfVehicle.js';
 
 export { updateVehicleDetail };
 
@@ -133,8 +135,10 @@ export function makeVehicle(scene, x, z, heading, color, opts = {}) {
   group.position.set(x, 0, z);
   group.rotation.y = heading;
   scene.add(group);
-  return {
+  const vehicle = {
     mesh: group,
+    modelId: opts.modelId,
+    paintColor: color,
     wheels,
     lightbar,
     pos: group.position,
@@ -152,6 +156,9 @@ export function makeVehicle(scene, x, z, heading, color, opts = {}) {
     top: opts.top ?? (opts.bike ? 55 : undefined),
     rad: opts.rad ?? (opts.bike ? 0.9 : undefined),
   };
+  initVehicleFuel(vehicle, opts);
+  attachVehicleAsset(vehicle);
+  return vehicle;
 }
 
 const _fwd = new THREE.Vector3();
@@ -164,11 +171,11 @@ export function physStep(v, ctl, dt, colliders) {
   const speedF = v.vel.dot(_fwd);
 
   let a = 0;
-  if (ctl.throttle > 0) {
+  if (ctl.throttle > 0 && v.engineEnabled !== false) {
     a = (v.accel ?? 17) * ctl.throttle * Math.max(0, 1 - speedF / (v.top ?? 38));
   } else if (ctl.throttle < 0) {
     if (speedF > 0.5) a = -26; // braking
-    else if (speedF > -11) a = 11 * ctl.throttle; // reversing
+    else if (speedF > -11 && v.engineEnabled !== false) a = 11 * ctl.throttle; // reversing
   }
   v.vel.addScaledVector(_fwd, a * dt);
   v.vel.multiplyScalar(Math.max(0, 1 - 0.45 * dt));
@@ -254,6 +261,10 @@ export function separateCars(a, b, bStatic = false) {
 
 // Recolor a vehicle's painted panels (garage respray).
 export function resprayVehicle(v, color) {
+  v.paintColor = color;
+  for (const m of v.asset?.materials || []) {
+    if (m.name === v.asset.materialRoles.paint) m.color.set(color);
+  }
   let painted = false;
   v.mesh.traverse((m) => {
     if (m.isMesh && m.userData.respray && m.material?.color) { m.material.color.set(color); painted = true; }

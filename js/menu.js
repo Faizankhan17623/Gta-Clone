@@ -205,6 +205,11 @@ export function drawBigMap(world) {
   for (const s of world.shops || []) dot(s.pos.x, s.pos.z, s.cd > 0 ? '#5a5a60' : '#2fd06a');
   for (const r of world.mapRamps || []) dot(r.pos.x, r.pos.z, r.done ? '#7a5a30' : '#c7641e', 4);
   for (const s of world.mapSkulls || []) dot(s.pos.x, s.pos.z, '#d03030', 6);
+  for (const s of world.gas?.stations || []) {
+    const [x, z] = M(s.pos.x, s.pos.z);
+    g.fillStyle = '#ffc45b'; g.font = 'bold 14px Arial';
+    g.fillText('F', x - 4, z + 5);
+  }
   if (world.mission) {
     const m = world.mission;
     dot(m.active ? m.objectivePos.x : m.markerPos.x, m.active ? m.objectivePos.z : m.markerPos.z, m.active ? '#ff4ad2' : '#ffd24a', 8);

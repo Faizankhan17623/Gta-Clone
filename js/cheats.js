@@ -5,7 +5,9 @@ import { sfxMissionPass } from './sound.js';
 // a parting gift for the desktop faithful.
 
 // code letters must dodge the bound keys — P pauses, M maps, L opens the
-// legend, G snaps a photo, E interacts, T slings a trampoline, J jetpacks
+// legend, G snaps a photo, E interacts, T slings a trampoline, J jetpacks.
+// O (instant replay) could not be dodged: 14 codes already contained it, so
+// `typingCheat()` below lets that hotkey stand down mid-word instead.
 const CODES = {
   RICHRICH: 'cash',
   HAVOC: 'boom',
@@ -34,14 +36,36 @@ const CODES = {
   NOONDAY: 'noon',       // high noon on demand
 };
 
+// Any letter typed in the last second counts as mid-word. A single-key hotkey
+// that shares a letter with a cheat code checks this and stands down.
+let lastLetterAt = -Infinity;
+const TYPING_WINDOW_MS = 1000;
+
+export function typingCheat() {
+  return performance.now() - lastLetterAt < TYPING_WINDOW_MS;
+}
+
 export function initCheats(actions) {
   let buf = '';
   window.addEventListener('keydown', (e) => {
     if (e.key.length !== 1 || !/[a-z]/i.test(e.key)) return;
-    buf = (buf + e.key.toUpperCase()).slice(-12);
+    // A lone letter is a hotkey. Only a run of TWO OR MORE letters that still
+    // matches the start of some code counts as cheat entry, so pressing O by
+    // itself still opens the replay while OINKOFF does not.
+    const next = (buf + e.key.toUpperCase()).slice(-12);
+    let typing = false;
+    for (let i = 0; i < next.length - 1 && !typing; i++) {
+      typing = CODE_PREFIXES.has(next.slice(i));
+    }
+    buf = next;
+    if (typing) lastLetterAt = performance.now();
     for (const [code, act] of Object.entries(CODES)) {
       if (buf.endsWith(code)) {
         buf = '';
+        // Do NOT clear lastLetterAt here: the letter that completed the code is
+        // still being handled this frame, and if it doubles as a hotkey (the O
+        // ending INVINCO) the guard must stay up for it.
+        lastLetterAt = performance.now();
         sfxMissionPass();
         showToast('CHEAT: ' + code);
         showNews('the laws of the city bend for someone typing furiously');
@@ -49,4 +73,10 @@ export function initCheats(actions) {
       }
     }
   });
+}
+
+// Every prefix of every code, so we can tell "typing a cheat" from "hotkey".
+const CODE_PREFIXES = new Set();
+for (const code of Object.keys(CODES)) {
+  for (let i = 1; i <= code.length; i++) CODE_PREFIXES.add(code.slice(0, i));
 }

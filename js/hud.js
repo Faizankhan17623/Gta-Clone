@@ -116,7 +116,7 @@ export function showToast(text) {
 export function updateHUD(world) {
   const { player } = world;
 
-  els.money.textContent = '$' + world.money;
+  els.money.textContent = '$' + world.money.toLocaleString('en-US', { maximumFractionDigits: 2 });
 
   const hh = Math.floor(world.clock);
   const mm = Math.floor((world.clock % 1) * 60);
@@ -140,6 +140,11 @@ export function updateHUD(world) {
     const nitro = player.inCar && !player.inCar.tank
       ? ` <small style="color:#7ecbff">N₂O ${Math.round(player.nitro ?? 100)}%</small>` : '';
     els.speed.innerHTML = `<span class="big">${Math.round(v.vel.length() * 2.4)}</span> <small>MPH</small>` + nitro;
+    if (player.inCar && !v.tank && world.settings.fuel) {
+      const percent = Math.max(0, Math.min(100, v.fuelLiters / v.fuelCapacityLiters * 100));
+      els.speed.innerHTML += `<div id="fuel-readout" style="font-size:13px;color:${percent < 12 ? '#ff785f' : '#ffd27b'}">PETROL ${v.fuelLiters.toFixed(1)} / ${v.fuelCapacityLiters} L` +
+        `<div style="height:4px;background:#384350;margin-top:4px"><div style="height:100%;width:${percent}%;background:currentColor"></div></div></div>`;
+    }
     els.crosshair.style.display = 'none';
     els.weapon.style.display = 'none';
   } else {
@@ -251,6 +256,12 @@ function drawMinimap(world) {
     g.fillRect(x0, z0, x1 - x0, z1 - z0);
   }
 
+  // Petrol pumps: matching amber F markers on the minimap and city map.
+  for (const s of world.gas?.stations || []) {
+    const [mx, mz] = toMap(s.pos.x, s.pos.z);
+    g.fillStyle = '#ffc45b'; g.font = 'bold 10px Arial';
+    g.fillText('F', mx - 3, mz + 3);
+  }
   // robbable stores
   if (world.shops) {
     for (const s of world.shops) {

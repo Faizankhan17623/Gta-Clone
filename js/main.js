@@ -3,7 +3,10 @@ import { solidDistance, createWeaponModel, equipCharacter, poseWeapon, muzzlePos
 import { initInput, endFrame, pollGamepad, keys, pressed, mouse } from './input.js';
 import { buildCity, resolveCircle, pointBlocked, groundHeight, blockStart, BLOCK, HALF, N } from './city.js';
 import { createCharacter, animateWalk, animateIdle, animateLand, resetArticulation, updateCharacterDetail, CHARACTERS } from './characters.js';
-import { physStep, separateCars, darkenCar, updateVehicleDetail } from './car.js';
+import { makeVehicle, physStep, separateCars, darkenCar, updateVehicleDetail } from './car.js';
+import { updateVehicleAsset, vehicleControls, setVehiclePanel } from './gltfVehicle.js';
+import { runtime } from './runtime.js';
+import { describeVehicle } from './vehicleFuel.js';
 import { spawnPeds, updatePeds, killPed, spawnTraffic, updateTraffic, disableTraffic, spawnParked } from './npc.js';
 import { updatePolice, addCrime, copDie, clearCops } from './police.js';
 import { makeHeli, physStepHeli, spinRotors, explodeHeli, updateFallingHeli, updatePoliceHelis } from './heli.js';
@@ -48,7 +51,7 @@ import { initLottery, updateLottery } from './lottery.js';
 import { initFightClub, updateFightClub, endFightClub } from './fightclub.js';
 import { initPoker, openPoker } from './poker.js';
 import { initLegend, openLegend, updateLegend, forceCrown, initFable } from './legend.js';
-import { initCheats } from './cheats.js';
+import { initCheats, typingCheat } from './cheats.js';
 import { initFinale, updateFinale, endFinale } from './finale.js';
 import { initNemesis, updateNemesis, forceNemesis, endNemesisFight } from './nemesis.js';
 import { initZombies, updateZombies, startOutbreak, endOutbreak } from './zombies.js';
@@ -97,7 +100,7 @@ import { initPigeons, updatePigeons } from './pigeons.js';
 import { initGraffiti, updateGraffiti } from './graffiti.js';
 import { initHydrants, updateHydrants } from './hydrants.js';
 import { initSpeedcams, updateSpeedcams } from './speedcams.js';
-import { initGasStations, updateGasStations, burnFuel, hasFuel } from './gasstations.js';
+import { initGasStations, updateGasStations, burnFuel, hasFuel, canRefuel } from './gasstations.js';
 import { initRoadblocks, updateRoadblocks } from './roadblocks.js';
 import { initGarageMulti, updateGarageMulti, lockupStore, lockupSave } from './garage_multi.js';
 import { initCarRadioWheel, updateCarRadioWheel, radioWheelBusy } from './carradio_wheel.js';
@@ -157,7 +160,7 @@ import { initSkateboard, updateSkateboard } from './skateboard.js';
 import { resolveTier, tierSpec, createEnvironment, createShadowRig, createPostChain } from './graphics.js';
 import { bootActiveSlot, mirrorActiveSlot, buildSlotPicker } from './saveslots.js';
 import { initCloudSave, cloudSaveTick, scheduleCloudPush } from './cloudsave.js';
-import { initReplay, recordReplay, updateReplay, openReplay, replayActive } from './replay.js';
+import { initReplay, recordReplay, updateReplay, openReplay, closeReplay, replayActive } from './replay.js';
 import { initAccessibility, openAccessibility } from './accessibility.js';
 import { initPerf, updatePerf } from './perf.js';
 import { initScars, updateScars } from './scars.js';
@@ -173,7 +176,7 @@ bootActiveSlot();
 // Graphics tier is decided once from the saved settings + a device probe.
 // `gfx` (the spec) gates every heavy feature from here on.
 const gfxTier = resolveTier((() => {
-  try { return JSON.parse(localStorage.getItem('opencity-save-v1') || '{}').settings || {}; }
+  try { return runtime.settings(JSON.parse(localStorage.getItem(runtime.saveKeys.live) || '{}') || {}); }
   catch { return {}; }
 })());
 let gfx = tierSpec(gfxTier);
@@ -214,7 +217,7 @@ const shadowRig = createShadowRig(scene, camera, sun, gfxTier);
 // code can breathe its strength with the city lights.
 const post = createPostChain(renderer, scene, camera, gfxTier, {
   ao: (() => {
-    try { return !!JSON.parse(localStorage.getItem('opencity-save-v1') || '{}').settings?.ao; }
+    try { return !!JSON.parse(localStorage.getItem(runtime.saveKeys.live) || '{}').settings?.ao; }
     catch { return false; }
   })(),
 });
@@ -264,7 +267,7 @@ chuteMesh.visible = false;
 scene.add(chuteMesh);
 
 // persistent progress
-const SAVE_KEY = 'opencity-save-v1';
+const SAVE_KEY = runtime.saveKeys.live;
 let save = {};
 try { save = JSON.parse(localStorage.getItem(SAVE_KEY) || '{}') || {}; } catch { save = {}; }
 
@@ -338,13 +341,14 @@ const world = {
   swat: [],
   drones: [],
   garageKind: save.garage || null,
+  garageVehicleSaved: save.garageVehicle || null,
   xp: save.xp | 0,
   level: 1,
   stats: { swungM: 0, styleBest: 0, missions: 0, fares: 0, tanks: 0, jackpots: 0, ...(save.stats || {}) },
   ach: { ...(save.ach || {}) },
   suitSaved: save.suit || 'street',
   suitsOwnedSaved: save.suits || {},
-  settings: { volume: 1, sens: 1, invertY: false, lowGfx: false, ao: false, ...(save.settings || {}) },
+  settings: runtime.settings(save),
   perks: { style: 1, melee: 1, webDur: 6, decay: 24, busted: 1.6 },
   waypoint: null,
   barks: [],
@@ -352,6 +356,17 @@ const world = {
   slowmoT: 0,
 };
 world.level = 1 + Math.floor(Math.sqrt(world.xp / 120));
+// Keep the new model close to the start, beside the central road.
+const starter = runtime.profile.starterVehicle;
+world.starterSedan = makeVehicle(scene, city.spawn.x + starter.offsetX, city.spawn.z + starter.offsetZ, 0,
+  save.starterSedan?.color || starter.color, {
+    ...save.starterSedan, modelId: starter.modelId,
+    fuelLiters: save.starterSedan?.fuelLiters ?? starter.fuelLiters,
+  });
+world.parked.unshift(world.starterSedan);
+world.starterSedan.assetReady.then(ok => {
+  if (!ok && runtime.vehicle(starter.modelId)?.asset) showToast('Vehicle model unavailable — using the standard model');
+});
 world.bark = (pos, text) => {
   if (world.barks.length > 4) world.barks.shift();
   world.barks.push({ pos, text, t: 2.6, sx: -999, sy: -999 });
@@ -739,7 +754,9 @@ function saveGame() {
       money: world.money, missions: mission.done, mg: ammo.mg, rpg: ammo.rpg,
       sg: ammo.sg, sn: ammo.sn, gren: ammo.gren,
       upg: world.upgrades, gang: { owned: gang.owned, kills: gang.kills }, radio: world.radioSt,
-      garage: world.garageKind, xp: world.xp, stats: world.stats, ach: world.ach,
+      garage: world.garageKind, garageVehicle: describeVehicle(shopsState.garageVeh),
+      fuelVersion: 2, starterSedan: describeVehicle(world.starterSedan),
+      xp: world.xp, stats: world.stats, ach: world.ach,
       tokens: world.tokensGot,
       suit: world.suit, suits: world.suitsOwned, settings: world.settings,
       char: world.charKey,
@@ -1650,6 +1667,7 @@ function enterCar(v) {
   }
   v.ai = null;
   player.inCar = v;
+  if (v.asset) showToast('SEDAN · [ doors · ] bonnet · \\ boot · = headlights (panels: stop first)');
   player.mesh.visible = false;
   setHint(null);
   camYaw = v.heading;
@@ -1672,12 +1690,15 @@ function exitCar() {
   player.mesh.visible = true;
   player.heading = car.heading;
   player.inCar = null;
+  car.refuelling = false;
+  setVehiclePanel(car, 'Fuel_Flap', false);
   if (!car.dead && !car.tank) world.parked.push(car);
   camYaw = car.heading;
   engine.stop();
   setRadioStation(0);
   garageCheck(shopsState, world, car); // parked on the garage pad?
   lockupStore(world, car);             // ...or in a lockup bay
+  saveGame();
 }
 
 function enterHeli(h) {
@@ -2162,6 +2183,7 @@ function updateZip(dt) {
 
 function updateDriving(dt) {
   const car = player.inCar;
+  vehicleControls(car, pressed);
   const ctl = {
     throttle: (keys['KeyW'] ? 1 : 0) + (keys['KeyS'] ? -1 : 0),
     steer: (keys['KeyA'] ? 1 : 0) + (keys['KeyD'] ? -1 : 0),
@@ -2175,7 +2197,11 @@ function updateDriving(dt) {
   // nitro: hold Shift for a burning speed burst (tank excluded, it's heavy enough)
   const nitroMax = car.bigNitro ? 170 : 100; // garage nitro-tank upgrade
   player.nitro = Math.min(nitroMax, player.nitro ?? nitroMax);
-  const boosting = (keys['ShiftLeft'] || keys['ShiftRight']) && player.nitro > 1 && ctl.throttle > 0 && !car.tank;
+  car.refuelling = canRefuel(world, car) && !!keys.KeyE && !keys.KeyW && !keys.KeyS;
+  const wantsBoost = (keys['ShiftLeft'] || keys['ShiftRight']) && player.nitro > 1 && ctl.throttle > 0 && !car.tank;
+  burnFuel(world, dt, ctl.throttle, wantsBoost);
+  car.engineEnabled = hasFuel(world) && !car.refuelling;
+  const boosting = wantsBoost && car.engineEnabled;
   if (boosting) {
     player.nitro = Math.max(0, player.nitro - 40 * dt);
     _fwd.set(Math.sin(car.heading), 0, Math.cos(car.heading));
@@ -2188,12 +2214,6 @@ function updateDriving(dt) {
     addStyle(4 * dt);
   } else {
     player.nitro = Math.min(nitroMax, player.nitro + (car.bigNitro ? 14 : 9) * dt);
-  }
-
-  // fuel (opt-in): burn on throttle, and a dry tank kills the engine
-  if (!car.tank) {
-    burnFuel(world, dt, ctl.throttle);
-    if (!hasFuel(world)) { ctl.throttle = 0; world.gasHint = 'OUT OF FUEL — coast to a gas station'; }
   }
 
   // wet roads shave grip (weather_hazards.js); H toggles the for-hire light
@@ -2209,7 +2229,8 @@ function updateDriving(dt) {
     rideHailCrash(world);
     world.shake = Math.min(0.5, impact * 0.03);
   }
-  setEngine(car.vel.length());
+  if (car.engineEnabled) { engine.start(); setEngine(car.vel.length()); }
+  else engine.stop();
 
   // tyre smoke + rubber stripes while drifting
   if (ctl.handbrake && car.vel.length() > 9) {
@@ -2288,8 +2309,7 @@ function updateDriving(dt) {
   }
 
   // E refuels before exiting when parked at a pump.
-  const atPump = world.settings.fuel && world.gas && !car.tank && world.gas.level <= 99.5
-    && world.gas.stations.some(s => Math.hypot(car.pos.x - s.pos.x, car.pos.z - s.pos.z) < 6);
+  const atPump = canRefuel(world, car) && !keys.ShiftLeft && !keys.ShiftRight;
   if (pressed['KeyE'] && !atPump) {
     if (car.vel.length() < 5) exitCar();
     else showToast('Slow down to exit!');
@@ -3061,7 +3081,7 @@ function update(dt) {
 
   // headlights when driving after dark
   const pcar = player.inCar;
-  if (pcar && !pcar.dead && (dn.glow > 0.35 || wx.intensity > 0.4)) {
+  if (pcar && !pcar.dead && (pcar.asset ? pcar.headlightsOn : (dn.glow > 0.35 || wx.intensity > 0.4))) {
     const fx = Math.sin(pcar.heading);
     const fz = Math.cos(pcar.heading);
     headlight.position.set(pcar.pos.x + fx * 2.2, 1.0, pcar.pos.z + fz * 2.2);
@@ -3122,6 +3142,10 @@ function update(dt) {
   }
   updateTraffic(world, dt);
   updatePolice(world, dt);
+  for (const list of [world.parked, world.traffic, world.cops]) {
+    for (const v of list) updateVehicleAsset(v, dt);
+  }
+  if (player.inCar) updateVehicleAsset(player.inCar, dt, true, !!(keys.KeyS || keys.Space));
 
   // Sedan close-up trim + brake lights. The player's own car counts as focus.
   {
@@ -3304,7 +3328,7 @@ function update(dt) {
       world.phoneHint || world.pizzaHint || world.repoHint || world.newsHint ||
       world.copHint || world.slipHint || world.boatraceHint || world.icetruckHint ||
       world.bribeHint || world.mwHint || world.jewelryHint || world.casinoHint2;
-    if (drivingHint) setHint(drivingHint);
+    setHint(world.gasHint || drivingHint || null);
   }
   // ...and from the cockpit or the deep
   if (player.inPlane) setHint(world.planeHint || null);
@@ -3381,7 +3405,8 @@ function update(dt) {
   // pause / big map / screenshot / legend board / instant replay
   if (pressed['KeyP']) pauseGame();
   if (pressed['KeyM']) openBigMap();
-  if (pressed['KeyO'] && !replayActive()) openReplay();
+  // O is also a letter in 14 cheat codes; stand down mid-word.
+  if (pressed['KeyO'] && !replayActive() && !typingCheat()) openReplay();
   if (pressed['KeyL']) {
     gameState = 'cards'; // same frozen-overlay state the casino uses
     showTouchUI(false);
@@ -3515,6 +3540,8 @@ window.__debug = {
   openBigMap,
   getSuit: () => world.suit,
   snapPhoto: () => { world.captureNext = true; },
+  closeReplay,
+  replayActive,
   characters: CHARACTERS,
   setCharacter: (k) => { const c = CHARACTERS.find((x) => x.key === k); if (c) applyCharacter(c); },
   getCamYaw: () => camYaw,

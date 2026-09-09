@@ -1,16 +1,12 @@
 {
-  "name": "open-city",
-  "version": "1.0.0",
-  "description": "GTA-style open-world game that runs in the browser",
+  "name": "open-city-basic",
+  "version": "0.1.0",
+  "private": true,
   "type": "module",
   "scripts": {
-    "dev:local": "node scripts/serve-local.mjs",
-    "check:district": "node scripts/inspect-district.mjs",
-    "test:models": "node test/visual-models.mjs",
-    "test:gameplay": "node test/fulltest.mjs",
-    "start": "npx -y http-server -p 8080 -c-1 -s ."
+    "start": "node scripts/serve.mjs"
   },
-  "devDependencies": {
-    "playwright-core": "^1.60.0"
+  "engines": {
+    "node": ">=20"
   }
 }

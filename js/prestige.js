@@ -4,6 +4,7 @@ import { pointBlocked } from './city.js';
 import { showToast, showNews, showMissionMsg } from './hud.js';
 import { sfxMissionPass } from './sound.js';
 import { addFlash } from './effects.js';
+import { mirrorActiveSlot } from './saveslots.js';
 
 // New Game+: the golden pedestal. A crowned King can lay the run down and
 // start again — keeping the crown, the wardrobe, the garage and the trophies,
@@ -59,6 +60,10 @@ function doPrestige(world) {
     settings: old.settings,
   };
   try { localStorage.setItem(world.prestigeState.saveKey, JSON.stringify(kept)); } catch {}
+  // Save slots mirror the live key into the active slot, and bootActiveSlot()
+  // copies the slot back over it on load. Without this the reload below would
+  // restore the pre-prestige save and silently undo New Game+.
+  mirrorActiveSlot();
   location.reload();
 }
 

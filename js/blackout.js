@@ -131,7 +131,3 @@ export function updateBlackout(world, dt, pressed) {
   if (bo.left <= 0) end(world, false);
 }
 
-// Cleared each frame if there is no blackout, so other systems can rely on it.
-export function blackoutActive(world) {
-  return !!world.blackout?.on;
-}

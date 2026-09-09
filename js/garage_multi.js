@@ -3,6 +3,7 @@ import { blockStart } from './city.js';
 import { showToast, showNews } from './hud.js';
 import { makeVehicle, resprayVehicle } from './car.js';
 import { sfxPickup, sfxMissionPass } from './sound.js';
+import { describeVehicle } from './vehicleFuel.js';
 
 // LOCKUP: a second, larger garage with three numbered bays. Drive a car or
 // bike onto a bay and exit to store it — type, tuning class and paint are
@@ -14,17 +15,17 @@ const SLOTS = 3;
 
 // Read a compact, save-safe descriptor off any vehicle.
 function describe(v) {
-  const d = { bike: !!v.bike, monster: !!v.monster };
+  const d = describeVehicle(v);
   if (v.accel != null) d.accel = v.accel;
   if (v.top != null) d.top = v.top;
   if (v.rad != null) d.rad = v.rad;
   const bodyColor = v.mesh?.children?.[0]?.material?.color;
-  d.color = bodyColor ? '#' + bodyColor.getHexString() : (v.bike ? '#23262d' : '#3d6b8f');
+  d.color = v.paintColor || (bodyColor ? '#' + bodyColor.getHexString() : (v.bike ? '#23262d' : '#3d6b8f'));
   return d;
 }
 
 function buildFrom(scene, desc, x, z) {
-  const opts = {};
+  const opts = { modelId: desc.modelId, fuelCapacityLiters: desc.fuelCapacityLiters, fuelLiters: desc.fuelLiters };
   if (desc.bike) opts.bike = true;
   if (desc.monster) opts.monster = true;
   if (desc.accel != null) opts.accel = desc.accel;
@@ -92,7 +93,7 @@ export function initGarageMulti(scene, world, save) {
 export function lockupSave(world) {
   const lk = world.lockup;
   if (!lk) return [];
-  return lk.bays.map((b) => b.desc || null);
+  return lk.bays.map((b) => b.veh && !b.veh.dead ? (b.desc = describe(b.veh)) : b.desc || null);
 }
 
 function ensureBayVehicles(world) {

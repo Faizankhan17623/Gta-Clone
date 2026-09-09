@@ -5,23 +5,27 @@
 // The API base is the same origin in production (the server serves the game),
 // and can be overridden with ?bankapi=<url> for local testing against 3099.
 
+import { runtime } from './runtime.js';
+
+const enabled = runtime.profile.services?.bank !== false;
 const params = new URLSearchParams(location.search);
 // A shared URL must never redirect stored bearer credentials to another host.
 let override = '';
-if (['localhost', '127.0.0.1'].includes(location.hostname) && params.get('bankapi')) {
+if (enabled && ['localhost', '127.0.0.1'].includes(location.hostname) && params.get('bankapi')) {
   const candidate = new URL(params.get('bankapi'), location.origin);
   if (['localhost', '127.0.0.1'].includes(candidate.hostname) && ['http:', 'https:'].includes(candidate.protocol))
     override = candidate.origin;
 }
 const BASE = override + '/api/bank';
-const LS_KEY = 'opencity-bank-cred-v1';
+const LS_KEY = runtime.profile.services?.bankCredentialKey || 'opencity-bank-cred-v1';
 
 let cred = null;   // { account_no, handle, token }
-try { cred = JSON.parse(localStorage.getItem(LS_KEY) || 'null'); } catch {}
+try { if (enabled) cred = JSON.parse(localStorage.getItem(LS_KEY) || 'null'); } catch {}
 
 let online = false;
 
 async function call(path, { method = 'GET', body, auth = true } = {}) {
+  if (!enabled) throw new Error('Online banking is unavailable in this build');
   const headers = { 'Content-Type': 'application/json' };
   if (auth && cred?.token) headers.Authorization = 'Bearer ' + cred.token;
   const res = await fetch(BASE + path, {
@@ -44,6 +48,7 @@ export function handle() { return cred?.handle || null; }
 // services that share the bank's bearer token (e.g. /api/save). `path` is the
 // full path from the origin, e.g. '/api/save/0'.
 export async function apiCall(path, { method = 'GET', body } = {}) {
+  if (!enabled) throw new Error('Online services are unavailable in this build');
   const headers = { 'Content-Type': 'application/json' };
   if (cred?.token) headers.Authorization = 'Bearer ' + cred.token;
   const res = await fetch((override || '') + path, {
@@ -63,6 +68,7 @@ function persist() {
 
 // Ping the server; returns true if the bank API is up.
 export async function probe() {
+  if (!enabled) return false;
   try {
     const r = await fetch(BASE.replace('/api/bank', '/health'), { signal: AbortSignal.timeout(5000) });
     const j = await r.json();

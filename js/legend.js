@@ -5,6 +5,7 @@ import { sfxMissionPass } from './sound.js';
 import { addExplosion } from './effects.js';
 import { makeVehicle } from './car.js';
 import { blockStart, BLOCK } from './city.js';
+import { mirrorActiveSlot } from './saveslots.js';
 
 // The Legend board (L): every way to conquer the city on one checklist.
 // Finish the lot and the city crowns you — a golden crown, $50,000, and
@@ -244,6 +245,10 @@ function build() {
         try {
           JSON.parse(text); // sanity: must at least be JSON
           localStorage.setItem(hooks.saveKey, text);
+          // Mirror into the active save slot too: bootActiveSlot() copies the
+          // slot over the live key on load, which would otherwise discard this
+          // import on the reload below.
+          mirrorActiveSlot();
           showToast('Save imported — reloading');
           setTimeout(() => location.reload(), 600);
         } catch {

@@ -5,6 +5,7 @@ import { addExplosion, addTracer, addFlash, addSparks, addSmoke } from './effect
 import { roadCenter, HALF, N, resolveCircle } from './city.js';
 import { createCharacter, animateWalk } from './characters.js';
 import { showNews } from './hud.js';
+import { policeHeat, policeExtra } from './mayor.js';
 
 export function addCrime(world, n, { witnessed = false } = {}) {
   // an undercover shift carries a badge (copcareer.js)
@@ -284,9 +285,7 @@ export function updatePolice(world, dt) {
 
   // wanted level decay — the mayor's police stance stretches or shrinks it,
   // and MARTIAL adds bodies; prestige stars make the whole force meaner
-  const stance = [
-    { heat: 0.5, extra: 0 }, { heat: 1, extra: 0 }, { heat: 1.8, extra: 1 },
-  ][world.policy?.police ?? 1];
+  const stance = { heat: policeHeat(world), extra: policeExtra(world) };
   if (world.wanted > 0) {
     world.wantedTimer += dt;
     if (world.wantedTimer > (world.perks?.decay ?? 24) * stance.heat) {

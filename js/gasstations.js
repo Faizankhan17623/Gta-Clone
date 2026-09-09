@@ -1,18 +1,14 @@
 import * as THREE from 'three';
 import { blockStart, pointBlocked, roadCenter, N } from './city.js';
 import { showToast } from './hud.js';
-import { sfxPickup } from './sound.js';
+import { consumeFuel, refillVehicle, FUEL_PRICE } from './vehicleFuel.js';
 
 // GAS STATIONS: four fuel stops around the grid. Cars and bikes burn fuel as
 // you drive; run the tank dry and the engine cuts and you coast to a halt.
 // Pull onto a forecourt and hold E to refuel for cash. A light layer that is
-// off by default — flip FUEL in the pause-menu settings to turn it on.
+// enabled by default. Fuel remains attached to each individual vehicle.
 
-const SPOTS = [[1, 3], [7, 1], [3, 7], [8, 6]];
-const TANK = 100;                 // full tank
-const BURN = 0.55;                // % per second at full throttle
-const PRICE_PER_PCT = 1.4;        // $ to fill one percent
-const PUMP_RATE = 42;             // % filled per second while holding E
+const SPOTS = [[4, 5], [1, 3], [7, 1], [3, 7], [8, 6]];
 
 function pump(scene, pos) {
   const group = new THREE.Group();
@@ -29,6 +25,14 @@ function pump(scene, pos) {
   );
   face.position.set(0, 1.05, 0.26);
   group.add(face);
+  const hose = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3([
+    new THREE.Vector3(.38, 1.3, 0), new THREE.Vector3(.85, .9, .1),
+    new THREE.Vector3(.8, .3, .2), new THREE.Vector3(.45, .85, .3),
+  ]), 12, .035, 5, false), new THREE.MeshStandardMaterial({ color: 0x151719 }));
+  group.add(hose);
+  const nozzle = new THREE.Mesh(new THREE.BoxGeometry(.09, .27, .14),
+    new THREE.MeshStandardMaterial({ color: 0x23bc78 }));
+  nozzle.position.set(.45, .96, .3); group.add(nozzle);
   const canopy = new THREE.Mesh(
     new THREE.BoxGeometry(9, 0.3, 6),
     new THREE.MeshStandardMaterial({ color: 0xdfe4ea, metalness: 0.2, roughness: 0.7 })
@@ -45,12 +49,12 @@ function pump(scene, pos) {
     group.add(post);
   }
   const c = document.createElement('canvas');
-  c.width = 128; c.height = 32;
+  c.width = 256; c.height = 64;
   const g = c.getContext('2d');
-  g.fillStyle = '#0a0a10'; g.fillRect(0, 0, 128, 32);
-  g.fillStyle = '#ffb648'; g.font = 'bold 20px Arial';
+  g.fillStyle = '#0a0a10'; g.fillRect(0, 0, 256, 64);
+  g.fillStyle = '#ffb648'; g.font = 'bold 23px Arial';
   g.textAlign = 'center'; g.textBaseline = 'middle';
-  g.fillText('FUEL', 64, 17);
+  g.fillText('PETROL · $2 / L', 128, 32);
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   const sign = new THREE.Mesh(new THREE.PlaneGeometry(3.4, 0.85), new THREE.MeshBasicMaterial({ map: tex }));
@@ -79,8 +83,14 @@ function findApron(world, bi, bj) {
     const z = zEdge + 8 + step * 8;
     const pos = new THREE.Vector3(rx - 12, 0, z);
     let clear = true;
-    for (const [ox, oz] of [[0, 0], [4, 3], [-4, 3], [4, -3], [-4, -3]]) {
-      if (pointBlocked(new THREE.Vector3(pos.x + ox, 1, pos.z + oz), world.city.colliders, 0.8)) { clear = false; break; }
+    // Test the full driving apron and its road entrance, including street props
+    // between the canopy corners. Corner-only probes missed roadside bins.
+    for (let ox = -4; ox <= 10 && clear; ox += 2) {
+      for (let oz = -3; oz <= 3; oz += 2) {
+        if (pointBlocked(new THREE.Vector3(pos.x + ox, 0, pos.z + oz), world.city.colliders, 1.6)) {
+          clear = false; break;
+        }
+      }
     }
     if (clear) return pos;
   }
@@ -94,74 +104,72 @@ export function initGasStations(scene, world) {
     if (!pos) continue;
     stations.push({ pos, mesh: pump(scene, pos) });
   }
-  // fuel is enabled through settings; the level rides on the player
-  world.settings.fuel = !!world.settings.fuel;
-  world.gas = { stations, level: TANK, warned: false, owed: 0 };
+  world.settings.fuel = world.settings.fuel !== false;
+  world.gas = { stations, active: null };
   world.gasHint = null;
 }
 
 // Called from updateDriving with the throttle magnitude actually applied.
-export function burnFuel(world, dt, throttleMag) {
-  if (!world.settings.fuel) return;
-  const g = world.gas;
-  if (!g) return;
-  g.level = Math.max(0, g.level - BURN * Math.min(1, Math.abs(throttleMag)) * dt);
-  if (g.level < 12 && !g.warned) {
-    g.warned = true;
-    showToast('LOW FUEL — find a gas station');
+export function burnFuel(world, dt, throttleMag, boosting = false) {
+  const car = world.player.inCar;
+  if (!world.settings.fuel || !car || car.tank) return;
+  consumeFuel(car, dt, throttleMag, boosting);
+  const fraction = car.fuelLiters / car.fuelCapacityLiters;
+  if (fraction < .12 && !car.fuelWarned) {
+    car.fuelWarned = true;
+    showToast('LOW FUEL — petrol pumps are marked F on the map');
   }
-  if (g.level > 20) g.warned = false;
+  if (fraction > .2) car.fuelWarned = false;
 }
 
 // Engine is dead while the tank is empty and fuel is on.
 export function hasFuel(world) {
-  return !world.settings.fuel || !world.gas || world.gas.level > 0;
+  const car = world.player.inCar;
+  return !world.settings.fuel || !car || car.tank || car.fuelLiters > 0;
+}
+
+export function nearbyPump(world, car) {
+  return world.gas?.stations.find(s => Math.hypot(car.pos.x - s.pos.x, car.pos.z - s.pos.z) < 5);
+}
+
+export function canRefuel(world, car) {
+  return !!(world.settings.fuel && car && !car.dead && !car.tank && car.vel.length() < .5
+    && car.fuelCapacityLiters - car.fuelLiters > .001 && world.money > .00001 && nearbyPump(world, car));
 }
 
 export function updateGasStations(world, dt, keys) {
   const g = world.gas;
   if (!g) return;
   world.gasHint = null;
-  const player = world.player;
-  const car = player.inCar;
+  const car = world.player.inCar;
+  const previous = g.active;
+  if (previous) previous.refuelling = false;
+  g.active = null;
 
   for (const s of g.stations) {
     s.mesh.userData.ring.rotation.y += dt;
     s.mesh.userData.ring.visible = !!car && world.settings.fuel;
   }
-  if (!world.settings.fuel) return;
-
-  // full-tank refill only makes sense in a vehicle
-  if (!car || car.tank) return;
-  let near = null;
-  for (const s of g.stations) {
-    if (Math.hypot(car.pos.x - s.pos.x, car.pos.z - s.pos.z) < 6) { near = s; break; }
-  }
-  if (!near) return;
-
-  const missing = TANK - g.level;
-  if (missing < 0.5) {
-    world.gasHint = 'Tank full';
-    return;
-  }
-  if (keys['KeyE'] && world.money > 0) {
-    const add = Math.min(missing, PUMP_RATE * dt, Math.max(0, world.money - g.owed) / PRICE_PER_PCT);
-    g.level += add;
-    // Carry fractional dollars across frames and refills.
-    g.owed += add * PRICE_PER_PCT;
-    const charge = Math.floor(g.owed);
-    world.money -= charge;
-    g.owed -= charge;
-    if (Math.random() < dt * 4) sfxPickup();
-    world.gasHint = `REFUELLING... ${Math.round(g.level)}%`;
-    if (TANK - g.level < 0.5) {
-      showToast('TANK FULL');
-      world.onSave?.();
+  if (world.settings.fuel && car && !car.tank && !car.dead) {
+    const near = nearbyPump(world, car);
+    if (!near) {
+      if (!hasFuel(world)) world.gasHint = 'OUT OF FUEL — E to exit · find another vehicle';
+    } else if (car.vel.length() >= .5) {
+      world.gasHint = 'PETROL — stop inside the ring to refuel';
+    } else if (car.fuelCapacityLiters - car.fuelLiters <= .001) {
+      world.gasHint = 'Tank full · E to exit';
+    } else if (canRefuel(world, car) && keys.KeyE && !keys.KeyW && !keys.KeyS) {
+      car.refuelling = true;
+      g.active = car;
+      const result = refillVehicle(car, dt, world.money);
+      world.money = result.money;
+      world.gasHint = `REFUELLING · ${car.fuelLiters.toFixed(1)} / ${car.fuelCapacityLiters} L · release E to stop`;
+      if (car.fuelCapacityLiters - car.fuelLiters <= .001) showToast('TANK FULL');
+    } else {
+      world.gasHint = world.money > .00001
+        ? `Hold <b>E</b> for petrol · $${FUEL_PRICE}/L · full $${Math.ceil((car.fuelCapacityLiters - car.fuelLiters) * FUEL_PRICE)} · Shift+E to exit`
+        : 'No cash for petrol · E to exit';
     }
-  } else {
-    const cost = Math.ceil(missing * PRICE_PER_PCT);
-    world.gasHint = world.money > 0
-      ? `Hold <b>E</b> to refuel (${Math.round(g.level)}% · full ≈ $${cost})`
-      : 'No cash for fuel';
   }
+  if (previous && previous !== g.active) world.onSave?.();
 }

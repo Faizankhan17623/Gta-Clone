@@ -9,6 +9,7 @@ import { webCfg } from './web.js';
 import { makeVehicle, resprayVehicle } from './car.js';
 import { applySuit } from './characters.js';
 import { watchForCash } from './ads.js';
+import { casinoOdds } from './mayor.js';
 
 // Robbable corner stores (hold E: cash + heat) and the upgrade den where
 // swing money buys permanent buffs.
@@ -169,8 +170,8 @@ export function ensureGarageVehicle(state, world) {
   if (!kind) return;
   if (state.garageVeh && !state.garageVeh.dead) return;
   const g = state.garagePos;
-  const opts = kind === 'bike' ? { bike: true } : {};
-  const v = makeVehicle(world.scene, g.x, g.z, 0, kind === 'bike' ? '#23262d' : '#3d6b8f', opts);
+  const opts = { ...world.garageVehicleSaved, bike: kind === 'bike' };
+  const v = makeVehicle(world.scene, g.x, g.z, 0, opts.color || (kind === 'bike' ? '#23262d' : '#3d6b8f'), opts);
   applyGarageMods(world, v);
   state.garageVeh = v;
   world.parked.push(v);
@@ -272,7 +273,7 @@ export function updateShops(state, world, dt, keys, pressed) {
       if (availableFunds(world, bet) < bet) { showToast('Not enough cash'); continue; }
       spendMoney(world, bet);
       // mayoral casino regulation: HOUSE RULES / NORMAL / LOOSE SLOTS
-      const odds = [0, 1, 2][world.policy?.casino ?? 1];
+      const odds = casinoOdds(world);
       const jackpotAt = 0.02 + odds * 0.03; // 2% / 5% / 8%
       const winAt = 0.4 + odds * 0.1;       // 40% / 50% / 60%
       const roll = Math.random();
