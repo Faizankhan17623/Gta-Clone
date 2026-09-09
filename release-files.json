@@ -195,6 +195,7 @@
     "js/zombies.js",
     "manifest.json",
     "package.json",
+    "privacy.html",
     "release-files.json",
     "scripts/serve.mjs",
     "sw.js"

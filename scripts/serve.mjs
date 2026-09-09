@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const files = JSON.parse(await readFile(path.join(root, 'release-files.json'), 'utf8')).files;
-const allowed = new Set(files.filter(p => /^(?:index.html|sw.js|manifest.json|icon[^/]*|js\/[^/]+\.js)$/.test(p)));
+const allowed = new Set(files.filter(p => /^(?:index.html|privacy.html|sw.js|manifest.json|icon[^/]*|js\/[^/]+\.js)$/.test(p)));
 const types={'.html':'text/html','.js':'text/javascript','.json':'application/json','.svg':'image/svg+xml','.png':'image/png','.glb':'model/gltf-binary'};
 const mounts = {};
 createServer(async (req,res) => {
